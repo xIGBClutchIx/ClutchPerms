@@ -15,10 +15,13 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.server.permission.PermissionAPI;
+import net.neoforged.neoforge.server.permission.events.PermissionGatherEvent;
 
 /**
- * NeoForge mod entrypoint that boots the shared persisted permission service and registers shared Brigadier commands.
+ * NeoForge mod entrypoint that boots the shared persisted permission service, registers shared Brigadier commands, and contributes a native permission handler.
  */
 @Mod(ClutchPermsNeoForgeMod.MOD_ID)
 public final class ClutchPermsNeoForgeMod {
@@ -48,11 +51,33 @@ public final class ClutchPermsNeoForgeMod {
         }
 
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
+        NeoForge.EVENT_BUS.addListener(this::registerPermissionHandler);
+        NeoForge.EVENT_BUS.addListener(this::registerPermissionNodes);
+        NeoForge.EVENT_BUS.addListener(this::onServerStarted);
         NeoForge.EVENT_BUS.addListener(this::onServerStopped);
     }
 
     private void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(NeoForgeClutchPermsCommand.create(permissionService));
+    }
+
+    private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
+        event.addPermissionHandler(NeoForgeClutchPermsPermissionHandler.IDENTIFIER,
+                registeredNodes -> new NeoForgeClutchPermsPermissionHandler(permissionService, registeredNodes));
+    }
+
+    private void registerPermissionNodes(PermissionGatherEvent.Nodes event) {
+        event.addNodes(NeoForgeClutchPermsPermissionHandler.ADMIN_NODE);
+    }
+
+    private void onServerStarted(ServerStartedEvent event) {
+        if (NeoForgeClutchPermsPermissionHandler.IDENTIFIER.equals(PermissionAPI.getActivePermissionHandler())) {
+            LOGGER.info("ClutchPerms NeoForge runtime permission bridge is active.");
+            return;
+        }
+
+        LOGGER.info("ClutchPerms NeoForge runtime permission bridge is registered but inactive. Set the NeoForge server permissionHandler config value to {} to activate it.",
+                NeoForgeClutchPermsPermissionHandler.IDENTIFIER);
     }
 
     private void onServerStopped(ServerStoppedEvent event) {

@@ -8,9 +8,9 @@ The current repository is intentionally small. It establishes the build, module 
 - Multi-project Gradle build using Kotlin DSL
 - Shared `common` module for platform-agnostic permission logic
 - `paper` plugin module with Paper service registration, shared Brigadier commands, and runtime permission attachments
-- `fabric` mod module with the same persisted service and shared Brigadier commands
-- `neoforge` mod module with the same persisted service and shared Brigadier commands
-- `forge` mod module with the same persisted service and shared Brigadier commands
+- `fabric` mod module with the same persisted service, shared Brigadier commands, and a fabric-permissions-api provider bridge
+- `neoforge` mod module with the same persisted service, shared Brigadier commands, and a native permission handler bridge
+- `forge` mod module with the same persisted service, shared Brigadier commands, and a native permission handler bridge
 - JUnit coverage for the shared service
 - JUnit coverage for the shared command tree
 - MockBukkit coverage for the Paper bootstrap, command adapter, and runtime permission bridge path
@@ -81,11 +81,13 @@ Fabric mod module built with Fabric Loom.
 Current behavior:
 - creates the same JSON-backed permission service during mod initialization
 - registers the shared `/clutchperms` command tree with Brigadier through Fabric API
+- exposes direct persisted assignments through fabric-permissions-api for mods that query that API
 - resets the static service reference when the server stops
 - stores direct permission assignments in the Fabric config directory at `clutchperms/permissions.json`
 
 Packaging behavior:
 - the final Fabric jar includes `common` as a nested included jar
+- the final Fabric jar includes fabric-permissions-api as a nested included jar
 
 ### `neoforge`
 NeoForge mod module built with ModDevGradle.
@@ -93,6 +95,9 @@ NeoForge mod module built with ModDevGradle.
 Current behavior:
 - creates the same JSON-backed permission service during mod construction
 - registers the shared `/clutchperms` command tree with Brigadier through the NeoForge event bus
+- registers a native permission handler as `clutchperms:direct`
+- exposes direct persisted assignments for registered Boolean `PermissionNode`s when the server config selects `clutchperms:direct` as the active permission handler
+- registers `clutchperms.admin` as a Boolean permission node with default `false`
 - resets the static service reference when the server stops
 - stores direct permission assignments in the NeoForge config directory at `clutchperms/permissions.json`
 
@@ -105,6 +110,9 @@ Forge mod module built with ForgeGradle.
 Current behavior:
 - creates the same JSON-backed permission service during mod construction
 - registers the shared `/clutchperms` command tree with Brigadier through the Forge event buses
+- registers a native permission handler as `clutchperms:direct`
+- exposes direct persisted assignments for registered Boolean `PermissionNode`s when the server config selects `clutchperms:direct` as the active permission handler
+- registers `clutchperms.admin` as a Boolean permission node with default `false`
 - resets the static service reference when the server stops
 - stores direct permission assignments in the Forge config directory at `clutchperms/permissions.json`
 
@@ -120,6 +128,7 @@ Packaging behavior:
 - Minecraft: `26.1.2`
 - Fabric Loader: `0.19.2`
 - Fabric API: `0.146.1+26.1.2`
+- Fabric Permissions API: `0.7.0`
 - Loom: `1.16-SNAPSHOT` resolving to `1.16.1`
 - NeoForge: `26.1.2.22-beta`
 - ModDevGradle: `2.0.141`
@@ -202,6 +211,7 @@ The Paper jar includes the shared `common` classes directly.
 
 The Fabric jar contains a nested included jar:
 - `META-INF/jars/clutchperms-common-0.1.0-SNAPSHOT.jar`
+- `META-INF/jars/fabric-permissions-api-0.7.0.jar`
 
 The NeoForge jar contains a nested jar-in-jar dependency:
 - `META-INF/jarjar/me.clutchy.clutchperms.clutchperms-common-0.1.0-SNAPSHOT.jar`
@@ -272,13 +282,13 @@ Example:
 - join-time and live runtime permission attachment refresh behavior
 
 ### Fabric
-There are currently no Fabric runtime tests. The module is verified through compile/build checks only.
+There are currently no Fabric runtime tests. The fabric-permissions-api provider bridge is verified through compile/build checks only.
 
 ### NeoForge
-There are currently no NeoForge runtime tests. The module is verified through compile/build checks only.
+There are currently no NeoForge runtime tests. The native permission handler bridge is verified through compile/build checks only.
 
 ### Forge
-There are currently no Forge runtime tests. The module is verified through compile/build checks only.
+There are currently no Forge runtime tests. The native permission handler bridge is verified through compile/build checks only.
 
 ## Architecture Notes
 - `common` is the source of truth for permission abstractions.
@@ -286,9 +296,10 @@ There are currently no Forge runtime tests. The module is verified through compi
 - Shared behavior should move into `common` unless it depends on platform-specific APIs.
 - Paper direct user assignments are applied to online players with plugin-owned `PermissionAttachment`s.
 - Paper is a Paper-only target; Spigot compatibility is not maintained.
-- Fabric is server-side only for now.
-- NeoForge is server-side only for now.
-- Forge is server-side only for now.
+- Fabric direct user assignments are provided through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
+- NeoForge direct user assignments are available through the native permission API when `clutchperms:direct` is selected as the active permission handler.
+- Forge direct user assignments are available through the native permission API when `clutchperms:direct` is selected as the active permission handler.
+- Fabric, NeoForge, and Forge are server-side only for now.
 
 ## Known Limitations
 - No groups or inheritance
@@ -296,14 +307,16 @@ There are currently no Forge runtime tests. The module is verified through compi
 - No contexts
 - Command targets are limited to exact online player names or UUIDs
 - Command permission changes only affect direct user assignments
-- Runtime permission enforcement currently exists only in the Paper module
+- Fabric runtime enforcement only affects mods that query fabric-permissions-api
+- NeoForge runtime enforcement only affects registered Boolean `PermissionNode`s and requires the active permission handler config to be `clutchperms:direct`
+- Forge runtime enforcement only affects registered Boolean `PermissionNode`s and requires the active permission handler config to be `clutchperms:direct`
 - No LuckPerms bridge or migration path yet
 - No cross-platform transport or synchronization
 - No Fabric gameplay/runtime test suite yet
 
 ## Near-Term Extension Points
 Good next steps from this base:
-- add permission attachment/runtime enforcement bridges for Fabric, NeoForge, and Forge
+- add runtime bridge smoke tests or lightweight game-test coverage for Fabric, NeoForge, and Forge
 - add safer command ergonomics such as tab-completed permission nodes and clearer error messages
 - define a cross-platform data model for users, groups, and inheritance
 - add Fabric integration tests or a lighter server-level verification strategy

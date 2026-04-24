@@ -6,9 +6,9 @@
 - The repo currently provides:
   - a shared `common` module with a minimal permission API, in-memory implementation, JSON-backed persistence factory, observable service wrapper, and shared Brigadier command tree
   - a `paper` plugin module with Paper service registration, a Paper lifecycle Brigadier adapter, and runtime permission attachment bridge
-  - a `fabric` mod module with the same shared service and shared Brigadier command behavior
-  - a `neoforge` mod module with the same shared service and shared Brigadier command behavior
-  - a `forge` mod module with the same shared service and shared Brigadier command behavior
+  - a `fabric` mod module with the same shared service, shared Brigadier command behavior, and fabric-permissions-api provider bridge
+  - a `neoforge` mod module with the same shared service, shared Brigadier command behavior, and native permission handler bridge
+  - a `forge` mod module with the same shared service, shared Brigadier command behavior, and native permission handler bridge
 
 ## Repository Layout
 - `common`
@@ -24,6 +24,7 @@
 - `fabric`
   - Fabric mod built with Loom
   - bundles `common` as a nested jar via `include(project(":common"))`
+  - bundles fabric-permissions-api as a nested jar
 - `neoforge`
   - NeoForge mod built with ModDevGradle
   - bundles `common` as a nested jar via NeoForge jar-in-jar metadata
@@ -63,12 +64,13 @@
   - allows console and remote console bootstrap command execution
   - requires persisted `clutchperms.admin` for player command execution
   - Paper applies persisted direct assignments to online players through plugin-owned `PermissionAttachment`s
+  - Fabric provides persisted direct assignments to mods that query fabric-permissions-api
+  - NeoForge and Forge expose persisted direct assignments through a `clutchperms:direct` native permission handler when that handler is selected in server config
 - Not implemented yet:
   - groups
   - inheritance
   - contexts
   - offline storage
-  - Fabric, NeoForge, and Forge runtime permission bridges
   - cross-platform synchronization
 
 ## Build And Tooling Rules
@@ -95,6 +97,7 @@
   - Minecraft `26.1.2`
   - Fabric Loader `0.19.2`
   - Fabric API `0.146.1+26.1.2`
+  - Fabric Permissions API `0.7.0`
   - Loom `1.16-SNAPSHOT` resolving to `1.16.1`
 - NeoForge target:
   - Minecraft `26.1.2`
@@ -162,11 +165,11 @@
   - `paper`
     - MockBukkit tests for plugin boot, service registration, the Paper command adapter, and runtime permission attachment refresh behavior
   - `fabric`
-    - no runtime tests yet
+    - no runtime tests yet; fabric-permissions-api provider bridge is compile/build verified
   - `neoforge`
-    - no runtime tests yet
+    - no runtime tests yet; native permission handler bridge is compile/build verified
   - `forge`
-    - no runtime tests yet
+    - no runtime tests yet; native permission handler bridge is compile/build verified
 
 ## Coding Guidelines
 - Keep shared logic in `common` whenever it is not inherently platform-specific.
@@ -176,6 +179,8 @@
 - The Paper module is Paper-only; do not preserve Spigot compatibility unless explicitly requested.
 - Keep Paper-only behavior isolated in thin platform adapters where practical so shared behavior remains testable in `common`.
 - Keep Paper runtime permission state in plugin-owned attachments; do not mix direct ClutchPerms state into unrelated plugin attachments.
+- Keep Fabric runtime permission behavior in the fabric-permissions-api provider bridge; do not add vanilla permission mixins unless explicitly requested.
+- Keep NeoForge and Forge runtime permission behavior in native `clutchperms:direct` permission handlers; do not assume they affect mods that bypass the platform permission APIs.
 - For Fabric, keep the initial scope server-side unless client behavior is intentionally introduced.
 - For NeoForge, keep the initial scope server-side unless client behavior is intentionally introduced.
 - For Forge, keep the initial scope server-side unless client behavior is intentionally introduced.
@@ -208,6 +213,7 @@
   - must keep `plugin.yml` permission metadata accurate when permissions or main class names change
 - `fabric`
   - must continue to package `common` as a nested included jar
+  - must continue to package fabric-permissions-api as a nested included jar while the Fabric bridge depends on it
   - must keep `fabric.mod.json` version expansion wired through `processResources`
 - `neoforge`
   - must continue to package `common` as a nested jar through NeoForge jar-in-jar metadata

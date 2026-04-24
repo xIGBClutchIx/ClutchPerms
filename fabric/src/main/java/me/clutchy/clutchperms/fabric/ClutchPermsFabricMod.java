@@ -16,7 +16,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
 
 /**
- * Fabric mod entrypoint that boots the shared persisted permission service and registers shared Brigadier commands.
+ * Fabric mod entrypoint that boots the shared persisted permission service, registers shared Brigadier commands, and exposes assignments to fabric-permissions-api.
  */
 public final class ClutchPermsFabricMod implements ModInitializer {
 
@@ -46,6 +46,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         }
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(FabricClutchPermsCommand.create(permissionService)));
+        FabricRuntimePermissionBridge.register(permissionService);
 
         // Clear the static reference when the server stops so stale state is not retained.
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> permissionService = null);
