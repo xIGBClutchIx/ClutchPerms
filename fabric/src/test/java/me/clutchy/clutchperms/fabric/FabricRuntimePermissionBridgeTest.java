@@ -98,6 +98,18 @@ final class FabricRuntimePermissionBridgeTest {
     }
 
     @Test
+    void wildcardAssignmentResolvesThroughBridge() {
+        permissionService.setPermission(SUBJECT_ID, "example.*", PermissionValue.TRUE);
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.node"));
+
+        permissionService.setPermission(SUBJECT_ID, "example.*", PermissionValue.FALSE);
+        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.node"));
+
+        permissionService.clearPermission(SUBJECT_ID, "example.*");
+        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.node"));
+    }
+
+    @Test
     void commandMutationPersistsAndResolvesThroughBridge(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
         Path groupsFile = temporaryDirectory.resolve("groups.json");
@@ -130,6 +142,10 @@ final class FabricRuntimePermissionBridgeTest {
         assertEquals(1, dispatcher.execute("clutchperms group admin parent add base", console));
         assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("base", "example.inherited"));
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.inherited"));
+
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set wildcard.* false", console));
+        assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "wildcard.*"));
+        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "wildcard.node"));
     }
 
     @Test
@@ -158,7 +174,16 @@ final class FabricRuntimePermissionBridgeTest {
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        Files.writeString(permissionsFile, "{ malformed permissions json", StandardCharsets.UTF_8);
+        Files.writeString(permissionsFile, """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "example.*.bad": "TRUE"
+                    }
+                  }
+                }
+                """, StandardCharsets.UTF_8);
 
         CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
 

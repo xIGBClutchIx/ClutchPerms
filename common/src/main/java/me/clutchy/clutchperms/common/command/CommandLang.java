@@ -38,6 +38,8 @@ final class CommandLang {
 
     private static final String ERROR_INVALID_NODE = "Invalid permission node: %s";
 
+    private static final String ERROR_INVALID_VALUE = "Invalid permission value: %s";
+
     private static final String ERROR_RELOAD_FAILED = "Failed to reload ClutchPerms storage: %s";
 
     private static final String ERROR_GROUP_OPERATION_FAILED = "Group operation failed: %s";
@@ -102,6 +104,8 @@ final class CommandLang {
 
     private static final String PERMISSION_CHECK = "%s effective %s = %s from %s.";
 
+    private static final String PERMISSION_CHECK_MATCHED = "%s effective %s = %s from %s via %s.";
+
     static List<String> commandList(String rootLiteral) {
         return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "reload"), command(rootLiteral, "user <target> list"),
                 command(rootLiteral, "user <target> get <node>"), command(rootLiteral, "user <target> set <node> <true|false>"), command(rootLiteral, "user <target> clear <node>"),
@@ -151,6 +155,10 @@ final class CommandLang {
 
     static String invalidNode(Object node) {
         return format(ERROR_INVALID_NODE, node);
+    }
+
+    static String invalidValue(Object value) {
+        return format(ERROR_INVALID_VALUE, value);
     }
 
     static String reloadFailed(Throwable exception) {
@@ -287,6 +295,10 @@ final class CommandLang {
 
     static String permissionCheck(String subject, String node, PermissionValue value, String source) {
         return format(PERMISSION_CHECK, subject, node, value.name(), source);
+    }
+
+    static String permissionCheck(String subject, String node, PermissionValue value, String source, String assignmentNode) {
+        return format(PERMISSION_CHECK_MATCHED, subject, node, value.name(), source, assignmentNode);
     }
 
     private static String command(String rootLiteral, String command) {

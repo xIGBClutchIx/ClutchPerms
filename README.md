@@ -1,8 +1,8 @@
 # ClutchPerms
 
-ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, subject metadata, reload support, and platform runtime bridges.
+ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, reload support, and platform runtime bridges.
 
-This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, recursive multi-parent groups, an implicit `default` group, and effective permission resolution shared across platforms.
+This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, recursive multi-parent groups, an implicit `default` group, terminal wildcards, and effective permission resolution shared across platforms.
 
 ## What Works
 
@@ -13,6 +13,7 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 - Implicit `default` group when a group named `default` exists
 - Effective resolution order: direct user assignment, explicit user group hierarchy, then `default` hierarchy
 - Closer child group permissions beat parent permissions; `FALSE` wins over `TRUE` at the same inheritance depth
+- Terminal wildcard assignments: `*` and trailing `prefix.*`
 - Reload command for manual JSON edits
 - Last-known player name recording and offline name targeting
 - Paper runtime bridge using plugin-owned `PermissionAttachment`s
@@ -29,6 +30,8 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 | Forge | Registers native handler `clutchperms:direct` | Forge config dir, `clutchperms/` |
 
 Paper is a Paper target. Spigot compatibility is not maintained.
+
+Paper note: ClutchPerms attaches stored wildcard nodes such as `example.*`, but Bukkit permission attachments do not expand arbitrary wildcard checks by themselves. Paper command authorization still uses ClutchPerms wildcard resolution, and concrete stored permissions still attach normally.
 
 ## Commands
 
@@ -70,6 +73,13 @@ Command notes:
 - Console and remote console can run commands for bootstrap.
 - Players need effective `clutchperms.admin`, either directly or through a group.
 - Non-player/non-console sources are denied where the platform can distinguish them.
+- Permission nodes may be exact nodes, `*`, or terminal wildcard nodes like `example.*`. Mid-node wildcards such as `example.*.edit` are rejected.
+
+Wildcard resolution:
+
+- `prefix.*` matches descendants such as `prefix.child` and `prefix.child.deep`, but not `prefix`.
+- Matching checks exact nodes first, then the closest wildcard, broader wildcards, and finally `*`.
+- Source tiers still win before specificity: direct user assignments beat groups, and groups beat the implicit `default` hierarchy.
 
 ## Data Files
 
@@ -124,6 +134,7 @@ Group example:
 ```
 
 Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup or reload.
+Wildcard keys must be `*` or terminal `prefix.*`; invalid wildcard placement fails startup or reload.
 
 ## Forge And NeoForge Activation
 
@@ -193,7 +204,7 @@ forge/     Forge mod adapter and native permission handler
 
 Important shared packages:
 
-- `common.permission` - direct permissions, effective resolution, and permission service factories
+- `common.permission` - direct permissions, wildcard utilities, effective resolution, and permission service factories
 - `common.group` - groups, memberships, parent links, group storage, and group observers
 - `common.subject` - last-known subject metadata
 - `common.storage` - storage exceptions
@@ -224,7 +235,6 @@ Paper tests use MockBukkit `4.108.0` with Paper API `1.21.11-R0.1-SNAPSHOT`, whi
 
 ## Known Limitations
 
-- No wildcard permissions
 - No contexts
 - No group priorities
 - No LuckPerms bridge or migration tooling

@@ -14,7 +14,6 @@ import java.util.stream.Collectors;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.LiteralMessage;
-import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
@@ -51,7 +50,7 @@ public final class ClutchPermsCommands {
 
     private static final String NODE_ARGUMENT = "node";
 
-    private static final String VALUE_ARGUMENT = "value";
+    private static final String ASSIGNMENT_ARGUMENT = "assignment";
 
     private static final String NAME_ARGUMENT = "name";
 
@@ -68,6 +67,8 @@ public final class ClutchPermsCommands {
     private static final DynamicCommandExceptionType AMBIGUOUS_TARGET = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage(CommandLang.invalidNode(node)));
+
+    private static final DynamicCommandExceptionType INVALID_VALUE = new DynamicCommandExceptionType(value -> new LiteralMessage(CommandLang.invalidValue(value)));
 
     private static final DynamicCommandExceptionType RELOAD_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
@@ -132,9 +133,8 @@ public final class ClutchPermsCommands {
                                 .then(ClutchPermsCommands.nodeArgument(environment)
                                         .executes(context -> executeAuthorized(environment, context, source -> getGroupPermission(environment, context)))))
                         .then(LiteralArgumentBuilder.<S>literal("set")
-                                .then(ClutchPermsCommands.nodeArgument(environment)
-                                        .then(RequiredArgumentBuilder.<S, Boolean>argument(VALUE_ARGUMENT, BoolArgumentType.bool())
-                                                .executes(context -> executeAuthorized(environment, context, source -> setGroupPermission(environment, context))))))
+                                .then(ClutchPermsCommands.assignmentArgument(environment)
+                                        .executes(context -> executeAuthorized(environment, context, source -> setGroupPermission(environment, context)))))
                         .then(LiteralArgumentBuilder.<S>literal("clear").then(ClutchPermsCommands.nodeArgument(environment)
                                 .executes(context -> executeAuthorized(environment, context, source -> clearGroupPermission(environment, context))))));
     }
@@ -156,9 +156,8 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> LiteralArgumentBuilder<S> setCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("set")
-                .then(ClutchPermsCommands.nodeArgument(environment).then(RequiredArgumentBuilder.<S, Boolean>argument(VALUE_ARGUMENT, BoolArgumentType.bool())
-                        .executes(context -> executeAuthorized(environment, context, source -> setPermission(environment, context)))));
+        return LiteralArgumentBuilder.<S>literal("set").then(
+                ClutchPermsCommands.assignmentArgument(environment).executes(context -> executeAuthorized(environment, context, source -> setPermission(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> clearCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -192,8 +191,13 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> RequiredArgumentBuilder<S, String> nodeArgument(ClutchPermsCommandEnvironment<S> environment) {
-        return RequiredArgumentBuilder.<S, String>argument(NODE_ARGUMENT, StringArgumentType.word())
+        return RequiredArgumentBuilder.<S, String>argument(NODE_ARGUMENT, StringArgumentType.greedyString())
                 .suggests((context, builder) -> suggestPermissionNodes(environment, context, builder));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> assignmentArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(ASSIGNMENT_ARGUMENT, StringArgumentType.greedyString())
+                .suggests((context, builder) -> suggestPermissionAssignment(environment, context, builder));
     }
 
     private static <S> RequiredArgumentBuilder<S, String> groupArgument(ClutchPermsCommandEnvironment<S> environment) {
@@ -284,11 +288,10 @@ public final class ClutchPermsCommands {
 
     private static <S> int setPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
-        String node = getNode(context);
-        PermissionValue value = BoolArgumentType.getBool(context, VALUE_ARGUMENT) ? PermissionValue.TRUE : PermissionValue.FALSE;
+        PermissionAssignment assignment = getPermissionAssignment(context);
 
-        environment.permissionService().setPermission(subject.id(), node, value);
-        environment.sendMessage(context.getSource(), CommandLang.permissionSet(node, formatSubject(subject), value));
+        environment.permissionService().setPermission(subject.id(), assignment.node(), assignment.value());
+        environment.sendMessage(context.getSource(), CommandLang.permissionSet(assignment.node(), formatSubject(subject), assignment.value()));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -348,7 +351,13 @@ public final class ClutchPermsCommands {
         String node = getNode(context);
         PermissionResolution resolution = environment.permissionResolver().resolve(subject.id(), node);
 
-        environment.sendMessage(context.getSource(), CommandLang.permissionCheck(formatSubject(subject), node, resolution.value(), formatResolutionSource(resolution)));
+        String source = formatResolutionSource(resolution);
+        String assignmentNode = resolution.assignmentNode();
+        if (assignmentNode != null && !assignmentNode.equals(PermissionNodes.normalize(node))) {
+            environment.sendMessage(context.getSource(), CommandLang.permissionCheck(formatSubject(subject), node, resolution.value(), source, assignmentNode));
+        } else {
+            environment.sendMessage(context.getSource(), CommandLang.permissionCheck(formatSubject(subject), node, resolution.value(), source));
+        }
         return Command.SINGLE_SUCCESS;
     }
 
@@ -484,15 +493,14 @@ public final class ClutchPermsCommands {
 
     private static <S> int setGroupPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = getGroupName(context);
-        String node = getNode(context);
-        PermissionValue value = BoolArgumentType.getBool(context, VALUE_ARGUMENT) ? PermissionValue.TRUE : PermissionValue.FALSE;
+        PermissionAssignment assignment = getPermissionAssignment(context);
         try {
-            environment.groupService().setGroupPermission(groupName, node, value);
+            environment.groupService().setGroupPermission(groupName, assignment.node(), assignment.value());
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
-        environment.sendMessage(context.getSource(), CommandLang.groupPermissionSet(node, normalizeGroupName(groupName), value));
+        environment.sendMessage(context.getSource(), CommandLang.groupPermissionSet(assignment.node(), normalizeGroupName(groupName), assignment.value()));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -585,10 +593,48 @@ public final class ClutchPermsCommands {
 
     private static <S> String getNode(CommandContext<S> context) throws CommandSyntaxException {
         String node = StringArgumentType.getString(context, NODE_ARGUMENT);
-        if (node.trim().isEmpty()) {
+        return validateNode(node);
+    }
+
+    private static <S> PermissionAssignment getPermissionAssignment(CommandContext<S> context) throws CommandSyntaxException {
+        String assignment = StringArgumentType.getString(context, ASSIGNMENT_ARGUMENT).trim();
+        int valueStart = lastWhitespaceRunStart(assignment);
+        if (valueStart <= 0) {
+            throw INVALID_VALUE.create(assignment);
+        }
+
+        String node = validateNode(assignment.substring(0, valueStart).trim());
+        String rawValue = assignment.substring(valueStart).trim();
+        PermissionValue value;
+        if ("true".equalsIgnoreCase(rawValue)) {
+            value = PermissionValue.TRUE;
+        } else if ("false".equalsIgnoreCase(rawValue)) {
+            value = PermissionValue.FALSE;
+        } else {
+            throw INVALID_VALUE.create(rawValue);
+        }
+
+        return new PermissionAssignment(node, value);
+    }
+
+    private static String validateNode(String node) throws CommandSyntaxException {
+        try {
+            PermissionNodes.normalize(node);
+        } catch (IllegalArgumentException exception) {
             throw INVALID_NODE.create(node);
         }
         return node;
+    }
+
+    private static int lastWhitespaceRunStart(String value) {
+        int index = value.length() - 1;
+        while (index >= 0 && !Character.isWhitespace(value.charAt(index))) {
+            index--;
+        }
+        while (index > 0 && Character.isWhitespace(value.charAt(index - 1))) {
+            index--;
+        }
+        return index;
     }
 
     private static <S> String getGroupName(CommandContext<S> context) throws CommandSyntaxException {
@@ -636,6 +682,25 @@ public final class ClutchPermsCommands {
         environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> !group.equals(currentGroupName))
                 .filter(group -> !currentParents.contains(group)).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining)).forEach(builder::suggest);
         return builder.buildFuture();
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestPermissionAssignment(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context,
+            SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining();
+        int valueStart = lastWhitespaceRunStart(remaining);
+        if (valueStart <= 0) {
+            return suggestPermissionNodes(environment, context, builder);
+        }
+
+        SuggestionsBuilder valueBuilder = builder.createOffset(builder.getStart() + valueStart);
+        String partialValue = remaining.substring(valueStart).trim().toLowerCase(Locale.ROOT);
+        if ("true".startsWith(partialValue)) {
+            valueBuilder.suggest("true");
+        }
+        if ("false".startsWith(partialValue)) {
+            valueBuilder.suggest("false");
+        }
+        return valueBuilder.buildFuture();
     }
 
     private static <S> CompletableFuture<Suggestions> suggestPermissionNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {
@@ -696,5 +761,8 @@ public final class ClutchPermsCommands {
     private interface CommandAction<S> {
 
         int run(S source) throws CommandSyntaxException;
+    }
+
+    private record PermissionAssignment(String node, PermissionValue value) {
     }
 }

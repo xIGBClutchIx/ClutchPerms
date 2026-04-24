@@ -45,7 +45,7 @@ Keep the project moving toward a useful permissions system without adding mature
 
 Shared package ownership:
 
-- `common.permission` - direct permissions, node normalization, effective resolution, permission observers, and permission service factories
+- `common.permission` - direct permissions, node normalization, wildcard matching, effective resolution, permission observers, and permission service factories
 - `common.group` - group definitions, group permissions, memberships, group storage, and group observers
 - `common.subject` - last-known subject metadata
 - `common.storage` - storage exceptions
@@ -55,6 +55,8 @@ Shared package ownership:
 
 - Direct permissions are stored by subject `UUID` and normalized permission node.
 - Permission nodes normalize with `trim().toLowerCase(Locale.ROOT)`.
+- Permission nodes may be exact nodes, `*`, or terminal wildcard nodes ending in `.*`.
+- Wildcard nodes containing `*` anywhere else are invalid and must fail mutation, startup load, or reload.
 - Stored values are `TRUE`, `FALSE`, or absent. Absence is `UNSET`.
 - `PermissionService#hasPermission(...)` is true only for `TRUE`.
 - Groups are named, normalized, and store explicit permission assignments.
@@ -65,11 +67,14 @@ Shared package ownership:
 - Effective resolution order is direct user assignment, explicit user group hierarchy, then implicit `default` hierarchy.
 - Closer child group permissions beat parent permissions.
 - Within the same inheritance depth, `FALSE` wins over `TRUE`.
+- Wildcard resolution happens inside each source tier/depth: exact node, closest `prefix.*`, broader parent wildcards, then `*`.
+- `prefix.*` matches descendant nodes such as `prefix.child` and `prefix.child.deep`, but not `prefix`.
+- Direct wildcard assignments still beat group/default exact assignments because source tier precedence comes first.
 - Subject metadata stores UUID, last-known name, and last-seen timestamp.
 - Command targets resolve exact online name first, exact stored last-known name second, and UUID third.
 - Ambiguous stored last-known names must fail clearly instead of mutating an arbitrary UUID.
 
-Do not add wildcards, contexts, priorities, imports, migrations, or LuckPerms bridges unless the user asks for that slice.
+Do not add contexts, priorities, imports, migrations, or LuckPerms bridges unless the user asks for that slice.
 
 ## Storage And Reload
 
@@ -93,12 +98,13 @@ Storage expectations:
 - Create parent directories as needed.
 - Use deterministic output.
 - Write through temporary files and replace the target file.
-- Fail startup or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- Fail startup or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, invalid wildcard placement, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
 
 ## Runtime Bridges
 
 - Paper applies effective permissions to online players with plugin-owned `PermissionAttachment`s.
+- Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without a deeper Paper-specific bridge.
 - Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
 - Fabric exposes effective permissions through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
 - Forge and NeoForge expose effective permissions through native Boolean permission handlers registered as `clutchperms:direct`.

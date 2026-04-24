@@ -224,6 +224,21 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms wildcard admin permissions authorize command execution through the shared resolver.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void playerWithWildcardAdminPermissionCanMutatePermissions() throws CommandSyntaxException {
+        permissionService.setPermission(ADMIN_ID, "clutchperms.*", PermissionValue.TRUE);
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        dispatcher.execute("clutchperms user Target set example.node false", player);
+
+        assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
+    }
+
+    /**
      * Confirms group commands manage group permissions and subject memberships.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -249,6 +264,34 @@ class ClutchPermsCommandsTest {
                 "Groups for Target (00000000-0000-0000-0000-000000000002): admin", "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.",
                 "Permissions for group admin: example.node=TRUE", "Members of group admin: Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.",
                 "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."), console.messages());
+    }
+
+    /**
+     * Confirms command mutation and check output support terminal wildcard nodes.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanManageWildcardPermissions() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target set example.* true", console);
+        dispatcher.execute("clutchperms user Target check example.node", console);
+        dispatcher.execute("clutchperms user Target list", console);
+        dispatcher.execute("clutchperms group wildcard create", console);
+        dispatcher.execute("clutchperms group wildcard set other.* false", console);
+        dispatcher.execute("clutchperms user Target group add wildcard", console);
+        dispatcher.execute("clutchperms user Target check other.node", console);
+        dispatcher.execute("clutchperms user Target clear example.*", console);
+
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(TARGET_ID, "example.*"));
+        assertEquals(PermissionValue.FALSE, permissionResolver.resolve(TARGET_ID, "other.node").value());
+        assertEquals(List.of("Set example.* for Target (00000000-0000-0000-0000-000000000002) to TRUE.",
+                "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from direct via example.*.",
+                "Permissions for Target (00000000-0000-0000-0000-000000000002): example.*=TRUE", "Created group wildcard.", "Set other.* for group wildcard to FALSE.",
+                "Added Target (00000000-0000-0000-0000-000000000002) to group wildcard.",
+                "Target (00000000-0000-0000-0000-000000000002) effective other.node = FALSE from group wildcard via other.*.",
+                "Cleared example.* for Target (00000000-0000-0000-0000-000000000002)."), console.messages());
     }
 
     /**
@@ -425,6 +468,8 @@ class ClutchPermsCommandsTest {
 
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Missing list", console));
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user " + TARGET_ID + " get bad node", console));
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Target set example* true", console));
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group staff set example.*.node true", console));
     }
 
     /**
@@ -433,10 +478,11 @@ class ClutchPermsCommandsTest {
     @Test
     void nodeSuggestionsIncludeBuiltInAndTargetAssignments() {
         permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "example.*", PermissionValue.FALSE);
         permissionService.setPermission(TARGET_ID, "Zeta.Node", PermissionValue.FALSE);
         permissionService.setPermission(UUID_NAMED_PLAYER_ID, "other.node", PermissionValue.TRUE);
 
-        assertEquals(List.of("clutchperms.admin", "example.node", "zeta.node"), suggestionTexts("clutchperms user Target get "));
+        assertEquals(List.of("clutchperms.admin", "example.*", "example.node", "zeta.node"), suggestionTexts("clutchperms user Target get "));
     }
 
     /**

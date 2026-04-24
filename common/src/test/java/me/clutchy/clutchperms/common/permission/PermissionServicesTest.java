@@ -56,12 +56,17 @@ class PermissionServicesTest {
 
         permissionService.setPermission(FIRST_SUBJECT, " Example.Node ", PermissionValue.TRUE);
         permissionService.setPermission(FIRST_SUBJECT, "Example.Denied", PermissionValue.FALSE);
+        permissionService.setPermission(FIRST_SUBJECT, "Example.*", PermissionValue.TRUE);
+        permissionService.setPermission(SECOND_SUBJECT, "*", PermissionValue.FALSE);
 
         PermissionService reloadedPermissionService = PermissionServices.jsonFile(permissionsFile);
 
         assertEquals(PermissionValue.TRUE, reloadedPermissionService.getPermission(FIRST_SUBJECT, "example.node"));
         assertEquals(PermissionValue.FALSE, reloadedPermissionService.getPermission(FIRST_SUBJECT, "example.denied"));
-        assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE), reloadedPermissionService.getPermissions(FIRST_SUBJECT));
+        assertEquals(PermissionValue.TRUE, reloadedPermissionService.getPermission(FIRST_SUBJECT, "example.*"));
+        assertEquals(PermissionValue.FALSE, reloadedPermissionService.getPermission(SECOND_SUBJECT, "*"));
+        assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE, "example.*", PermissionValue.TRUE),
+                reloadedPermissionService.getPermissions(FIRST_SUBJECT));
     }
 
     /**
@@ -122,6 +127,36 @@ class PermissionServicesTest {
                   "subjects": {
                     "00000000-0000-0000-0000-000000000001": {
                       "example.node": "UNSET"
+                    }
+                  }
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "example*": "TRUE"
+                    }
+                  }
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "example.*.node": "TRUE"
+                    }
+                  }
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      " .* ": "TRUE"
                     }
                   }
                 }

@@ -108,6 +108,18 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
     }
 
     @Test
+    void wildcardAssignmentOverridesBooleanDefault() {
+        permissionService.setPermission(SUBJECT_ID, "example.*", PermissionValue.FALSE);
+        assertEquals(Boolean.FALSE, handler.getOfflinePermission(SUBJECT_ID, booleanNode));
+
+        permissionService.setPermission(SUBJECT_ID, "example.*", PermissionValue.TRUE);
+        assertEquals(Boolean.TRUE, handler.getOfflinePermission(SUBJECT_ID, booleanNode));
+
+        permissionService.clearPermission(SUBJECT_ID, "example.*");
+        assertEquals(Boolean.TRUE, handler.getOfflinePermission(SUBJECT_ID, booleanNode));
+    }
+
+    @Test
     void nonBooleanNodeFallsBackToNodeDefault() {
         PermissionNode<String> stringNode = new PermissionNode<>("example", "label", PermissionTypes.STRING, (player, subjectId, context) -> "default");
         permissionService.setPermission(SUBJECT_ID, "example.label", PermissionValue.FALSE);
@@ -144,8 +156,9 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         PermissionNode<Boolean> falseDefaultNode = new PermissionNode<>("example", "allow", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
         PermissionNode<Boolean> trueDefaultNode = new PermissionNode<>("example", "deny", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.TRUE);
         PermissionNode<Boolean> groupNode = new PermissionNode<>("example", "group", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
+        PermissionNode<Boolean> wildcardNode = new PermissionNode<>("wildcard", "node", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.TRUE);
         NeoForgeClutchPermsPermissionHandler persistedHandler = new NeoForgeClutchPermsPermissionHandler(persistedPermissionResolver,
-                List.of(falseDefaultNode, trueDefaultNode, groupNode));
+                List.of(falseDefaultNode, trueDefaultNode, groupNode, wildcardNode));
         CommandDispatcher<TestSource> dispatcher = dispatcher(persistedPermissionService, persistedGroupService, persistedPermissionResolver, temporaryDirectory);
         TestSource console = TestSource.console();
 
@@ -171,6 +184,10 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         assertEquals(1, dispatcher.execute("clutchperms group base set example.group true", console));
         assertEquals(1, dispatcher.execute("clutchperms group admin parent add base", console));
         assertEquals(Boolean.TRUE, persistedHandler.getOfflinePermission(SUBJECT_ID, groupNode));
+
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set wildcard.* false", console));
+        assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "wildcard.*"));
+        assertEquals(Boolean.FALSE, persistedHandler.getOfflinePermission(SUBJECT_ID, wildcardNode));
     }
 
     @Test
@@ -183,7 +200,16 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        Files.writeString(permissionsFile, "{ malformed permissions json", StandardCharsets.UTF_8);
+        Files.writeString(permissionsFile, """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000002": {
+                      "example.*.bad": "TRUE"
+                    }
+                  }
+                }
+                """, StandardCharsets.UTF_8);
 
         CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
 

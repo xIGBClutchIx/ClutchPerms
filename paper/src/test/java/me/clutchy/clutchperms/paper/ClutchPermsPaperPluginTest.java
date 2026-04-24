@@ -308,6 +308,30 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms Paper command authorization uses wildcard resolution and wildcard assignments are attached as stored nodes.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void wildcardPermissionsAttachAndAuthorizeCommands() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), "clutchperms.*", PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "example.*", PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+
+        assertTrue(admin.isPermissionSet("clutchperms.*"));
+        assertTrue(target.isPermissionSet("example.*"));
+        assertTrue(target.hasPermission("example.*"));
+
+        assertEquals(1, dispatcher.execute("clutchperms user Target set example.wildcardauth true", new TestCommandSourceStack(admin)));
+
+        assertTrue(target.isPermissionSet("example.wildcardauth"));
+        assertTrue(target.hasPermission("example.wildcardauth"));
+    }
+
+    /**
      * Confirms command mutations persist to disk and refresh Paper runtime permissions end to end.
      *
      * @throws Exception when Brigadier command execution or storage reload fails unexpectedly
@@ -352,6 +376,11 @@ class ClutchPermsPaperPluginTest {
         assertTrue(GroupServices.jsonFile(groupsFile).getGroupParents("admin").contains("base"));
         assertTrue(target.isPermissionSet("example.inherited"));
         assertTrue(target.hasPermission("example.inherited"));
+
+        assertEquals(1, dispatcher.execute("clutchperms user Target set wildcard.* false", adminSource));
+        assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "wildcard.*"));
+        assertTrue(target.isPermissionSet("wildcard.*"));
+        assertFalse(target.hasPermission("wildcard.*"));
     }
 
     /**
@@ -416,7 +445,16 @@ class ClutchPermsPaperPluginTest {
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
 
-        Files.writeString(permissionsFile, "{ malformed permissions json", StandardCharsets.UTF_8);
+        Files.writeString(permissionsFile, """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "example.*.bad": "TRUE"
+                    }
+                  }
+                }
+                """, StandardCharsets.UTF_8);
 
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
 

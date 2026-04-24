@@ -42,19 +42,20 @@ public final class PermissionResolver {
      */
     public PermissionResolution resolve(UUID subjectId, String node) {
         Objects.requireNonNull(subjectId, "subjectId");
+        String normalizedNode = PermissionNodes.normalize(node);
 
-        PermissionValue directValue = permissionService.getPermission(subjectId, node);
-        if (directValue != PermissionValue.UNSET) {
-            return new PermissionResolution(directValue, PermissionResolution.Source.DIRECT, null);
+        ResolvedAssignment directAssignment = resolveAssignments(permissionService.getPermissions(subjectId), normalizedNode);
+        if (directAssignment.value() != PermissionValue.UNSET) {
+            return new PermissionResolution(directAssignment.value(), PermissionResolution.Source.DIRECT, null, directAssignment.assignmentNode());
         }
 
-        PermissionResolution groupResolution = resolveGroupHierarchy(groupService.getSubjectGroups(subjectId), node, PermissionResolution.Source.GROUP);
+        PermissionResolution groupResolution = resolveGroupHierarchy(groupService.getSubjectGroups(subjectId), normalizedNode, PermissionResolution.Source.GROUP);
         if (groupResolution.value() != PermissionValue.UNSET) {
             return groupResolution;
         }
 
         if (groupService.hasGroup(GroupService.DEFAULT_GROUP)) {
-            PermissionResolution defaultResolution = resolveGroupHierarchy(Set.of(GroupService.DEFAULT_GROUP), node, PermissionResolution.Source.DEFAULT);
+            PermissionResolution defaultResolution = resolveGroupHierarchy(Set.of(GroupService.DEFAULT_GROUP), normalizedNode, PermissionResolution.Source.DEFAULT);
             if (defaultResolution.value() != PermissionValue.UNSET) {
                 return defaultResolution;
             }
@@ -111,26 +112,38 @@ public final class PermissionResolver {
         groupDepths.forEach((groupName, depth) -> groupsByDepth.computeIfAbsent(depth, ignored -> new TreeSet<>()).add(groupName));
 
         for (Set<String> groupNames : groupsByDepth.values()) {
-            String falseGroup = null;
-            String trueGroup = null;
-            for (String groupName : groupNames) {
-                PermissionValue groupValue = groupService.getGroupPermission(groupName, node);
-                if (groupValue == PermissionValue.FALSE && falseGroup == null) {
-                    falseGroup = groupName;
-                } else if (groupValue == PermissionValue.TRUE && trueGroup == null) {
-                    trueGroup = groupName;
+            for (String candidateNode : PermissionNodes.matchingCandidates(node)) {
+                String falseGroup = null;
+                String trueGroup = null;
+                for (String groupName : groupNames) {
+                    PermissionValue groupValue = groupService.getGroupPermissions(groupName).getOrDefault(candidateNode, PermissionValue.UNSET);
+                    if (groupValue == PermissionValue.FALSE && falseGroup == null) {
+                        falseGroup = groupName;
+                    } else if (groupValue == PermissionValue.TRUE && trueGroup == null) {
+                        trueGroup = groupName;
+                    }
                 }
-            }
 
-            if (falseGroup != null) {
-                return new PermissionResolution(PermissionValue.FALSE, source, falseGroup);
-            }
-            if (trueGroup != null) {
-                return new PermissionResolution(PermissionValue.TRUE, source, trueGroup);
+                if (falseGroup != null) {
+                    return new PermissionResolution(PermissionValue.FALSE, source, falseGroup, candidateNode);
+                }
+                if (trueGroup != null) {
+                    return new PermissionResolution(PermissionValue.TRUE, source, trueGroup, candidateNode);
+                }
             }
         }
 
         return new PermissionResolution(PermissionValue.UNSET, PermissionResolution.Source.UNSET, null);
+    }
+
+    private ResolvedAssignment resolveAssignments(Map<String, PermissionValue> assignments, String node) {
+        for (String candidateNode : PermissionNodes.matchingCandidates(node)) {
+            PermissionValue value = assignments.getOrDefault(candidateNode, PermissionValue.UNSET);
+            if (value != PermissionValue.UNSET) {
+                return new ResolvedAssignment(value, candidateNode);
+            }
+        }
+        return new ResolvedAssignment(PermissionValue.UNSET, null);
     }
 
     private Map<String, Integer> collectGroupDepths(Set<String> rootGroups) {
@@ -164,5 +177,8 @@ public final class PermissionResolver {
     }
 
     private record GroupDepth(String groupName, int depth) {
+    }
+
+    private record ResolvedAssignment(PermissionValue value, String assignmentNode) {
     }
 }

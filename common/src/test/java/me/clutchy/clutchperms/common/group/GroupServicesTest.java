@@ -59,6 +59,7 @@ class GroupServicesTest {
         groupService.createGroup("Staff");
         groupService.createGroup("Admin");
         groupService.setGroupPermission("staff", "Staff.Node", PermissionValue.TRUE);
+        groupService.setGroupPermission("staff", "Staff.*", PermissionValue.FALSE);
         groupService.setGroupPermission("admin", "Example.Node", PermissionValue.TRUE);
         groupService.setGroupPermission("admin", "Example.Denied", PermissionValue.FALSE);
         groupService.addGroupParent("admin", "staff");
@@ -69,6 +70,7 @@ class GroupServicesTest {
         assertEquals(Set.of("admin", "staff"), reloadedGroupService.getGroups());
         assertEquals(PermissionValue.TRUE, reloadedGroupService.getGroupPermission("admin", "example.node"));
         assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("admin", "example.denied"));
+        assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("staff", "staff.*"));
         assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE), reloadedGroupService.getGroupPermissions("admin"));
         assertEquals(Set.of("staff"), reloadedGroupService.getGroupParents("admin"));
         assertEquals(Set.of(), reloadedGroupService.getGroupParents("staff"));
@@ -355,6 +357,45 @@ class GroupServicesTest {
                   "memberships": {}
                 }
                 """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {
+                        "example*": "TRUE"
+                      }
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {
+                        "example.*.node": "TRUE"
+                      }
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {
+                        " .* ": "TRUE"
+                      }
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
     }
 
     /**
@@ -410,6 +451,69 @@ class GroupServicesTest {
         assertEquals(PermissionResolution.Source.DIRECT, resolver.resolve(FIRST_SUBJECT, "example.node").source());
         assertEquals(Map.of("example.node", PermissionValue.TRUE, "staff.node", PermissionValue.FALSE, "parent.node", PermissionValue.TRUE, "shared.node", PermissionValue.TRUE,
                 "same-depth.node", PermissionValue.FALSE, "default.parent", PermissionValue.TRUE), resolver.getEffectivePermissions(FIRST_SUBJECT));
+    }
+
+    /**
+     * Confirms effective resolution supports terminal wildcard assignments without changing source-tier precedence.
+     */
+    @Test
+    void resolverAppliesWildcardPermissionPrecedence() {
+        PermissionService permissionService = new InMemoryPermissionService();
+        GroupService groupService = new InMemoryGroupService();
+        PermissionResolver resolver = new PermissionResolver(permissionService, groupService);
+
+        permissionService.setPermission(FIRST_SUBJECT, "*", PermissionValue.TRUE);
+        permissionService.setPermission(FIRST_SUBJECT, "example.*", PermissionValue.FALSE);
+        permissionService.setPermission(FIRST_SUBJECT, "example.node", PermissionValue.TRUE);
+        permissionService.setPermission(FIRST_SUBJECT, "tier.*", PermissionValue.TRUE);
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "tier.node", PermissionValue.FALSE);
+        groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
+
+        assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "unlisted.node").value());
+        assertEquals("*", resolver.resolve(FIRST_SUBJECT, "unlisted.node").assignmentNode());
+        assertEquals(PermissionValue.FALSE, resolver.resolve(FIRST_SUBJECT, "example.deep.node").value());
+        assertEquals("example.*", resolver.resolve(FIRST_SUBJECT, "example.deep.node").assignmentNode());
+        assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "example.node").value());
+        assertEquals("example.node", resolver.resolve(FIRST_SUBJECT, "example.node").assignmentNode());
+        assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "example").value());
+        assertEquals("*", resolver.resolve(FIRST_SUBJECT, "example").assignmentNode());
+        assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "tier.node").value());
+        assertEquals(PermissionResolution.Source.DIRECT, resolver.resolve(FIRST_SUBJECT, "tier.node").source());
+        assertEquals(Map.of("*", PermissionValue.TRUE, "example.*", PermissionValue.FALSE, "example.node", PermissionValue.TRUE, "tier.*", PermissionValue.TRUE, "tier.node",
+                PermissionValue.TRUE), resolver.getEffectivePermissions(FIRST_SUBJECT));
+
+        groupService.createGroup("parent");
+        groupService.setGroupPermission("parent", "child.node", PermissionValue.TRUE);
+        groupService.createGroup("child");
+        groupService.setGroupPermission("child", "child.*", PermissionValue.FALSE);
+        groupService.addGroupParent("child", "parent");
+        groupService.createGroup("allow");
+        groupService.setGroupPermission("allow", "same.*", PermissionValue.TRUE);
+        groupService.setGroupPermission("allow", "specific.node", PermissionValue.TRUE);
+        groupService.createGroup("deny");
+        groupService.setGroupPermission("deny", "same.*", PermissionValue.FALSE);
+        groupService.setGroupPermission("deny", "specific.*", PermissionValue.FALSE);
+        groupService.addSubjectGroup(SECOND_SUBJECT, "child");
+        groupService.addSubjectGroup(SECOND_SUBJECT, "allow");
+        groupService.addSubjectGroup(SECOND_SUBJECT, "deny");
+        groupService.createGroup("default");
+        groupService.setGroupPermission("default", "default.node", PermissionValue.TRUE);
+        groupService.createGroup("default-parent");
+        groupService.setGroupPermission("default-parent", "default.parent.*", PermissionValue.TRUE);
+        groupService.addGroupParent("default", "default-parent");
+        UUID defaultOnlySubject = UUID.randomUUID();
+
+        assertEquals(PermissionValue.FALSE, resolver.resolve(SECOND_SUBJECT, "child.node").value());
+        assertEquals("child", resolver.resolve(SECOND_SUBJECT, "child.node").groupName());
+        assertEquals("child.*", resolver.resolve(SECOND_SUBJECT, "child.node").assignmentNode());
+        assertEquals(PermissionValue.FALSE, resolver.resolve(SECOND_SUBJECT, "same.node").value());
+        assertEquals("same.*", resolver.resolve(SECOND_SUBJECT, "same.node").assignmentNode());
+        assertEquals(PermissionValue.TRUE, resolver.resolve(SECOND_SUBJECT, "specific.node").value());
+        assertEquals("specific.node", resolver.resolve(SECOND_SUBJECT, "specific.node").assignmentNode());
+        assertEquals(PermissionValue.TRUE, resolver.resolve(defaultOnlySubject, "default.parent.node").value());
+        assertEquals(PermissionResolution.Source.DEFAULT, resolver.resolve(defaultOnlySubject, "default.parent.node").source());
+        assertEquals("default.parent.*", resolver.resolve(defaultOnlySubject, "default.parent.node").assignmentNode());
     }
 
     /**
