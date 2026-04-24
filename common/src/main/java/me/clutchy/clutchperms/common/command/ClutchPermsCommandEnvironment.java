@@ -4,6 +4,8 @@ import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
+import me.clutchy.clutchperms.common.GroupService;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
 
@@ -20,6 +22,22 @@ public interface ClutchPermsCommandEnvironment<S> {
      * @return active permission service
      */
     PermissionService permissionService();
+
+    /**
+     * Returns the group service mutated by command execution.
+     *
+     * @return active group service
+     */
+    GroupService groupService();
+
+    /**
+     * Returns the effective permission resolver used by command authorization and check output.
+     *
+     * @return active permission resolver
+     */
+    default PermissionResolver permissionResolver() {
+        return new PermissionResolver(permissionService(), groupService());
+    }
 
     /**
      * Returns the subject metadata service inspected by command execution.

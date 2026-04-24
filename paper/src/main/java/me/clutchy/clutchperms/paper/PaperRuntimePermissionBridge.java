@@ -13,23 +13,23 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.permissions.PermissionAttachment;
 
-import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionValue;
 
 /**
- * Applies persisted direct ClutchPerms assignments to online Paper players through plugin-owned permission attachments.
+ * Applies effective ClutchPerms assignments to online Paper players through plugin-owned permission attachments.
  */
 final class PaperRuntimePermissionBridge implements Listener, AutoCloseable {
 
     private final ClutchPermsPaperPlugin plugin;
 
-    private final Supplier<PermissionService> permissionServiceSupplier;
+    private final Supplier<PermissionResolver> permissionResolverSupplier;
 
     private final Map<UUID, PermissionAttachment> attachments = new HashMap<>();
 
-    PaperRuntimePermissionBridge(ClutchPermsPaperPlugin plugin, Supplier<PermissionService> permissionServiceSupplier) {
+    PaperRuntimePermissionBridge(ClutchPermsPaperPlugin plugin, Supplier<PermissionResolver> permissionResolverSupplier) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
-        this.permissionServiceSupplier = Objects.requireNonNull(permissionServiceSupplier, "permissionServiceSupplier");
+        this.permissionResolverSupplier = Objects.requireNonNull(permissionResolverSupplier, "permissionResolverSupplier");
     }
 
     /**
@@ -112,7 +112,7 @@ final class PaperRuntimePermissionBridge implements Listener, AutoCloseable {
         UUID subjectId = player.getUniqueId();
         detachPlayer(player);
 
-        Map<String, PermissionValue> permissions = permissionServiceSupplier.get().getPermissions(subjectId);
+        Map<String, PermissionValue> permissions = permissionResolverSupplier.get().getEffectivePermissions(subjectId);
         if (!permissions.isEmpty()) {
             PermissionAttachment attachment = player.addAttachment(plugin);
             permissions.forEach((node, value) -> {

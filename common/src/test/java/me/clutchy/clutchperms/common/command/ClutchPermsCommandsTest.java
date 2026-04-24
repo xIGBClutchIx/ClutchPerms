@@ -16,9 +16,12 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestion;
 
+import me.clutchy.clutchperms.common.GroupService;
+import me.clutchy.clutchperms.common.InMemoryGroupService;
 import me.clutchy.clutchperms.common.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.PermissionNodes;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionStorageException;
 import me.clutchy.clutchperms.common.PermissionValue;
@@ -46,11 +49,15 @@ class ClutchPermsCommandsTest {
     private static final Instant SECOND_SEEN = Instant.parse("2026-04-24T13:00:00Z");
 
     private static final CommandStatusDiagnostics STATUS_DIAGNOSTICS = new CommandStatusDiagnostics("/tmp/clutchperms/permissions.json", "/tmp/clutchperms/subjects.json",
-            "test bridge active");
+            "/tmp/clutchperms/groups.json", "test bridge active");
 
     private PermissionService permissionService;
 
     private SubjectMetadataService subjectMetadataService;
+
+    private GroupService groupService;
+
+    private PermissionResolver permissionResolver;
 
     private TestEnvironment environment;
 
@@ -63,7 +70,9 @@ class ClutchPermsCommandsTest {
     void setUp() {
         permissionService = new InMemoryPermissionService();
         subjectMetadataService = new InMemorySubjectMetadataService();
-        environment = new TestEnvironment(permissionService, subjectMetadataService);
+        groupService = new InMemoryGroupService();
+        permissionResolver = new PermissionResolver(permissionService, groupService);
+        environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, permissionResolver);
         environment.addOnlineSubject("Target", TARGET_ID);
         dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
@@ -111,7 +120,7 @@ class ClutchPermsCommandsTest {
 
         assertEquals(1, environment.reloads());
         assertEquals(1, environment.runtimeRefreshes());
-        assertEquals(List.of("Reloaded permissions and subjects from disk."), console.messages());
+        assertEquals(List.of("Reloaded permissions, subjects, and groups from disk."), console.messages());
     }
 
     /**
@@ -176,6 +185,85 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms user Target set example.node false", player);
 
         assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
+    }
+
+    /**
+     * Confirms effective command authorization can come from a group assignment.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void playerWithGroupAdminPermissionCanMutatePermissions() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", PermissionNodes.ADMIN, PermissionValue.TRUE);
+        groupService.addSubjectGroup(ADMIN_ID, "staff");
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        dispatcher.execute("clutchperms user Target set example.node false", player);
+
+        assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
+    }
+
+    /**
+     * Confirms group commands manage group permissions and subject memberships.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanManageGroupsAndCheckEffectivePermissions() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(TARGET_ID, "Target", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group admin create", console);
+        dispatcher.execute("clutchperms group admin set example.node true", console);
+        dispatcher.execute("clutchperms user Target group add admin", console);
+        dispatcher.execute("clutchperms user Target groups", console);
+        dispatcher.execute("clutchperms user Target check example.node", console);
+        dispatcher.execute("clutchperms group admin list", console);
+        dispatcher.execute("clutchperms group admin get example.node", console);
+        dispatcher.execute("clutchperms group admin clear example.node", console);
+        dispatcher.execute("clutchperms user Target group remove admin", console);
+        dispatcher.execute("clutchperms group admin delete", console);
+
+        assertEquals(PermissionValue.UNSET, groupService.getGroups().contains("admin") ? groupService.getGroupPermission("admin", "example.node") : PermissionValue.UNSET);
+        assertEquals(List.of("Created group admin.", "Set example.node for group admin to TRUE.", "Added Target (00000000-0000-0000-0000-000000000002) to group admin.",
+                "Groups for Target (00000000-0000-0000-0000-000000000002): admin", "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.",
+                "Permissions for group admin: example.node=TRUE", "Members of group admin: Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.",
+                "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."), console.messages());
+    }
+
+    /**
+     * Confirms the default group applies without explicit subject membership.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void defaultGroupAppliesImplicitly() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group default create", console);
+        dispatcher.execute("clutchperms group default set example.default false", console);
+        dispatcher.execute("clutchperms user Target groups", console);
+        dispatcher.execute("clutchperms user Target check example.default", console);
+
+        assertEquals(PermissionValue.FALSE, permissionResolver.resolve(TARGET_ID, "example.default").value());
+        assertEquals(
+                List.of("Created group default.", "Set example.default for group default to FALSE.", "Groups for Target (00000000-0000-0000-0000-000000000002): default (implicit)",
+                        "Target (00000000-0000-0000-0000-000000000002) effective example.default = FALSE from default group."),
+                console.messages());
+    }
+
+    /**
+     * Confirms explicit default group membership is rejected because default applies implicitly.
+     */
+    @Test
+    void defaultGroupCannotBeAssignedExplicitly() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+        dispatcher.execute("clutchperms group default create", console);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Target group add default", console));
+
+        assertTrue(exception.getMessage().contains("Group operation failed: default group membership is implicit"));
     }
 
     /**
@@ -295,6 +383,31 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms node suggestions include effective group and default group assignments for the selected target.
+     */
+    @Test
+    void nodeSuggestionsIncludeEffectiveGroupAssignments() {
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "example.group", PermissionValue.TRUE);
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        groupService.createGroup("default");
+        groupService.setGroupPermission("default", "default.node", PermissionValue.TRUE);
+
+        assertEquals(List.of("clutchperms.admin", "default.node", "example.group"), suggestionTexts("clutchperms user Target check "));
+    }
+
+    /**
+     * Confirms group permission commands suggest permissions already assigned to that group.
+     */
+    @Test
+    void nodeSuggestionsIncludeSelectedGroupAssignments() {
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "example.group", PermissionValue.TRUE);
+
+        assertEquals(List.of("clutchperms.admin", "example.group"), suggestionTexts("clutchperms group staff get "));
+    }
+
+    /**
      * Confirms the users list command reports an empty metadata store clearly.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -362,12 +475,17 @@ class ClutchPermsCommandsTest {
 
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
-                "Known subjects: " + knownSubjects, "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
+                "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known subjects: " + knownSubjects, "Known groups: 0",
+                "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 
     private static List<String> commandListMessages() {
         return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms reload", "/clutchperms user <target> list", "/clutchperms user <target> get <node>",
-                "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>", "/clutchperms users list", "/clutchperms users search <name>");
+                "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>", "/clutchperms user <target> groups",
+                "/clutchperms user <target> group add <group>", "/clutchperms user <target> group remove <group>", "/clutchperms user <target> check <node>",
+                "/clutchperms group list", "/clutchperms group <group> create", "/clutchperms group <group> delete", "/clutchperms group <group> list",
+                "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>", "/clutchperms users list",
+                "/clutchperms users search <name>");
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {
@@ -375,6 +493,10 @@ class ClutchPermsCommandsTest {
         private final PermissionService permissionService;
 
         private final SubjectMetadataService subjectMetadataService;
+
+        private final GroupService groupService;
+
+        private final PermissionResolver permissionResolver;
 
         private final Map<String, CommandSubject> onlineSubjects = new LinkedHashMap<>();
 
@@ -384,9 +506,12 @@ class ClutchPermsCommandsTest {
 
         private RuntimeException reloadFailure;
 
-        private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService) {
+        private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService,
+                PermissionResolver permissionResolver) {
             this.permissionService = permissionService;
             this.subjectMetadataService = subjectMetadataService;
+            this.groupService = groupService;
+            this.permissionResolver = permissionResolver;
         }
 
         private void addOnlineSubject(String name, UUID subjectId) {
@@ -408,6 +533,16 @@ class ClutchPermsCommandsTest {
         @Override
         public PermissionService permissionService() {
             return permissionService;
+        }
+
+        @Override
+        public GroupService groupService() {
+            return groupService;
+        }
+
+        @Override
+        public PermissionResolver permissionResolver() {
+            return permissionResolver;
         }
 
         @Override

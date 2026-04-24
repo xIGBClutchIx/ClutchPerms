@@ -6,11 +6,11 @@ The current repository is intentionally small. It establishes the build, module 
 
 ## Current Status
 - Multi-project Gradle build using Kotlin DSL
-- Shared `common` module for platform-agnostic permission logic
+- Shared `common` module for platform-agnostic direct permissions, groups, effective resolution, persistence, and commands
 - `paper` plugin module with Paper service registration, shared Brigadier commands, and runtime permission attachments
-- `fabric` mod module with the same persisted service, shared Brigadier commands, and a fabric-permissions-api provider bridge
-- `neoforge` mod module with the same persisted service, shared Brigadier commands, and a native permission handler bridge
-- `forge` mod module with the same persisted service, shared Brigadier commands, and a native permission handler bridge
+- `fabric` mod module with the same persisted model, shared Brigadier commands, and a fabric-permissions-api provider bridge
+- `neoforge` mod module with the same persisted model, shared Brigadier commands, and a native permission handler bridge
+- `forge` mod module with the same persisted model, shared Brigadier commands, and a native permission handler bridge
 - JUnit coverage for the shared service
 - JUnit coverage for the shared command tree
 - MockBukkit coverage for the Paper bootstrap, command adapter, and runtime permission bridge path
@@ -37,6 +37,14 @@ Current public types:
   - currently exposes `clutchperms.admin`
 - `PermissionChangeListener`
   - receives subject-level mutation notifications from observing permission services
+- `GroupService`
+  - stores named groups, group permissions, and direct subject memberships
+- `GroupChangeListener`
+  - receives group-level refresh notifications from observing group services
+- `PermissionResolver`
+  - resolves effective permissions from direct assignments, explicit groups, and the implicit `default` group
+- `PermissionResolution`
+  - describes an effective value and whether it came from direct, group, default, or unset state
 - `SubjectMetadata`
   - records a subject UUID, last known name, and last seen timestamp
 - `SubjectMetadataService`
@@ -58,6 +66,13 @@ Current implementation:
   - fails startup on malformed or unsupported permission data
 - `PermissionServices.observing(PermissionService, PermissionChangeListener)`
   - wraps a service and reports successful direct permission mutations
+- `GroupServices.jsonFile(Path)`
+  - loads and saves group definitions and memberships from JSON
+  - treats a missing file as empty state
+  - saves after every mutation
+  - fails startup on malformed or unsupported group data
+- `GroupServices.observing(GroupService, GroupChangeListener)`
+  - wraps a group service and reports successful group and membership mutations
 - `SubjectMetadataServices.jsonFile(Path)`
   - loads and saves subject metadata from JSON
   - treats a missing file as empty state
@@ -73,12 +88,14 @@ Current behavior:
 - creates a JSON-backed permission service on plugin enable
 - registers the shared service through Paper's Bukkit-derived `ServicesManager`
 - registers the subject metadata service through Paper's Bukkit-derived `ServicesManager`
+- registers the group service and effective permission resolver through Paper's Bukkit-derived `ServicesManager`
 - registers `/clutchperms` through Paper lifecycle Brigadier command registration
-- exposes status plus direct online-player-or-UUID permission get/list/set/clear commands
-- bridges direct persisted assignments into Bukkit `PermissionAttachment`s for online players
+- exposes status, reload, direct user permission, group, user group, and effective check commands
+- bridges effective persisted assignments into Bukkit `PermissionAttachment`s for online players
 - records player UUID, name, and last seen time when players join
 - stores direct permission assignments in the plugin data folder at `permissions.json`
 - stores subject metadata in the plugin data folder at `subjects.json`
+- stores group definitions and memberships in the plugin data folder at `groups.json`
 
 Current metadata:
 - plugin name: `ClutchPerms`
@@ -91,13 +108,14 @@ Packaging behavior:
 Fabric mod module built with Fabric Loom.
 
 Current behavior:
-- creates the same JSON-backed permission service during mod initialization
+- creates the same JSON-backed permission and group services during mod initialization
 - registers the shared `/clutchperms` command tree with Brigadier through Fabric API
-- exposes direct persisted assignments through fabric-permissions-api for mods that query that API
+- exposes effective persisted assignments through fabric-permissions-api for mods that query that API
 - records player UUID, name, and last seen time when players join
 - resets the static service reference when the server stops
 - stores direct permission assignments in the Fabric config directory at `clutchperms/permissions.json`
 - stores subject metadata in the Fabric config directory at `clutchperms/subjects.json`
+- stores group definitions and memberships in the Fabric config directory at `clutchperms/groups.json`
 
 Packaging behavior:
 - the final Fabric jar includes `common` as a nested included jar
@@ -107,15 +125,16 @@ Packaging behavior:
 NeoForge mod module built with ModDevGradle.
 
 Current behavior:
-- creates the same JSON-backed permission service during mod construction
+- creates the same JSON-backed permission and group services during mod construction
 - registers the shared `/clutchperms` command tree with Brigadier through the NeoForge event bus
 - registers a native permission handler as `clutchperms:direct`
-- exposes direct persisted assignments for registered Boolean `PermissionNode`s when the server config selects `clutchperms:direct` as the active permission handler
+- exposes effective persisted assignments for registered Boolean `PermissionNode`s when the server config selects `clutchperms:direct` as the active permission handler
 - registers `clutchperms.admin` as a Boolean permission node with default `false`
 - records player UUID, name, and last seen time when players join
 - resets the static service reference when the server stops
 - stores direct permission assignments in the NeoForge config directory at `clutchperms/permissions.json`
 - stores subject metadata in the NeoForge config directory at `clutchperms/subjects.json`
+- stores group definitions and memberships in the NeoForge config directory at `clutchperms/groups.json`
 
 Packaging behavior:
 - the final NeoForge jar includes `common` as a nested jar through NeoForge jar-in-jar metadata
@@ -124,15 +143,16 @@ Packaging behavior:
 Forge mod module built with ForgeGradle.
 
 Current behavior:
-- creates the same JSON-backed permission service during mod construction
+- creates the same JSON-backed permission and group services during mod construction
 - registers the shared `/clutchperms` command tree with Brigadier through the Forge event buses
 - registers a native permission handler as `clutchperms:direct`
-- exposes direct persisted assignments for registered Boolean `PermissionNode`s when the server config selects `clutchperms:direct` as the active permission handler
+- exposes effective persisted assignments for registered Boolean `PermissionNode`s when the server config selects `clutchperms:direct` as the active permission handler
 - registers `clutchperms.admin` as a Boolean permission node with default `false`
 - records player UUID, name, and last seen time when players join
 - resets the static service reference when the server stops
 - stores direct permission assignments in the Forge config directory at `clutchperms/permissions.json`
 - stores subject metadata in the Forge config directory at `clutchperms/subjects.json`
+- stores group definitions and memberships in the Forge config directory at `clutchperms/groups.json`
 
 Packaging behavior:
 - the final Forge jar includes the compiled classes from `common`
@@ -248,22 +268,39 @@ All platforms register the same shared Brigadier command behavior:
 /clutchperms user <target> get <node>
 /clutchperms user <target> set <node> <true|false>
 /clutchperms user <target> clear <node>
+/clutchperms user <target> groups
+/clutchperms user <target> group add <group>
+/clutchperms user <target> group remove <group>
+/clutchperms user <target> check <node>
+/clutchperms group list
+/clutchperms group <group> create
+/clutchperms group <group> delete
+/clutchperms group <group> list
+/clutchperms group <group> get <node>
+/clutchperms group <group> set <node> <true|false>
+/clutchperms group <group> clear <node>
 /clutchperms users list
 /clutchperms users search <name>
 ```
 
 Behavior:
 - `/clutchperms` lists the available ClutchPerms commands
-- `/clutchperms status` shows the permissions file, subjects file, known-subject count, and runtime bridge status
-- `/clutchperms reload` reloads `permissions.json` and `subjects.json` from disk, then refreshes runtime permission bridges for online subjects where the platform keeps runtime state
+- `/clutchperms status` shows the permissions file, subjects file, groups file, known-subject count, known-group count, and runtime bridge status
+- `/clutchperms reload` reloads `permissions.json`, `subjects.json`, and `groups.json` from disk, then refreshes runtime permission bridges for online subjects where the platform keeps runtime state
 - `<target>` resolves an exact online player name first, then an exact stored last-known name, then a UUID string
 - ambiguous stored last-known names fail with matching UUIDs instead of choosing one
 - UUID targets with recorded subject metadata are displayed as `Name (uuid)` in command feedback
 - `<node>` is a single Brigadier word and is normalized by the shared permission service
-- `<node>` suggestions include `clutchperms.admin` and explicit nodes already assigned to the selected target
-- `set` writes explicit `TRUE` or `FALSE`; `clear` removes the explicit assignment
+- `<node>` suggestions include `clutchperms.admin` and effective nodes already assigned to the selected target or selected group
+- user `set` writes direct explicit `TRUE` or `FALSE`; user `clear` removes the direct explicit assignment
+- group `set` writes group explicit `TRUE` or `FALSE`; group `clear` removes the group explicit assignment
+- group names are normalized with `trim().toLowerCase(Locale.ROOT)`
+- a group named `default` applies implicitly to every subject when it exists
+- users cannot be explicitly added to or removed from `default`
+- effective permission checks resolve direct user assignments first, then explicit user groups, then the implicit `default` group
+- within the explicit group tier, `FALSE` wins over `TRUE`
 - console and remote console sources may run commands for bootstrap
-- players must have the persisted `clutchperms.admin` node set to `TRUE`
+- players must have effective `clutchperms.admin` set to `TRUE`, either directly or through a group
 - non-player/non-console sources are denied where the platform adapter can distinguish them
 - `users list` shows every subject recorded in `subjects.json`
 - `users search <name>` finds recorded subjects by case-insensitive last-known-name substring
@@ -296,9 +333,9 @@ permissionHandler = "clutchperms:direct"
 On dedicated servers, these server config files are typically generated under the world `serverconfig` directory. To make the setting apply to newly created worlds, place the same value in the matching file under `defaultconfigs`.
 
 When active, Forge and NeoForge permission checks for registered Boolean `PermissionNode`s resolve as:
-- persisted `TRUE` -> `true`
-- persisted `FALSE` -> `false`
-- `UNSET` -> the permission node's platform default resolver
+- effective `TRUE` -> `true`
+- effective `FALSE` -> `false`
+- effective `UNSET` -> the permission node's platform default resolver
 
 ## Permission Data
 
@@ -318,6 +355,39 @@ Example:
       "example.node": "TRUE",
       "example.denied": "FALSE"
     }
+  }
+}
+```
+
+## Group Data
+
+The current persisted group model stores basic groups and direct subject memberships:
+- group names are normalized with `trim().toLowerCase(Locale.ROOT)`
+- group permission nodes use the same normalization and `TRUE`/`FALSE` values as direct permissions
+- subject memberships are stored as UUID-to-group-name lists
+- `default` is not stored as a membership; when the group exists, it applies to every subject implicitly
+- malformed files, invalid UUIDs, blank group names, blank nodes, unknown membership groups, explicit `default` memberships, unknown values, or unsupported versions fail startup
+
+Example:
+```json
+{
+  "version": 1,
+  "groups": {
+    "default": {
+      "permissions": {
+        "example.base": "TRUE"
+      }
+    },
+    "admin": {
+      "permissions": {
+        "clutchperms.admin": "TRUE"
+      }
+    }
+  },
+  "memberships": {
+    "00000000-0000-0000-0000-000000000000": [
+      "admin"
+    ]
   }
 }
 ```
@@ -354,60 +424,66 @@ Example:
 - clearing permissions back to `UNSET`
 - JSON persistence loading, saving, invalid data handling, and deterministic output
 - subject metadata loading, saving, invalid data handling, and deterministic output
+- group loading, saving, invalid data handling, deterministic output, membership mutation, observing notifications, and effective resolution
 - observing service delegation and mutation notifications
 - shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
 - shared permission node suggestions for built-in and target-assigned nodes
+- shared group commands, user group membership commands, group-based admin authorization, and effective check output
 - shared known-user list and search command behavior
 
 ### Paper
 `paper` has MockBukkit tests for:
 - plugin enable
 - Paper service registration through the Bukkit-derived service API
+- Paper group service and resolver registration
 - Paper subject metadata service registration and join-time recording
 - the Paper command adapter executing the shared Brigadier tree
 - join-time and live runtime permission attachment refresh behavior
-- command mutation to JSON storage to runtime attachment behavior
+- command mutation to JSON storage to runtime attachment behavior for direct and group permissions
 
 ### Fabric
 `fabric` has smoke tests for the fabric-permissions-api provider bridge:
-- direct `TRUE`, `FALSE`, and `UNSET` mapping to Fabric `TriState`
+- effective `TRUE`, `FALSE`, and `UNSET` mapping to Fabric `TriState`
 - invalid node fallback to `TriState.DEFAULT`
-- command mutation to JSON storage to Fabric `TriState` behavior
+- command mutation to JSON storage to Fabric `TriState` behavior for direct and group permissions
+- malformed permissions and groups reload failure behavior
 
 ### NeoForge
 `neoforge` has smoke tests for the native permission handler bridge:
 - handler identity and registered-node exposure
-- direct `TRUE`, `FALSE`, and `UNSET` behavior for Boolean permission nodes
+- effective `TRUE`, `FALSE`, and `UNSET` behavior for Boolean permission nodes
 - non-Boolean node fallback to the platform node default
 - `clutchperms.admin` Boolean node registration
-- command mutation to JSON storage to native permission handler behavior
+- command mutation to JSON storage to native permission handler behavior for direct and group permissions
+- malformed permissions and groups reload failure behavior
 
 ### Forge
 `forge` has smoke tests for the native permission handler bridge:
 - handler identity and registered-node exposure
-- direct `TRUE`, `FALSE`, and `UNSET` behavior for Boolean permission nodes
+- effective `TRUE`, `FALSE`, and `UNSET` behavior for Boolean permission nodes
 - non-Boolean node fallback to the platform node default
 - `clutchperms.admin` Boolean node registration
-- command mutation to JSON storage to native permission handler behavior
+- command mutation to JSON storage to native permission handler behavior for direct and group permissions
+- malformed permissions and groups reload failure behavior
 
 ## Architecture Notes
 - `common` is the source of truth for permission abstractions.
 - Platform modules should adapt to `common`, not redefine their own permission models.
 - Shared behavior should move into `common` unless it depends on platform-specific APIs.
-- Paper direct user assignments are applied to online players with plugin-owned `PermissionAttachment`s.
+- Paper effective assignments are applied to online players with plugin-owned `PermissionAttachment`s.
 - Paper is a Paper-only target; Spigot compatibility is not maintained.
-- Fabric direct user assignments are provided through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
-- NeoForge direct user assignments are available through the native permission API when `clutchperms:direct` is selected as the active permission handler.
-- Forge direct user assignments are available through the native permission API when `clutchperms:direct` is selected as the active permission handler.
+- Fabric effective assignments are provided through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
+- NeoForge effective assignments are available through the native permission API when `clutchperms:direct` is selected as the active permission handler.
+- Forge effective assignments are available through the native permission API when `clutchperms:direct` is selected as the active permission handler.
 - Fabric, NeoForge, and Forge are server-side only for now.
 
 ## Known Limitations
-- No groups or inheritance
+- No group inheritance
 - No wildcard permissions
 - No contexts
-- Command targets are limited to exact online player names or UUIDs
-- Command permission changes only affect direct user assignments
-- Subject metadata records last known player names but commands do not resolve offline names yet
+- No group priorities
+- Command targets are limited to exact online player names, exact stored last-known names, or UUIDs
+- Direct user commands only affect direct user assignments; group commands affect group state
 - Fabric runtime enforcement only affects mods that query fabric-permissions-api
 - NeoForge runtime enforcement only affects registered Boolean `PermissionNode`s and requires the active permission handler config to be `clutchperms:direct`
 - Forge runtime enforcement only affects registered Boolean `PermissionNode`s and requires the active permission handler config to be `clutchperms:direct`
@@ -418,8 +494,8 @@ Example:
 ## Near-Term Extension Points
 Good next steps from this base:
 - add lightweight game-test coverage for Fabric, NeoForge, and Forge
-- add safer command ergonomics such as tab-completed permission nodes and clearer error messages
-- define a cross-platform data model for users, groups, and inheritance
+- add group inheritance once basic group behavior is stable
+- add wildcard permission resolution with documented precedence
 - add Fabric integration tests or a lighter server-level verification strategy
 
 ## Development Notes

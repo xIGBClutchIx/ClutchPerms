@@ -4,7 +4,7 @@
 - `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper, Fabric, NeoForge, and Forge.
 - The current state is an early persisted prototype, not a finished permission platform.
 - The repo currently provides:
-  - a shared `common` module with a minimal permission API, in-memory implementation, JSON-backed persistence factories, observable service wrapper, subject metadata API, and shared Brigadier command tree
+  - a shared `common` module with a permission API, basic group API, effective permission resolver, in-memory implementations, JSON-backed persistence factories, observable service wrappers, subject metadata API, and shared Brigadier command tree
   - a `paper` plugin module with Paper service registration, a Paper lifecycle Brigadier adapter, and runtime permission attachment bridge
   - a `fabric` mod module with the same shared service, shared Brigadier command behavior, and fabric-permissions-api provider bridge
   - a `neoforge` mod module with the same shared service, shared Brigadier command behavior, and native permission handler bridge
@@ -41,6 +41,10 @@
   - `PermissionValue`
   - `PermissionNodes`
   - `PermissionChangeListener`
+  - `GroupService`
+  - `GroupChangeListener`
+  - `PermissionResolver`
+  - `PermissionResolution`
   - `SubjectMetadata`
   - `SubjectMetadataService`
 - Shared command API:
@@ -50,8 +54,11 @@
   - `CommandSubject`
 - Current backends:
   - `InMemoryPermissionService`
+  - `InMemoryGroupService`
   - `PermissionServices.jsonFile(Path)` for JSON-backed persisted direct assignments
   - `PermissionServices.observing(PermissionService, PermissionChangeListener)` for subject-level mutation notifications
+  - `GroupServices.jsonFile(Path)` for JSON-backed persisted group definitions and memberships
+  - `GroupServices.observing(GroupService, GroupChangeListener)` for subject-level or all-subject group mutation notifications
   - `SubjectMetadataServices.jsonFile(Path)` for JSON-backed persisted subject metadata
 - Current behavior:
   - stores permissions by `UUID` and normalized permission node
@@ -60,28 +67,31 @@
   - `hasPermission(...)` returns `true` only for `PermissionValue.TRUE`
   - `getPermissions(...)` returns an immutable snapshot of explicit assignments for a subject
   - persists direct `UUID -> node -> TRUE/FALSE` assignments to `permissions.json`
+  - persists group definitions, group permissions, and explicit subject memberships to `groups.json`
   - treats `UNSET` as entry removal
-  - fails startup on malformed persisted permission data
-  - registers shared `/clutchperms` command listing, reload, status diagnostics, and direct user permission get/list/set/clear commands on every platform
-  - reports storage paths, known-subject count, and runtime bridge status from `/clutchperms status`
-  - reloads `permissions.json` and `subjects.json` from `/clutchperms reload`, then refreshes runtime permission bridges for online subjects where needed
+  - resolves effective permissions in shared code: direct user assignment, then explicit user groups, then implicit `default` group
+  - treats `FALSE` as winning over `TRUE` within the same explicit group tier
+  - fails startup on malformed persisted permission, group, or subject metadata data
+  - registers shared `/clutchperms` command listing, reload, status diagnostics, direct user permission, group, membership, user check, and known-user commands on every platform
+  - reports storage paths, known-subject count, known-group count, and runtime bridge status from `/clutchperms status`
+  - reloads `permissions.json`, `subjects.json`, and `groups.json` from `/clutchperms reload`, then refreshes runtime permission bridges for online subjects where needed
   - centralizes shared command feedback text in `common.command.CommandLang`
   - registers shared known-user list/search commands backed by subject metadata
   - resolves command targets by exact online player name first, then exact stored last-known name, then UUID
   - fails ambiguous stored last-known name targets with matching UUIDs
   - displays last-known names for UUID command targets when subject metadata exists
-  - suggests `clutchperms.admin` and explicit target assignments for command permission node arguments
+  - suggests `clutchperms.admin` and effective target or group assignments for command permission node arguments
   - allows console and remote console bootstrap command execution
-  - requires persisted `clutchperms.admin` for player command execution
-  - Paper applies persisted direct assignments to online players through plugin-owned `PermissionAttachment`s
-  - Fabric provides persisted direct assignments to mods that query fabric-permissions-api
-  - NeoForge and Forge expose persisted direct assignments through a `clutchperms:direct` native permission handler when that handler is selected in server config
+  - requires effective `clutchperms.admin` for player command execution
+  - Paper applies effective assignments to online players through plugin-owned `PermissionAttachment`s
+  - Fabric provides effective assignments to mods that query fabric-permissions-api
+  - NeoForge and Forge expose effective assignments through a `clutchperms:direct` native permission handler when that handler is selected in server config
   - records subject UUID, last known name, and last seen timestamp when players join
 - Not implemented yet:
-  - groups
   - inheritance
   - contexts
-  - offline storage
+  - wildcard permissions
+  - group priorities
   - cross-platform synchronization
 
 ## Build And Tooling Rules
@@ -172,19 +182,20 @@
     - unit tests for unset, true, false, and clear behavior
     - unit tests for permission enumeration and JSON persistence
     - unit tests for subject metadata enumeration and JSON persistence
+    - unit tests for group persistence, membership behavior, observing notifications, and effective resolution
     - unit tests for observing service delegation and mutation notifications
-    - unit tests for shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
+    - unit tests for shared Brigadier command status, authorization, target resolution, direct/group mutation, effective checks, and failure behavior
     - unit tests for shared status diagnostics output
-    - unit tests for shared permission node suggestions
+    - unit tests for shared permission node and group suggestions
     - unit tests for shared known-user list and search commands
   - `paper`
-    - MockBukkit tests for plugin boot, service registration, subject metadata recording, the Paper command adapter, runtime permission attachment refresh behavior, and command-to-storage-to-runtime smoke coverage
+    - MockBukkit tests for plugin boot, service registration, subject metadata recording, the Paper command adapter, direct/group runtime permission attachment refresh behavior, and command-to-storage-to-runtime smoke coverage
   - `fabric`
-    - smoke tests for fabric-permissions-api provider bridge value mapping and command-to-storage-to-bridge coverage
+    - smoke tests for fabric-permissions-api provider bridge value mapping, direct/group command-to-storage-to-bridge coverage, and reload failure handling
   - `neoforge`
-    - smoke tests for native permission handler bridge value mapping, node registration, and command-to-storage-to-handler coverage
+    - smoke tests for native permission handler bridge value mapping, node registration, direct/group command-to-storage-to-handler coverage, and reload failure handling
   - `forge`
-    - smoke tests for native permission handler bridge value mapping, node registration, and command-to-storage-to-handler coverage
+    - smoke tests for native permission handler bridge value mapping, node registration, direct/group command-to-storage-to-handler coverage, and reload failure handling
 
 ## Coding Guidelines
 - Keep shared logic in `common` whenever it is not inherently platform-specific.

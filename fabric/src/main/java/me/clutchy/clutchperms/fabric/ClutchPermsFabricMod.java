@@ -7,6 +7,9 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import me.clutchy.clutchperms.common.GroupService;
+import me.clutchy.clutchperms.common.GroupServices;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
@@ -44,6 +47,16 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     private static SubjectMetadataService subjectMetadataService;
 
     /**
+     * Active group service instance for the current Fabric server lifecycle.
+     */
+    private static GroupService groupService;
+
+    /**
+     * Active effective permission resolver for the current Fabric server lifecycle.
+     */
+    private static PermissionResolver permissionResolver;
+
+    /**
      * Permission assignment storage path for diagnostics.
      */
     private static Path permissionsFile;
@@ -52,6 +65,11 @@ public final class ClutchPermsFabricMod implements ModInitializer {
      * Subject metadata storage path for diagnostics.
      */
     private static Path subjectsFile;
+
+    /**
+     * Group storage path for diagnostics.
+     */
+    private static Path groupsFile;
 
     /**
      * Tracks whether the Fabric permissions API bridge was registered during bootstrap.
@@ -65,6 +83,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     public void onInitialize() {
         permissionsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("permissions.json");
         subjectsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("subjects.json");
+        groupsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("groups.json");
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -72,10 +91,11 @@ public final class ClutchPermsFabricMod implements ModInitializer {
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher
-                .register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService,
-                        ClutchPermsFabricMod::getStatusDiagnostics, ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::refreshRuntimePermissions)));
-        FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionService);
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess,
+                environment) -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService,
+                        ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics,
+                        ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::refreshRuntimePermissions)));
+        FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionResolver);
         runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
         ServerLifecycleEvents.SERVER_STARTED.register(server -> server.getPlayerList().getPlayers().forEach(ClutchPermsFabricMod::recordSubject));
@@ -84,6 +104,8 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             permissionService = null;
             subjectMetadataService = null;
+            groupService = null;
+            permissionResolver = null;
         });
     }
 
@@ -108,6 +130,24 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     }
 
     /**
+     * Returns the active group service instance.
+     *
+     * @return the service initialized during Fabric bootstrap
+     */
+    public static GroupService getGroupService() {
+        return Objects.requireNonNull(groupService, "Group service has not been initialized");
+    }
+
+    /**
+     * Returns the active effective permission resolver.
+     *
+     * @return the resolver initialized during Fabric bootstrap
+     */
+    public static PermissionResolver getPermissionResolver() {
+        return Objects.requireNonNull(permissionResolver, "Permission resolver has not been initialized");
+    }
+
+    /**
      * Returns status diagnostics for the shared command tree.
      *
      * @return active command status diagnostics
@@ -115,7 +155,8 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     public static CommandStatusDiagnostics getStatusDiagnostics() {
         String bridgeStatus = runtimeBridgeRegistered ? "Fabric permissions API bridge registered" : "Fabric permissions API bridge not registered";
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
-                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")), bridgeStatus);
+                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")),
+                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")), bridgeStatus);
     }
 
     /**
@@ -124,8 +165,11 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     public static void reloadStorage() {
         PermissionService reloadedPermissionService = PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
         SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
+        GroupService reloadedGroupService = GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
         permissionService = reloadedPermissionService;
         subjectMetadataService = reloadedSubjectMetadataService;
+        groupService = reloadedGroupService;
+        permissionResolver = new PermissionResolver(permissionService, groupService);
     }
 
     /**

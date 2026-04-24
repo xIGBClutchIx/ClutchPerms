@@ -16,8 +16,12 @@ import org.junit.jupiter.api.io.TempDir;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
+import me.clutchy.clutchperms.common.GroupService;
+import me.clutchy.clutchperms.common.GroupServices;
+import me.clutchy.clutchperms.common.InMemoryGroupService;
 import me.clutchy.clutchperms.common.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.InMemorySubjectMetadataService;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionValue;
@@ -41,53 +45,68 @@ final class FabricRuntimePermissionBridgeTest {
 
     private PermissionService permissionService;
 
+    private GroupService groupService;
+
+    private PermissionResolver permissionResolver;
+
     @BeforeEach
     void setUp() {
         permissionService = new InMemoryPermissionService();
+        groupService = new InMemoryGroupService();
+        permissionResolver = new PermissionResolver(permissionService, groupService);
     }
 
     @Test
     void directTrueAssignmentResolvesToTrue() {
         permissionService.setPermission(SUBJECT_ID, "example.node", PermissionValue.TRUE);
 
-        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(permissionService, SUBJECT_ID, "example.node"));
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.node"));
     }
 
     @Test
     void directFalseAssignmentResolvesToFalse() {
         permissionService.setPermission(SUBJECT_ID, "example.node", PermissionValue.FALSE);
 
-        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(permissionService, SUBJECT_ID, "example.node"));
+        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.node"));
     }
 
     @Test
     void unsetAssignmentResolvesToDefault() {
-        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(permissionService, SUBJECT_ID, "example.node"));
+        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.node"));
     }
 
     @Test
     void invalidNodeResolvesToDefault() {
-        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(permissionService, SUBJECT_ID, " "));
+        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, " "));
     }
 
     @Test
     void commandMutationPersistsAndResolvesThroughBridge(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
         PermissionService persistedPermissionService = PermissionServices.jsonFile(permissionsFile);
-        CommandDispatcher<TestSource> dispatcher = dispatcher(persistedPermissionService, temporaryDirectory);
+        GroupService persistedGroupService = GroupServices.jsonFile(groupsFile);
+        PermissionResolver persistedPermissionResolver = new PermissionResolver(persistedPermissionService, persistedGroupService);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(persistedPermissionService, persistedGroupService, persistedPermissionResolver, temporaryDirectory);
         TestSource console = TestSource.console();
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.smoke true", console));
         assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "example.smoke"));
-        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionService, SUBJECT_ID, "example.smoke"));
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.smoke"));
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.smoke false", console));
         assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "example.smoke"));
-        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(persistedPermissionService, SUBJECT_ID, "example.smoke"));
+        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.smoke"));
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " clear example.smoke", console));
         assertEquals(PermissionValue.UNSET, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "example.smoke"));
-        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(persistedPermissionService, SUBJECT_ID, "example.smoke"));
+        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.smoke"));
+
+        assertEquals(1, dispatcher.execute("clutchperms group admin create", console));
+        assertEquals(1, dispatcher.execute("clutchperms group admin set example.group true", console));
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " group add admin", console));
+        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("admin", "example.group"));
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.group"));
     }
 
     @Test
@@ -98,13 +117,13 @@ final class FabricRuntimePermissionBridgeTest {
         TestSource console = TestSource.console();
 
         PermissionServices.jsonFile(permissionsFile).setPermission(SUBJECT_ID, "Example.Reload", PermissionValue.TRUE);
-        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(environment.permissionService(), SUBJECT_ID, "example.reload"));
+        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.reload"));
 
         assertEquals(1, dispatcher.execute("clutchperms reload", console));
 
-        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionService(), SUBJECT_ID, "example.reload"));
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.reload"));
         assertEquals(1, environment.runtimeRefreshes());
-        assertEquals(List.of("Reloaded permissions and subjects from disk."), console.messages());
+        assertEquals(List.of("Reloaded permissions, subjects, and groups from disk."), console.messages());
     }
 
     @Test
@@ -121,13 +140,38 @@ final class FabricRuntimePermissionBridgeTest {
         CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
 
         assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
-        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionService(), SUBJECT_ID, "example.reload"));
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.reload"));
         assertEquals(0, environment.runtimeRefreshes());
         assertEquals(List.of(), console.messages());
     }
 
-    private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, Path storageDirectory) {
-        return dispatcher(new TestEnvironment(permissionService, storageDirectory));
+    @Test
+    void malformedGroupsFileFailsReloadWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws Exception {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
+        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
+        GroupService activeGroupService = GroupServices.jsonFile(groupsFile);
+        activeGroupService.createGroup("staff");
+        activeGroupService.setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
+        activeGroupService.addSubjectGroup(SUBJECT_ID, "staff");
+        TestEnvironment environment = new TestEnvironment(activePermissionService, activeGroupService, new PermissionResolver(activePermissionService, activeGroupService),
+                temporaryDirectory);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        Files.writeString(groupsFile, "{ malformed groups json", StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+
+        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.groupreload"));
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
+    }
+
+    private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, GroupService groupService, PermissionResolver permissionResolver,
+            Path storageDirectory) {
+        return dispatcher(new TestEnvironment(permissionService, groupService, permissionResolver, storageDirectory));
     }
 
     private static CommandDispatcher<TestSource> dispatcher(TestEnvironment environment) {
@@ -140,6 +184,10 @@ final class FabricRuntimePermissionBridgeTest {
 
         private PermissionService permissionService;
 
+        private GroupService groupService;
+
+        private PermissionResolver permissionResolver;
+
         private SubjectMetadataService subjectMetadataService = new InMemorySubjectMetadataService();
 
         private final Path storageDirectory;
@@ -147,13 +195,29 @@ final class FabricRuntimePermissionBridgeTest {
         private int runtimeRefreshes;
 
         private TestEnvironment(PermissionService permissionService, Path storageDirectory) {
+            this(permissionService, GroupServices.jsonFile(storageDirectory.resolve("groups.json")), null, storageDirectory);
+        }
+
+        private TestEnvironment(PermissionService permissionService, GroupService groupService, PermissionResolver permissionResolver, Path storageDirectory) {
             this.permissionService = permissionService;
+            this.groupService = groupService;
+            this.permissionResolver = permissionResolver == null ? new PermissionResolver(permissionService, groupService) : permissionResolver;
             this.storageDirectory = storageDirectory;
         }
 
         @Override
         public PermissionService permissionService() {
             return permissionService;
+        }
+
+        @Override
+        public GroupService groupService() {
+            return groupService;
+        }
+
+        @Override
+        public PermissionResolver permissionResolver() {
+            return permissionResolver;
         }
 
         @Override
@@ -164,13 +228,18 @@ final class FabricRuntimePermissionBridgeTest {
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
             return new CommandStatusDiagnostics(storageDirectory.resolve("permissions.json").toString(), storageDirectory.resolve("subjects.json").toString(),
-                    "test fabric bridge");
+                    storageDirectory.resolve("groups.json").toString(), "test fabric bridge");
         }
 
         @Override
         public void reloadStorage() {
-            permissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
-            subjectMetadataService = SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
+            PermissionService reloadedPermissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
+            SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
+            GroupService reloadedGroupService = GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
+            permissionService = reloadedPermissionService;
+            subjectMetadataService = reloadedSubjectMetadataService;
+            groupService = reloadedGroupService;
+            permissionResolver = new PermissionResolver(permissionService, groupService);
         }
 
         @Override

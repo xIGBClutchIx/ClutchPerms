@@ -17,8 +17,12 @@ import org.junit.jupiter.api.io.TempDir;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
+import me.clutchy.clutchperms.common.GroupService;
+import me.clutchy.clutchperms.common.GroupServices;
+import me.clutchy.clutchperms.common.InMemoryGroupService;
 import me.clutchy.clutchperms.common.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.InMemorySubjectMetadataService;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionValue;
@@ -44,6 +48,10 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
 
     private PermissionService permissionService;
 
+    private GroupService groupService;
+
+    private PermissionResolver permissionResolver;
+
     private PermissionNode<Boolean> booleanNode;
 
     private NeoForgeClutchPermsPermissionHandler handler;
@@ -51,8 +59,10 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
     @BeforeEach
     void setUp() {
         permissionService = new InMemoryPermissionService();
+        groupService = new InMemoryGroupService();
+        permissionResolver = new PermissionResolver(permissionService, groupService);
         booleanNode = new PermissionNode<>("example", "node", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.TRUE);
-        handler = new NeoForgeClutchPermsPermissionHandler(permissionService, List.of(booleanNode));
+        handler = new NeoForgeClutchPermsPermissionHandler(permissionResolver, List.of(booleanNode));
     }
 
     @Test
@@ -96,12 +106,13 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
 
     @Test
     void suppliedPermissionServiceCanBeReplacedAfterReload() {
-        AtomicReference<PermissionService> permissionServiceReference = new AtomicReference<>(permissionService);
-        NeoForgeClutchPermsPermissionHandler suppliedHandler = new NeoForgeClutchPermsPermissionHandler(permissionServiceReference::get, List.of(booleanNode));
+        AtomicReference<PermissionResolver> permissionResolverReference = new AtomicReference<>(permissionResolver);
+        NeoForgeClutchPermsPermissionHandler suppliedHandler = new NeoForgeClutchPermsPermissionHandler(permissionResolverReference::get, List.of(booleanNode));
         PermissionService reloadedPermissionService = new InMemoryPermissionService();
+        GroupService reloadedGroupService = new InMemoryGroupService();
 
         reloadedPermissionService.setPermission(SUBJECT_ID, "example.node", PermissionValue.FALSE);
-        permissionServiceReference.set(reloadedPermissionService);
+        permissionResolverReference.set(new PermissionResolver(reloadedPermissionService, reloadedGroupService));
 
         assertEquals(Boolean.FALSE, suppliedHandler.getOfflinePermission(SUBJECT_ID, booleanNode));
     }
@@ -109,11 +120,16 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
     @Test
     void commandMutationPersistsAndResolvesThroughPermissionHandler(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
         PermissionService persistedPermissionService = PermissionServices.jsonFile(permissionsFile);
+        GroupService persistedGroupService = GroupServices.jsonFile(groupsFile);
+        PermissionResolver persistedPermissionResolver = new PermissionResolver(persistedPermissionService, persistedGroupService);
         PermissionNode<Boolean> falseDefaultNode = new PermissionNode<>("example", "allow", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
         PermissionNode<Boolean> trueDefaultNode = new PermissionNode<>("example", "deny", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.TRUE);
-        NeoForgeClutchPermsPermissionHandler persistedHandler = new NeoForgeClutchPermsPermissionHandler(persistedPermissionService, List.of(falseDefaultNode, trueDefaultNode));
-        CommandDispatcher<TestSource> dispatcher = dispatcher(persistedPermissionService, temporaryDirectory);
+        PermissionNode<Boolean> groupNode = new PermissionNode<>("example", "group", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
+        NeoForgeClutchPermsPermissionHandler persistedHandler = new NeoForgeClutchPermsPermissionHandler(persistedPermissionResolver,
+                List.of(falseDefaultNode, trueDefaultNode, groupNode));
+        CommandDispatcher<TestSource> dispatcher = dispatcher(persistedPermissionService, persistedGroupService, persistedPermissionResolver, temporaryDirectory);
         TestSource console = TestSource.console();
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.allow true", console));
@@ -127,6 +143,12 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " clear example.deny", console));
         assertEquals(PermissionValue.UNSET, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "example.deny"));
         assertEquals(Boolean.TRUE, persistedHandler.getOfflinePermission(SUBJECT_ID, trueDefaultNode));
+
+        assertEquals(1, dispatcher.execute("clutchperms group admin create", console));
+        assertEquals(1, dispatcher.execute("clutchperms group admin set example.group true", console));
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " group add admin", console));
+        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("admin", "example.group"));
+        assertEquals(Boolean.TRUE, persistedHandler.getOfflinePermission(SUBJECT_ID, groupNode));
     }
 
     @Test
@@ -135,7 +157,7 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
         activePermissionService.setPermission(SUBJECT_ID, "example.node", PermissionValue.FALSE);
         TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
-        NeoForgeClutchPermsPermissionHandler suppliedHandler = new NeoForgeClutchPermsPermissionHandler(environment::permissionService, List.of(booleanNode));
+        NeoForgeClutchPermsPermissionHandler suppliedHandler = new NeoForgeClutchPermsPermissionHandler(environment::permissionResolver, List.of(booleanNode));
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
@@ -149,8 +171,35 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         assertEquals(List.of(), console.messages());
     }
 
-    private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, Path storageDirectory) {
-        return dispatcher(new TestEnvironment(permissionService, storageDirectory));
+    @Test
+    void malformedGroupsFileFailsReloadWithoutReplacingPermissionHandlerState(@TempDir Path temporaryDirectory) throws Exception {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
+        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
+        GroupService activeGroupService = GroupServices.jsonFile(groupsFile);
+        activeGroupService.createGroup("staff");
+        activeGroupService.setGroupPermission("staff", "example.groupreload", PermissionValue.TRUE);
+        activeGroupService.addSubjectGroup(SUBJECT_ID, "staff");
+        TestEnvironment environment = new TestEnvironment(activePermissionService, activeGroupService, new PermissionResolver(activePermissionService, activeGroupService),
+                temporaryDirectory);
+        PermissionNode<Boolean> groupReloadNode = new PermissionNode<>("example", "groupreload", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
+        NeoForgeClutchPermsPermissionHandler suppliedHandler = new NeoForgeClutchPermsPermissionHandler(environment::permissionResolver, List.of(groupReloadNode));
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        Files.writeString(groupsFile, "{ malformed groups json", StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+
+        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
+        assertEquals(Boolean.TRUE, suppliedHandler.getOfflinePermission(SUBJECT_ID, groupReloadNode));
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
+    }
+
+    private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, GroupService groupService, PermissionResolver permissionResolver,
+            Path storageDirectory) {
+        return dispatcher(new TestEnvironment(permissionService, groupService, permissionResolver, storageDirectory));
     }
 
     private static CommandDispatcher<TestSource> dispatcher(TestEnvironment environment) {
@@ -163,6 +212,10 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
 
         private PermissionService permissionService;
 
+        private GroupService groupService;
+
+        private PermissionResolver permissionResolver;
+
         private SubjectMetadataService subjectMetadataService = new InMemorySubjectMetadataService();
 
         private final Path storageDirectory;
@@ -170,13 +223,29 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         private int runtimeRefreshes;
 
         private TestEnvironment(PermissionService permissionService, Path storageDirectory) {
+            this(permissionService, GroupServices.jsonFile(storageDirectory.resolve("groups.json")), null, storageDirectory);
+        }
+
+        private TestEnvironment(PermissionService permissionService, GroupService groupService, PermissionResolver permissionResolver, Path storageDirectory) {
             this.permissionService = permissionService;
+            this.groupService = groupService;
+            this.permissionResolver = permissionResolver == null ? new PermissionResolver(permissionService, groupService) : permissionResolver;
             this.storageDirectory = storageDirectory;
         }
 
         @Override
         public PermissionService permissionService() {
             return permissionService;
+        }
+
+        @Override
+        public GroupService groupService() {
+            return groupService;
+        }
+
+        @Override
+        public PermissionResolver permissionResolver() {
+            return permissionResolver;
         }
 
         @Override
@@ -187,15 +256,18 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
             return new CommandStatusDiagnostics(storageDirectory.resolve("permissions.json").toString(), storageDirectory.resolve("subjects.json").toString(),
-                    "test neoforge bridge");
+                    storageDirectory.resolve("groups.json").toString(), "test neoforge bridge");
         }
 
         @Override
         public void reloadStorage() {
             PermissionService reloadedPermissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
             SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
+            GroupService reloadedGroupService = GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
             permissionService = reloadedPermissionService;
             subjectMetadataService = reloadedSubjectMetadataService;
+            groupService = reloadedGroupService;
+            permissionResolver = new PermissionResolver(permissionService, groupService);
         }
 
         @Override

@@ -5,6 +5,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
+import me.clutchy.clutchperms.common.GroupService;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
@@ -23,21 +25,32 @@ import net.minecraft.server.level.ServerPlayer;
 final class FabricClutchPermsCommand {
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
-            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader,
-            Runnable runtimePermissionRefresher) {
-        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, statusDiagnostics, storageReloader, runtimePermissionRefresher));
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionResolver> permissionResolver,
+            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable runtimePermissionRefresher) {
+        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionResolver, statusDiagnostics,
+                storageReloader, runtimePermissionRefresher));
     }
 
     private FabricClutchPermsCommand() {
     }
 
     private record FabricCommandEnvironment(Supplier<PermissionService> permissionServiceSupplier, Supplier<SubjectMetadataService> subjectMetadataServiceSupplier,
-            Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier, Runnable storageReloader,
-            Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
+            Supplier<GroupService> groupServiceSupplier, Supplier<PermissionResolver> permissionResolverSupplier, Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier,
+            Runnable storageReloader, Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
 
         @Override
         public PermissionService permissionService() {
             return permissionServiceSupplier.get();
+        }
+
+        @Override
+        public GroupService groupService() {
+            return groupServiceSupplier.get();
+        }
+
+        @Override
+        public PermissionResolver permissionResolver() {
+            return permissionResolverSupplier.get();
         }
 
         @Override

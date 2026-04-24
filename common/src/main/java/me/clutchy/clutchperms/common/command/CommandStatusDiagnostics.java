@@ -7,9 +7,10 @@ import java.util.Objects;
  *
  * @param permissionsFile path to the persisted direct permission assignments
  * @param subjectsFile path to the persisted subject metadata
+ * @param groupsFile path to the persisted group definitions and memberships
  * @param runtimeBridgeStatus platform runtime permission bridge status
  */
-public record CommandStatusDiagnostics(String permissionsFile, String subjectsFile, String runtimeBridgeStatus) {
+public record CommandStatusDiagnostics(String permissionsFile, String subjectsFile, String groupsFile, String runtimeBridgeStatus) {
 
     /**
      * Creates immutable command status diagnostics.
@@ -19,6 +20,7 @@ public record CommandStatusDiagnostics(String permissionsFile, String subjectsFi
     public CommandStatusDiagnostics {
         permissionsFile = requireNonBlank(permissionsFile, "permissionsFile");
         subjectsFile = requireNonBlank(subjectsFile, "subjectsFile");
+        groupsFile = requireNonBlank(groupsFile, "groupsFile");
         runtimeBridgeStatus = requireNonBlank(runtimeBridgeStatus, "runtimeBridgeStatus");
     }
 

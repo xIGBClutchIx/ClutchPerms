@@ -8,7 +8,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 import me.clutchy.clutchperms.common.PermissionNodes;
-import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionValue;
 
 import net.minecraft.network.chat.Component;
@@ -20,7 +20,7 @@ import net.minecraftforge.server.permission.nodes.PermissionNode;
 import net.minecraftforge.server.permission.nodes.PermissionTypes;
 
 /**
- * Forge permission handler that resolves registered Boolean permission nodes from persisted ClutchPerms direct assignments.
+ * Forge permission handler that resolves registered Boolean permission nodes from effective ClutchPerms assignments.
  */
 final class ForgeClutchPermsPermissionHandler implements IPermissionHandler {
 
@@ -28,16 +28,16 @@ final class ForgeClutchPermsPermissionHandler implements IPermissionHandler {
 
     static final PermissionNode<Boolean> ADMIN_NODE = createAdminNode();
 
-    private final Supplier<PermissionService> permissionServiceSupplier;
+    private final Supplier<PermissionResolver> permissionResolverSupplier;
 
     private final Set<PermissionNode<?>> registeredNodes;
 
-    ForgeClutchPermsPermissionHandler(PermissionService permissionService, Collection<PermissionNode<?>> registeredNodes) {
-        this(() -> permissionService, registeredNodes);
+    ForgeClutchPermsPermissionHandler(PermissionResolver permissionResolver, Collection<PermissionNode<?>> registeredNodes) {
+        this(() -> permissionResolver, registeredNodes);
     }
 
-    ForgeClutchPermsPermissionHandler(Supplier<PermissionService> permissionServiceSupplier, Collection<PermissionNode<?>> registeredNodes) {
-        this.permissionServiceSupplier = permissionServiceSupplier;
+    ForgeClutchPermsPermissionHandler(Supplier<PermissionResolver> permissionResolverSupplier, Collection<PermissionNode<?>> registeredNodes) {
+        this.permissionResolverSupplier = permissionResolverSupplier;
         this.registeredNodes = Collections.unmodifiableSet(new HashSet<>(registeredNodes));
     }
 
@@ -67,7 +67,7 @@ final class ForgeClutchPermsPermissionHandler implements IPermissionHandler {
             return defaultValue;
         }
 
-        PermissionValue value = permissionServiceSupplier.get().getPermission(subjectId, node.getNodeName());
+        PermissionValue value = permissionResolverSupplier.get().resolve(subjectId, node.getNodeName()).value();
         return switch (value) {
             case TRUE -> (T) Boolean.TRUE;
             case FALSE -> (T) Boolean.FALSE;

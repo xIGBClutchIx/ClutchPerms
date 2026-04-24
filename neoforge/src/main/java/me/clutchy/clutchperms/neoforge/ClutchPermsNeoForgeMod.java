@@ -8,6 +8,9 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 
+import me.clutchy.clutchperms.common.GroupService;
+import me.clutchy.clutchperms.common.GroupServices;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
@@ -50,6 +53,16 @@ public final class ClutchPermsNeoForgeMod {
     private static SubjectMetadataService subjectMetadataService;
 
     /**
+     * Active group service instance for the current NeoForge server lifecycle.
+     */
+    private static GroupService groupService;
+
+    /**
+     * Active effective permission resolver for the current NeoForge server lifecycle.
+     */
+    private static PermissionResolver permissionResolver;
+
+    /**
      * Permission assignment storage path for diagnostics.
      */
     private static Path permissionsFile;
@@ -60,11 +73,17 @@ public final class ClutchPermsNeoForgeMod {
     private static Path subjectsFile;
 
     /**
+     * Group storage path for diagnostics.
+     */
+    private static Path groupsFile;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the NeoForge lifecycle.
      */
     public ClutchPermsNeoForgeMod() {
         permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
         subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
+        groupsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("groups.json");
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -81,13 +100,15 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private void registerCommands(RegisterCommandsEvent event) {
-        event.getDispatcher().register(NeoForgeClutchPermsCommand.create(ClutchPermsNeoForgeMod::getPermissionService, ClutchPermsNeoForgeMod::getSubjectMetadataService,
-                ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage, ClutchPermsNeoForgeMod::refreshRuntimePermissions));
+        event.getDispatcher()
+                .register(NeoForgeClutchPermsCommand.create(ClutchPermsNeoForgeMod::getPermissionService, ClutchPermsNeoForgeMod::getSubjectMetadataService,
+                        ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics,
+                        ClutchPermsNeoForgeMod::reloadStorage, ClutchPermsNeoForgeMod::refreshRuntimePermissions));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
         event.addPermissionHandler(NeoForgeClutchPermsPermissionHandler.IDENTIFIER,
-                registeredNodes -> new NeoForgeClutchPermsPermissionHandler(ClutchPermsNeoForgeMod::getPermissionService, registeredNodes));
+                registeredNodes -> new NeoForgeClutchPermsPermissionHandler(ClutchPermsNeoForgeMod::getPermissionResolver, registeredNodes));
     }
 
     private void registerPermissionNodes(PermissionGatherEvent.Nodes event) {
@@ -115,6 +136,8 @@ public final class ClutchPermsNeoForgeMod {
     private void onServerStopped(ServerStoppedEvent event) {
         permissionService = null;
         subjectMetadataService = null;
+        groupService = null;
+        permissionResolver = null;
     }
 
     /**
@@ -138,13 +161,32 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     /**
+     * Returns the active group service instance.
+     *
+     * @return the service initialized during NeoForge bootstrap
+     */
+    public static GroupService getGroupService() {
+        return Objects.requireNonNull(groupService, "Group service has not been initialized");
+    }
+
+    /**
+     * Returns the active effective permission resolver.
+     *
+     * @return the resolver initialized during NeoForge bootstrap
+     */
+    public static PermissionResolver getPermissionResolver() {
+        return Objects.requireNonNull(permissionResolver, "Permission resolver has not been initialized");
+    }
+
+    /**
      * Returns status diagnostics for the shared command tree.
      *
      * @return active command status diagnostics
      */
     public static CommandStatusDiagnostics getStatusDiagnostics() {
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
-                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")), runtimeBridgeStatus());
+                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")),
+                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")), runtimeBridgeStatus());
     }
 
     /**
@@ -153,8 +195,11 @@ public final class ClutchPermsNeoForgeMod {
     public static void reloadStorage() {
         PermissionService reloadedPermissionService = PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
         SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
+        GroupService reloadedGroupService = GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
         permissionService = reloadedPermissionService;
         subjectMetadataService = reloadedSubjectMetadataService;
+        groupService = reloadedGroupService;
+        permissionResolver = new PermissionResolver(permissionService, groupService);
     }
 
     /**

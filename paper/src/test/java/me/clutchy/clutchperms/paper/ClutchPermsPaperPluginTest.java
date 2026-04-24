@@ -25,7 +25,10 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
+import me.clutchy.clutchperms.common.GroupService;
+import me.clutchy.clutchperms.common.GroupServices;
 import me.clutchy.clutchperms.common.PermissionNodes;
+import me.clutchy.clutchperms.common.PermissionResolver;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionValue;
@@ -107,6 +110,20 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms group storage and effective resolution are exposed through Paper's Bukkit-derived service registry.
+     */
+    @Test
+    void groupServicesAreRegistered() {
+        RegisteredServiceProvider<GroupService> groupRegistration = server.getServicesManager().getRegistration(GroupService.class);
+        RegisteredServiceProvider<PermissionResolver> resolverRegistration = server.getServicesManager().getRegistration(PermissionResolver.class);
+
+        assertNotNull(groupRegistration);
+        assertNotNull(resolverRegistration);
+        assertSame(plugin.getGroupService(), groupRegistration.getProvider());
+        assertSame(plugin.getPermissionResolver(), resolverRegistration.getProvider());
+    }
+
+    /**
      * Confirms player joins record lightweight subject metadata.
      */
     @Test
@@ -137,7 +154,9 @@ class ClutchPermsPaperPluginTest {
         assertEquals(Component.text("Permissions file: " + plugin.getDataFolder().toPath().resolve("permissions.json").toAbsolutePath().normalize()),
                 player.nextComponentMessage());
         assertEquals(Component.text("Subjects file: " + plugin.getDataFolder().toPath().resolve("subjects.json").toAbsolutePath().normalize()), player.nextComponentMessage());
+        assertEquals(Component.text("Groups file: " + plugin.getDataFolder().toPath().resolve("groups.json").toAbsolutePath().normalize()), player.nextComponentMessage());
         assertEquals(Component.text("Known subjects: 1"), player.nextComponentMessage());
+        assertEquals(Component.text("Known groups: 0"), player.nextComponentMessage());
         assertEquals(Component.text("Runtime bridge: Paper permission attachment bridge active with 1 attached players"), player.nextComponentMessage());
     }
 
@@ -154,6 +173,23 @@ class ClutchPermsPaperPluginTest {
 
         assertTrue(player.isPermissionSet("example.join"));
         assertTrue(player.hasPermission("example.join"));
+    }
+
+    /**
+     * Confirms persisted group permissions are applied when a matching player joins.
+     */
+    @Test
+    void storedGroupPermissionsApplyWhenMatchingPlayerJoins() {
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+        plugin.getGroupService().createGroup("staff");
+        plugin.getGroupService().setGroupPermission("staff", "Example.GroupJoin", PermissionValue.TRUE);
+        plugin.getGroupService().addSubjectGroup(targetId, "staff");
+        PlayerMock player = new PlayerMock(server, "Target", targetId);
+
+        server.addPlayer(player);
+
+        assertTrue(player.isPermissionSet("example.groupjoin"));
+        assertTrue(player.hasPermission("example.groupjoin"));
     }
 
     /**
@@ -177,6 +213,29 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms online players are refreshed immediately after group service mutations.
+     */
+    @Test
+    void onlinePlayerPermissionUpdatesAfterGroupMutation() {
+        PlayerMock player = server.addPlayer("Target");
+
+        plugin.getGroupService().createGroup("staff");
+        plugin.getGroupService().setGroupPermission("staff", "Example.GroupRuntime", PermissionValue.TRUE);
+        assertFalse(player.isPermissionSet("example.groupruntime"));
+
+        plugin.getGroupService().addSubjectGroup(player.getUniqueId(), "staff");
+        assertTrue(player.isPermissionSet("example.groupruntime"));
+        assertTrue(player.hasPermission("example.groupruntime"));
+
+        plugin.getGroupService().setGroupPermission("staff", "Example.GroupRuntime", PermissionValue.FALSE);
+        assertTrue(player.isPermissionSet("example.groupruntime"));
+        assertFalse(player.hasPermission("example.groupruntime"));
+
+        plugin.getGroupService().clearGroupPermission("staff", "Example.GroupRuntime");
+        assertFalse(player.isPermissionSet("example.groupruntime"));
+    }
+
+    /**
      * Confirms command mutations refresh the target player's Paper permissions.
      *
      * @throws Exception when Brigadier command execution fails unexpectedly
@@ -194,6 +253,27 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms Paper command authorization can come from an effective group permission.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void clutchPermsCommandAllowsGroupAdmin() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getGroupService().createGroup("staff");
+        plugin.getGroupService().setGroupPermission("staff", PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getGroupService().addSubjectGroup(admin.getUniqueId(), "staff");
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+
+        assertEquals(1, dispatcher.execute("clutchperms user Target set example.groupadmin true", new TestCommandSourceStack(admin)));
+
+        assertTrue(target.isPermissionSet("example.groupadmin"));
+        assertTrue(target.hasPermission("example.groupadmin"));
+    }
+
+    /**
      * Confirms command mutations persist to disk and refresh Paper runtime permissions end to end.
      *
      * @throws Exception when Brigadier command execution or storage reload fails unexpectedly
@@ -207,6 +287,7 @@ class ClutchPermsPaperPluginTest {
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
         Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
+        Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
 
         assertEquals(1, dispatcher.execute("clutchperms user Target set example.smoke true", adminSource));
         assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
@@ -222,6 +303,13 @@ class ClutchPermsPaperPluginTest {
         assertEquals(PermissionValue.UNSET, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
         assertFalse(target.isPermissionSet("example.smoke"));
         assertFalse(target.hasPermission("example.smoke"));
+
+        assertEquals(1, dispatcher.execute("clutchperms group admin create", adminSource));
+        assertEquals(1, dispatcher.execute("clutchperms group admin set example.group true", adminSource));
+        assertEquals(1, dispatcher.execute("clutchperms user Target group add admin", adminSource));
+        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("admin", "example.group"));
+        assertTrue(target.isPermissionSet("example.group"));
+        assertTrue(target.hasPermission("example.group"));
     }
 
     /**
@@ -239,22 +327,32 @@ class ClutchPermsPaperPluginTest {
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
         Path subjectsFile = plugin.getDataFolder().toPath().resolve("subjects.json");
+        Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
 
         PermissionServices.jsonFile(permissionsFile).setPermission(target.getUniqueId(), "Example.Reload", PermissionValue.TRUE);
         SubjectMetadataServices.jsonFile(subjectsFile).recordSubject(offlineId, "OfflineReload", Instant.parse("2026-04-24T12:00:00Z"));
+        GroupService groupStorage = GroupServices.jsonFile(groupsFile);
+        groupStorage.createGroup("staff");
+        groupStorage.setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
+        groupStorage.addSubjectGroup(target.getUniqueId(), "staff");
 
         assertEquals(PermissionValue.UNSET, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
         assertFalse(target.isPermissionSet("example.reload"));
+        assertFalse(target.isPermissionSet("example.groupreload"));
 
         assertEquals(1, dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
 
-        assertEquals(Component.text("Reloaded permissions and subjects from disk."), admin.nextComponentMessage());
+        assertEquals(Component.text("Reloaded permissions, subjects, and groups from disk."), admin.nextComponentMessage());
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
         assertTrue(target.isPermissionSet("example.reload"));
         assertTrue(target.hasPermission("example.reload"));
+        assertTrue(target.isPermissionSet("example.groupreload"));
+        assertTrue(target.hasPermission("example.groupreload"));
         assertEquals("OfflineReload", plugin.getSubjectMetadataService().getSubject(offlineId).orElseThrow().lastKnownName());
         assertSame(plugin.getPermissionService(), server.getServicesManager().getRegistration(PermissionService.class).getProvider());
         assertSame(plugin.getSubjectMetadataService(), server.getServicesManager().getRegistration(SubjectMetadataService.class).getProvider());
+        assertSame(plugin.getGroupService(), server.getServicesManager().getRegistration(GroupService.class).getProvider());
+        assertSame(plugin.getPermissionResolver(), server.getServicesManager().getRegistration(PermissionResolver.class).getProvider());
     }
 
     /**
@@ -270,6 +368,8 @@ class ClutchPermsPaperPluginTest {
         plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Reload", PermissionValue.TRUE);
         PermissionService activePermissionService = plugin.getPermissionService();
         SubjectMetadataService activeSubjectMetadataService = plugin.getSubjectMetadataService();
+        GroupService activeGroupService = plugin.getGroupService();
+        PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
@@ -280,10 +380,44 @@ class ClutchPermsPaperPluginTest {
 
         assertSame(activePermissionService, plugin.getPermissionService());
         assertSame(activeSubjectMetadataService, plugin.getSubjectMetadataService());
+        assertSame(activeGroupService, plugin.getGroupService());
+        assertSame(activePermissionResolver, plugin.getPermissionResolver());
         assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
+        assertSame(activeGroupService, server.getServicesManager().getRegistration(GroupService.class).getProvider());
+        assertSame(activePermissionResolver, server.getServicesManager().getRegistration(PermissionResolver.class).getProvider());
         assertTrue(target.isPermissionSet("example.reload"));
         assertTrue(target.hasPermission("example.reload"));
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
+    }
+
+    /**
+     * Confirms a malformed groups file fails reload without replacing active Paper runtime state.
+     *
+     * @throws Exception when file setup fails unexpectedly
+     */
+    @Test
+    void malformedGroupsFileFailsReloadWithoutReplacingRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getGroupService().createGroup("staff");
+        plugin.getGroupService().setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
+        plugin.getGroupService().addSubjectGroup(target.getUniqueId(), "staff");
+        GroupService activeGroupService = plugin.getGroupService();
+        PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
+
+        Files.writeString(groupsFile, "{ malformed groups json", StandardCharsets.UTF_8);
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
+
+        assertSame(activeGroupService, plugin.getGroupService());
+        assertSame(activePermissionResolver, plugin.getPermissionResolver());
+        assertSame(activeGroupService, server.getServicesManager().getRegistration(GroupService.class).getProvider());
+        assertTrue(target.isPermissionSet("example.groupreload"));
+        assertTrue(target.hasPermission("example.groupreload"));
     }
 
     /**
