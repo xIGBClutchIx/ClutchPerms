@@ -25,16 +25,16 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
-import me.clutchy.clutchperms.common.GroupService;
-import me.clutchy.clutchperms.common.GroupServices;
-import me.clutchy.clutchperms.common.PermissionNodes;
-import me.clutchy.clutchperms.common.PermissionResolver;
-import me.clutchy.clutchperms.common.PermissionService;
-import me.clutchy.clutchperms.common.PermissionServices;
-import me.clutchy.clutchperms.common.PermissionValue;
-import me.clutchy.clutchperms.common.SubjectMetadata;
-import me.clutchy.clutchperms.common.SubjectMetadataService;
-import me.clutchy.clutchperms.common.SubjectMetadataServices;
+import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.group.GroupServices;
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionServices;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.subject.SubjectMetadata;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

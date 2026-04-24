@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.storage;
 
 /**
  * Signals that permission data could not be loaded from or saved to persistent storage.

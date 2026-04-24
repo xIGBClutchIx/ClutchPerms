@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.group;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -23,6 +23,10 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 
 /**
  * JSON-backed {@link GroupService} that persists basic group definitions and direct subject memberships after every mutation.
@@ -221,7 +225,7 @@ final class JsonFileGroupService implements GroupService {
     private static Map<String, PermissionValue> parseGroupPermissions(String groupName, JsonObject permissionsElement) {
         Map<String, PermissionValue> permissions = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> permissionEntry : permissionsElement.entrySet()) {
-            String normalizedNode = InMemoryPermissionService.normalizeNode(permissionEntry.getKey());
+            String normalizedNode = PermissionNodes.normalize(permissionEntry.getKey());
             permissions.put(normalizedNode, parsePermissionValue(groupName, normalizedNode, permissionEntry.getValue()));
         }
         return permissions;

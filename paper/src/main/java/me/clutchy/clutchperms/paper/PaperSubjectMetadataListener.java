@@ -10,7 +10,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 
-import me.clutchy.clutchperms.common.SubjectMetadataService;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 /**
  * Records lightweight subject metadata from Paper player lifecycle events.

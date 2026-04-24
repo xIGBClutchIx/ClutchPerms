@@ -15,6 +15,12 @@
   - pure Java shared code
   - no Bukkit, Paper, Fabric, NeoForge, Forge, or Minecraft dependencies
   - owns the public permission model for now
+  - organizes shared code by domain:
+    - `common.permission` for direct permission storage, node normalization, effective resolution, and permission observers
+    - `common.group` for group definitions, group permissions, memberships, and group observers
+    - `common.subject` for last-known subject metadata
+    - `common.storage` for shared storage exceptions
+    - `common.command` for the shared Brigadier command tree and command language
 - `paper`
   - Paper server plugin
   - compiles against Paper API
@@ -37,16 +43,16 @@
 
 ## Current Functional Scope
 - Shared public API:
-  - `PermissionService`
-  - `PermissionValue`
-  - `PermissionNodes`
-  - `PermissionChangeListener`
-  - `GroupService`
-  - `GroupChangeListener`
-  - `PermissionResolver`
-  - `PermissionResolution`
-  - `SubjectMetadata`
-  - `SubjectMetadataService`
+  - `common.permission.PermissionService`
+  - `common.permission.PermissionValue`
+  - `common.permission.PermissionNodes`
+  - `common.permission.PermissionChangeListener`
+  - `common.permission.PermissionResolver`
+  - `common.permission.PermissionResolution`
+  - `common.group.GroupService`
+  - `common.group.GroupChangeListener`
+  - `common.subject.SubjectMetadata`
+  - `common.subject.SubjectMetadataService`
 - Shared command API:
   - `ClutchPermsCommands`
   - `ClutchPermsCommandEnvironment`

@@ -3,7 +3,7 @@ package me.clutchy.clutchperms.common.command;
 import java.util.List;
 import java.util.Locale;
 
-import me.clutchy.clutchperms.common.PermissionValue;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
 
 /**
  * Centralizes shared command feedback text so every platform adapter reports the same messages.

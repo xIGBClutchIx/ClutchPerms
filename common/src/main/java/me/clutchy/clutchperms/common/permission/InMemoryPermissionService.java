@@ -1,8 +1,7 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.permission;
 
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -113,11 +112,7 @@ public final class InMemoryPermissionService implements PermissionService {
      * @throws IllegalArgumentException if the normalized node is blank
      */
     static String normalizeNode(String node) {
-        String normalizedNode = Objects.requireNonNull(node, "node").trim().toLowerCase(Locale.ROOT);
-        if (normalizedNode.isEmpty()) {
-            throw new IllegalArgumentException("node must not be blank");
-        }
-        return normalizedNode;
+        return PermissionNodes.normalize(node);
     }
 
     Map<UUID, Map<String, PermissionValue>> snapshot() {

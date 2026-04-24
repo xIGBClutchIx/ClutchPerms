@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.permission;
 
 /**
  * Describes the effective permission value for one subject and node.

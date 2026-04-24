@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.permission;
 
 import java.util.UUID;
 

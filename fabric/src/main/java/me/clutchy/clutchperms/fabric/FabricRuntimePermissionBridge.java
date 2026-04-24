@@ -4,8 +4,8 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
-import me.clutchy.clutchperms.common.PermissionResolver;
-import me.clutchy.clutchperms.common.PermissionValue;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.lucko.fabric.api.permissions.v0.OfflinePermissionCheckEvent;
 import me.lucko.fabric.api.permissions.v0.PermissionCheckEvent;
 

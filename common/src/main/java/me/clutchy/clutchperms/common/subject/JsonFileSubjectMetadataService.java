@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.subject;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -23,6 +23,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+
+import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 
 /**
  * JSON-backed subject metadata service that persists the latest known subject name and last-seen time.

@@ -7,9 +7,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-import me.clutchy.clutchperms.common.PermissionNodes;
-import me.clutchy.clutchperms.common.PermissionResolver;
-import me.clutchy.clutchperms.common.PermissionValue;
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;

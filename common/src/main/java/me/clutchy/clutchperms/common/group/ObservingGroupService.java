@@ -1,9 +1,11 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.group;
 
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+
+import me.clutchy.clutchperms.common.permission.PermissionValue;
 
 /**
  * {@link GroupService} decorator that reports successful group and membership mutations.

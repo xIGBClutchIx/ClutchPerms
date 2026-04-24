@@ -4,10 +4,10 @@ import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
-import me.clutchy.clutchperms.common.GroupService;
-import me.clutchy.clutchperms.common.PermissionResolver;
-import me.clutchy.clutchperms.common.PermissionService;
-import me.clutchy.clutchperms.common.SubjectMetadataService;
+import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 /**
  * Adapts platform-specific Brigadier command sources to the shared ClutchPerms command tree.

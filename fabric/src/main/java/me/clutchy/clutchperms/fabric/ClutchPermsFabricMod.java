@@ -7,15 +7,15 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import me.clutchy.clutchperms.common.GroupService;
-import me.clutchy.clutchperms.common.GroupServices;
-import me.clutchy.clutchperms.common.PermissionResolver;
-import me.clutchy.clutchperms.common.PermissionService;
-import me.clutchy.clutchperms.common.PermissionServices;
-import me.clutchy.clutchperms.common.PermissionStorageException;
-import me.clutchy.clutchperms.common.SubjectMetadataService;
-import me.clutchy.clutchperms.common.SubjectMetadataServices;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
+import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.group.GroupServices;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionServices;
+import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;

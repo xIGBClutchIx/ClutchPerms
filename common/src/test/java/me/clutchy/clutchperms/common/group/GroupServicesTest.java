@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.group;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,6 +11,13 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import me.clutchy.clutchperms.common.permission.InMemoryPermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionResolution;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

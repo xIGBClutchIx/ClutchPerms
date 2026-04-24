@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.permission;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -20,6 +20,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+
+import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 
 /**
  * JSON-backed permission service that persists direct subject permission assignments after every mutation.
@@ -184,7 +186,7 @@ final class JsonFilePermissionService implements PermissionService {
     private static Map<String, PermissionValue> parseSubjectPermissions(String subjectId, JsonObject subjectPermissionsElement) {
         Map<String, PermissionValue> subjectPermissions = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> permissionEntry : subjectPermissionsElement.entrySet()) {
-            String normalizedNode = InMemoryPermissionService.normalizeNode(permissionEntry.getKey());
+            String normalizedNode = PermissionNodes.normalize(permissionEntry.getKey());
             PermissionValue value = parsePermissionValue(subjectId, normalizedNode, permissionEntry.getValue());
             subjectPermissions.put(normalizedNode, value);
         }

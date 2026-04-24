@@ -26,11 +26,11 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 
-import me.clutchy.clutchperms.common.GroupService;
-import me.clutchy.clutchperms.common.PermissionNodes;
-import me.clutchy.clutchperms.common.PermissionResolution;
-import me.clutchy.clutchperms.common.PermissionValue;
-import me.clutchy.clutchperms.common.SubjectMetadata;
+import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
+import me.clutchy.clutchperms.common.permission.PermissionResolution;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.subject.SubjectMetadata;
 
 /**
  * Builds the shared Brigadier command tree for ClutchPerms platform adapters.

@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.permission;
 
 import java.util.Map;
 import java.util.Objects;
@@ -6,6 +6,8 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
+
+import me.clutchy.clutchperms.common.group.GroupService;
 
 /**
  * Resolves effective permissions from direct user assignments, explicit groups, and the implicit default group.

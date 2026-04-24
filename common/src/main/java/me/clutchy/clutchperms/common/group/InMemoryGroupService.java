@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.group;
 
 import java.util.Collections;
 import java.util.Comparator;
@@ -11,6 +11,9 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
 
 /**
  * Thread-safe in-memory {@link GroupService} implementation for basic groups and direct subject memberships.
@@ -82,7 +85,7 @@ public final class InMemoryGroupService implements GroupService {
     @Override
     public PermissionValue getGroupPermission(String groupName, String node) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
-        String normalizedNode = InMemoryPermissionService.normalizeNode(node);
+        String normalizedNode = PermissionNodes.normalize(node);
         return groupPermissions.get(normalizedGroupName).getOrDefault(normalizedNode, PermissionValue.UNSET);
     }
 
@@ -106,7 +109,7 @@ public final class InMemoryGroupService implements GroupService {
     public void setGroupPermission(String groupName, String node, PermissionValue value) {
         Objects.requireNonNull(value, "value");
         String normalizedGroupName = normalizeExistingGroupName(groupName);
-        String normalizedNode = InMemoryPermissionService.normalizeNode(node);
+        String normalizedNode = PermissionNodes.normalize(node);
         if (value == PermissionValue.UNSET) {
             clearGroupPermission(normalizedGroupName, normalizedNode);
             return;
@@ -120,7 +123,7 @@ public final class InMemoryGroupService implements GroupService {
     @Override
     public void clearGroupPermission(String groupName, String node) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
-        String normalizedNode = InMemoryPermissionService.normalizeNode(node);
+        String normalizedNode = PermissionNodes.normalize(node);
         groupPermissions.get(normalizedGroupName).remove(normalizedNode);
     }
 

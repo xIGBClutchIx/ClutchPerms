@@ -1,8 +1,10 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.group;
 
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
+import me.clutchy.clutchperms.common.permission.PermissionValue;
 
 /**
  * Stores basic named permission groups and direct subject memberships.

@@ -1,4 +1,4 @@
-package me.clutchy.clutchperms.common;
+package me.clutchy.clutchperms.common.subject;
 
 import java.time.Instant;
 import java.util.Collections;

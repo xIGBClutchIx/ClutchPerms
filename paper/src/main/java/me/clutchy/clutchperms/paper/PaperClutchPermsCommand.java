@@ -11,15 +11,15 @@ import org.bukkit.entity.Player;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
-import me.clutchy.clutchperms.common.GroupService;
-import me.clutchy.clutchperms.common.PermissionResolver;
-import me.clutchy.clutchperms.common.PermissionService;
-import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
+import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 /**
  * Adapts Paper command sources to the shared ClutchPerms Brigadier command tree.

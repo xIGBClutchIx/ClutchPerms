@@ -22,32 +22,39 @@ This is not a production-ready permissions plugin yet. It is the bootstrap layer
 ### `common`
 Shared Java library with no Paper, Bukkit, Fabric, or Minecraft dependencies.
 
+Package layout:
+- `common.permission` owns direct and effective permission APIs, node normalization, JSON-backed direct permission storage, observing wrappers, and effective resolution
+- `common.group` owns basic group APIs, group JSON storage, membership storage, and group mutation notifications
+- `common.subject` owns lightweight subject metadata APIs and JSON storage
+- `common.storage` owns shared persistence failure types
+- `common.command` owns the shared Brigadier `/clutchperms` command tree, command language, and thin platform adapter contract
+
 Current public types:
-- `PermissionValue`
+- `common.permission.PermissionValue`
   - `TRUE`
   - `FALSE`
   - `UNSET`
-- `PermissionService`
+- `common.permission.PermissionService`
   - `PermissionValue getPermission(UUID subjectId, String node)`
   - `Map<String, PermissionValue> getPermissions(UUID subjectId)`
   - `boolean hasPermission(UUID subjectId, String node)`
   - `void setPermission(UUID subjectId, String node, PermissionValue value)`
   - `void clearPermission(UUID subjectId, String node)`
-- `PermissionNodes`
+- `common.permission.PermissionNodes`
   - currently exposes `clutchperms.admin`
-- `PermissionChangeListener`
+- `common.permission.PermissionChangeListener`
   - receives subject-level mutation notifications from observing permission services
-- `GroupService`
-  - stores named groups, group permissions, and direct subject memberships
-- `GroupChangeListener`
-  - receives group-level refresh notifications from observing group services
-- `PermissionResolver`
+- `common.permission.PermissionResolver`
   - resolves effective permissions from direct assignments, explicit groups, and the implicit `default` group
-- `PermissionResolution`
+- `common.permission.PermissionResolution`
   - describes an effective value and whether it came from direct, group, default, or unset state
-- `SubjectMetadata`
+- `common.group.GroupService`
+  - stores named groups, group permissions, and direct subject memberships
+- `common.group.GroupChangeListener`
+  - receives group-level refresh notifications from observing group services
+- `common.subject.SubjectMetadata`
   - records a subject UUID, last known name, and last seen timestamp
-- `SubjectMetadataService`
+- `common.subject.SubjectMetadataService`
   - stores lightweight subject metadata keyed by UUID
 - `common.command`
   - builds the shared Brigadier `/clutchperms` command tree

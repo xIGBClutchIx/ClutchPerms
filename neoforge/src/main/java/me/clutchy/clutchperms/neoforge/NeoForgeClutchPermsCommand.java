@@ -5,15 +5,15 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-import me.clutchy.clutchperms.common.GroupService;
-import me.clutchy.clutchperms.common.PermissionResolver;
-import me.clutchy.clutchperms.common.PermissionService;
-import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
+import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;

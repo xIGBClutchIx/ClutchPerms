@@ -16,16 +16,16 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestion;
 
-import me.clutchy.clutchperms.common.GroupService;
-import me.clutchy.clutchperms.common.InMemoryGroupService;
-import me.clutchy.clutchperms.common.InMemoryPermissionService;
-import me.clutchy.clutchperms.common.InMemorySubjectMetadataService;
-import me.clutchy.clutchperms.common.PermissionNodes;
-import me.clutchy.clutchperms.common.PermissionResolver;
-import me.clutchy.clutchperms.common.PermissionService;
-import me.clutchy.clutchperms.common.PermissionStorageException;
-import me.clutchy.clutchperms.common.PermissionValue;
-import me.clutchy.clutchperms.common.SubjectMetadataService;
+import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.group.InMemoryGroupService;
+import me.clutchy.clutchperms.common.permission.InMemoryPermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
+import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.subject.InMemorySubjectMetadataService;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
