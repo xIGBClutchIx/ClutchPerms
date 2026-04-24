@@ -41,6 +41,11 @@ dependencies {
     add("jarJar", commonProject)
 }
 
+sourceSets.test {
+    compileClasspath += sourceSets.main.get().compileClasspath
+    runtimeClasspath += sourceSets.main.get().runtimeClasspath
+}
+
 tasks.processResources {
     val replaceProperties =
         mapOf(

@@ -239,6 +239,38 @@ Behavior:
 - players must have the persisted `clutchperms.admin` node set to `TRUE`
 - non-player/non-console sources are denied where the platform adapter can distinguish them
 
+## Forge And NeoForge Runtime Bridge Activation
+
+Forge and NeoForge allow only one active permission handler. ClutchPerms registers its handler as `clutchperms:direct`, but the platform server config must select it before other mods will resolve permissions through ClutchPerms.
+
+Without this setting:
+- `/clutchperms` commands still work
+- JSON permission storage still works
+- the ClutchPerms handler is registered but inactive
+- platform permission checks keep using the default Forge or NeoForge handler
+
+After the server has generated its platform server config, set the permission handler and restart the server.
+
+For NeoForge, set `permissionHandler` to `clutchperms:direct`:
+
+```toml
+permissionHandler = "clutchperms:direct"
+```
+
+For Forge, set `server.permissionHandler` to `clutchperms:direct`:
+
+```toml
+[server]
+permissionHandler = "clutchperms:direct"
+```
+
+On dedicated servers, these server config files are typically generated under the world `serverconfig` directory. To make the setting apply to newly created worlds, place the same value in the matching file under `defaultconfigs`.
+
+When active, Forge and NeoForge permission checks for registered Boolean `PermissionNode`s resolve as:
+- persisted `TRUE` -> `true`
+- persisted `FALSE` -> `false`
+- `UNSET` -> the permission node's platform default resolver
+
 ## Permission Data
 
 The current persisted data model stores only direct permission assignments:
@@ -282,13 +314,23 @@ Example:
 - join-time and live runtime permission attachment refresh behavior
 
 ### Fabric
-There are currently no Fabric runtime tests. The fabric-permissions-api provider bridge is verified through compile/build checks only.
+`fabric` has smoke tests for the fabric-permissions-api provider bridge:
+- direct `TRUE`, `FALSE`, and `UNSET` mapping to Fabric `TriState`
+- invalid node fallback to `TriState.DEFAULT`
 
 ### NeoForge
-There are currently no NeoForge runtime tests. The native permission handler bridge is verified through compile/build checks only.
+`neoforge` has smoke tests for the native permission handler bridge:
+- handler identity and registered-node exposure
+- direct `TRUE`, `FALSE`, and `UNSET` behavior for Boolean permission nodes
+- non-Boolean node fallback to the platform node default
+- `clutchperms.admin` Boolean node registration
 
 ### Forge
-There are currently no Forge runtime tests. The native permission handler bridge is verified through compile/build checks only.
+`forge` has smoke tests for the native permission handler bridge:
+- handler identity and registered-node exposure
+- direct `TRUE`, `FALSE`, and `UNSET` behavior for Boolean permission nodes
+- non-Boolean node fallback to the platform node default
+- `clutchperms.admin` Boolean node registration
 
 ## Architecture Notes
 - `common` is the source of truth for permission abstractions.
@@ -312,11 +354,11 @@ There are currently no Forge runtime tests. The native permission handler bridge
 - Forge runtime enforcement only affects registered Boolean `PermissionNode`s and requires the active permission handler config to be `clutchperms:direct`
 - No LuckPerms bridge or migration path yet
 - No cross-platform transport or synchronization
-- No Fabric gameplay/runtime test suite yet
+- No full gameplay/runtime test suite yet for Fabric, NeoForge, or Forge
 
 ## Near-Term Extension Points
 Good next steps from this base:
-- add runtime bridge smoke tests or lightweight game-test coverage for Fabric, NeoForge, and Forge
+- add lightweight game-test coverage for Fabric, NeoForge, and Forge
 - add safer command ergonomics such as tab-completed permission nodes and clearer error messages
 - define a cross-platform data model for users, groups, and inheritance
 - add Fabric integration tests or a lighter server-level verification strategy

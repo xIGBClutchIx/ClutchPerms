@@ -39,7 +39,7 @@ final class FabricRuntimePermissionBridge {
         return resolve(permissionService, player.getUUID(), permission);
     }
 
-    private static TriState resolve(PermissionService permissionService, UUID subjectId, String permission) {
+    static TriState resolve(PermissionService permissionService, UUID subjectId, String permission) {
         PermissionValue value;
         try {
             value = permissionService.getPermission(subjectId, permission);

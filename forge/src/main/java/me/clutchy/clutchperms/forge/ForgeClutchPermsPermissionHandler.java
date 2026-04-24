@@ -57,7 +57,7 @@ final class ForgeClutchPermsPermissionHandler implements IPermissionHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private <T> T resolve(UUID subjectId, PermissionNode<T> node, T defaultValue) {
+    <T> T resolve(UUID subjectId, PermissionNode<T> node, T defaultValue) {
         if (node.getType() != PermissionTypes.BOOLEAN) {
             return defaultValue;
         }

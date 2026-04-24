@@ -165,11 +165,11 @@
   - `paper`
     - MockBukkit tests for plugin boot, service registration, the Paper command adapter, and runtime permission attachment refresh behavior
   - `fabric`
-    - no runtime tests yet; fabric-permissions-api provider bridge is compile/build verified
+    - smoke tests for fabric-permissions-api provider bridge value mapping
   - `neoforge`
-    - no runtime tests yet; native permission handler bridge is compile/build verified
+    - smoke tests for native permission handler bridge value mapping and node registration
   - `forge`
-    - no runtime tests yet; native permission handler bridge is compile/build verified
+    - smoke tests for native permission handler bridge value mapping and node registration
 
 ## Coding Guidelines
 - Keep shared logic in `common` whenever it is not inherently platform-specific.
