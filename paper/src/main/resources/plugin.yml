@@ -1,7 +1,7 @@
 name: ClutchPerms
 version: ${version}
 main: me.clutchy.clutchperms.paper.ClutchPermsPaperPlugin
-description: Shared permission scaffolding for Paper and Spigot.
+description: Shared permission scaffolding for Paper.
 api-version: "26.1.2"
 commands:
   clutchperms:

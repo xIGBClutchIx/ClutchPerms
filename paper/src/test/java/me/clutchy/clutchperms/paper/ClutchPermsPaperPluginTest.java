@@ -61,7 +61,7 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
-     * Confirms that the shared permission service is exposed through Bukkit's service registry.
+     * Confirms that the shared permission service is exposed through Paper's Bukkit-derived service registry.
      */
     @Test
     void permissionServiceIsRegistered() {

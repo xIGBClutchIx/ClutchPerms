@@ -7,7 +7,7 @@ modId="clutchperms"
 version="${version}"
 displayName="ClutchPerms"
 description='''
-Shared permission scaffolding for Paper/Spigot, Fabric, NeoForge, and Forge.
+Shared permission scaffolding for Paper, Fabric, NeoForge, and Forge.
 '''
 
 [[dependencies.clutchperms]]

@@ -1,11 +1,11 @@
 # AGENTS.md
 
 ## Purpose
-- `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper/Spigot, Fabric, NeoForge, and Forge.
+- `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper, Fabric, NeoForge, and Forge.
 - The current state is an early persisted prototype, not a finished permission platform.
 - The repo currently provides:
   - a shared `common` module with a minimal permission API, in-memory implementation, and JSON-backed persistence factory
-  - a `paper` plugin module with a diagnostic `/clutchperms` command and Bukkit service registration
+  - a `paper` plugin module with a diagnostic `/clutchperms` command and Paper service registration
   - a `fabric` mod module with a diagnostic `/clutchperms` command and the same shared service
   - a `neoforge` mod module with a diagnostic `/clutchperms` command and the same shared service
   - a `forge` mod module with a diagnostic `/clutchperms` command and the same shared service
@@ -16,10 +16,11 @@
   - no Bukkit, Paper, Fabric, NeoForge, Forge, or Minecraft dependencies
   - owns the public permission model for now
 - `paper`
-  - Bukkit-safe server plugin
+  - Paper server plugin
   - compiles against Paper API
   - embeds `common` classes directly into the produced jar
   - uses `plugin.yml`, not `paper-plugin.yml`
+  - may use Paper-only APIs; Spigot compatibility is not a project goal
 - `fabric`
   - Fabric mod built with Loom
   - bundles `common` as a nested jar via `include(project(":common"))`
@@ -100,7 +101,7 @@
 - Important:
   - MockBukkit does not currently align with the Paper `26.1.2` alpha API line.
   - The `paper` module compiles against the newer Paper API but tests against the MockBukkit-compatible Paper line.
-  - Keep the Paper module Bukkit-safe so this mismatch stays manageable.
+  - Paper-only APIs are allowed in production code, but tests may need thin adapters or compile/build coverage when MockBukkit lags behind the current Paper API.
 
 ## Commands
 - Full verification:
@@ -157,8 +158,8 @@
 - Avoid introducing Bukkit or Fabric types into `common`.
 - Preserve the current public surface in `common` unless the change clearly requires API expansion.
 - Prefer small additive changes over premature abstractions.
-- Keep the Paper module Bukkit-safe unless there is an explicit decision to use Paper-only APIs.
-- If you need Paper-only behavior later, isolate it clearly so Spigot compatibility is not accidentally broken.
+- The Paper module is Paper-only; do not preserve Spigot compatibility unless explicitly requested.
+- Keep Paper-only behavior isolated in thin platform adapters where practical so shared behavior remains testable in `common`.
 - For Fabric, keep the initial scope server-side unless client behavior is intentionally introduced.
 - For NeoForge, keep the initial scope server-side unless client behavior is intentionally introduced.
 - For Forge, keep the initial scope server-side unless client behavior is intentionally introduced.
@@ -208,6 +209,7 @@
   - NeoForge or ModDevGradle bumps may require metadata, Java toolchain, or Gradle wrapper changes.
   - Forge or ForgeGradle bumps may require metadata, Java toolchain, or Gradle wrapper changes.
 - If tests fail in `paper` during MockBukkit bootstrap, check the Paper API line used in test scope before changing production code.
+- If a Paper-only API is not covered by MockBukkit yet, prefer a small adapter plus shared tests over moving platform types into `common`.
 - If you add commands or permissions on Paper, update both:
   - `plugin.yml`
   - MockBukkit tests

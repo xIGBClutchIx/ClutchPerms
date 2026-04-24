@@ -1,16 +1,16 @@
 # ClutchPerms
 
-`ClutchPerms` is a multi-framework Java scaffold for a future permission system that aims to behave consistently across Paper/Spigot, Fabric, NeoForge, and Forge.
+`ClutchPerms` is a multi-framework Java scaffold for a future permission system that aims to behave consistently across Paper, Fabric, NeoForge, and Forge.
 
 The current repository is intentionally small. It establishes the build, module boundaries, packaging strategy, and the first shared permission API so future work can grow from a clean base instead of mixing platform concerns too early.
 
 ## Current Status
 - Multi-project Gradle build using Kotlin DSL
 - Shared `common` module for platform-agnostic permission logic
-- `paper` plugin module with Bukkit service registration and a diagnostic command
-- `fabric` mod module with the same in-memory service and a diagnostic command
-- `neoforge` mod module with the same in-memory service and a diagnostic command
-- `forge` mod module with the same in-memory service and a diagnostic command
+- `paper` plugin module with Paper service registration and a diagnostic command
+- `fabric` mod module with the same persisted service and a diagnostic command
+- `neoforge` mod module with the same persisted service and a diagnostic command
+- `forge` mod module with the same persisted service and a diagnostic command
 - JUnit coverage for the shared service
 - MockBukkit coverage for the Paper bootstrap path
 
@@ -47,13 +47,13 @@ Current implementation:
   - fails startup on malformed or unsupported permission data
 
 ### `paper`
-Bukkit-safe plugin module.
+Paper plugin module.
 
 Current behavior:
 - compiles against the Paper API
-- avoids Paper-only APIs so the code stays Spigot-safe
+- may use Paper-only APIs; Spigot compatibility is not a project goal
 - creates a JSON-backed permission service on plugin enable
-- registers the shared service in Bukkit `ServicesManager`
+- registers the shared service through Paper's Bukkit-derived `ServicesManager`
 - registers `/clutchperms`
 - replies with a simple diagnostic message
 - stores direct permission assignments in the plugin data folder at `permissions.json`
@@ -123,7 +123,7 @@ Paper tests use MockBukkit:
 - MockBukkit: `4.108.0`
 - test Paper API line: `1.21.11-R0.1-SNAPSHOT`
 
-That mismatch is intentional. The production Paper module is compiled against the newer API line, but MockBukkit currently supports the older `1.21.11` Paper line. The Paper module is deliberately kept Bukkit-safe so this split stays practical.
+That mismatch is intentional. The production Paper module is compiled against the newer API line, but MockBukkit currently supports the older `1.21.11` Paper line. Paper-only APIs are allowed in production code, but tests may need thin adapters or compile/build coverage when MockBukkit lags behind the current Paper API.
 
 ## Getting Started
 
@@ -200,7 +200,7 @@ The Forge jar includes the shared `common` classes directly.
 
 ## Commands And Behavior
 
-### Paper / Spigot
+### Paper
 `/clutchperms`
 - requires `clutchperms.admin`
 - currently returns a diagnostic message indicating that the persisted permission service is active
@@ -255,7 +255,7 @@ Example:
 ### Paper
 `paper` has MockBukkit tests for:
 - plugin enable
-- Bukkit service registration
+- Paper service registration through the Bukkit-derived service API
 - command registration and command response
 
 ### Fabric
@@ -271,7 +271,7 @@ There are currently no Forge runtime tests. The module is verified through compi
 - `common` is the source of truth for permission abstractions.
 - Platform modules should adapt to `common`, not redefine their own permission models.
 - Shared behavior should move into `common` unless it depends on platform-specific APIs.
-- Paper stays Bukkit-safe for now.
+- Paper is a Paper-only target; Spigot compatibility is not maintained.
 - Fabric is server-side only for now.
 - NeoForge is server-side only for now.
 - Forge is server-side only for now.
@@ -300,6 +300,7 @@ Good next steps from this base:
 - Gradle Kotlin DSL files use Spotless with ktlint and the same 180 character limit.
 - The Eclipse formatter profile also joins comment lines where possible, so short manually wrapped comments may be condensed on format.
 - If a Paper-related test starts failing during MockBukkit bootstrap, inspect the test Paper API version before assuming the plugin code is wrong.
+- If a Paper-only API is not covered by MockBukkit yet, keep the platform adapter small and cover shared behavior in `common`.
 - If you change commands, plugin metadata, or permission nodes, update:
   - `paper/src/main/resources/plugin.yml`
   - Paper tests

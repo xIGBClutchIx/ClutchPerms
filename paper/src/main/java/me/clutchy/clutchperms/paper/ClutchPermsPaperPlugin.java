@@ -16,7 +16,7 @@ import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
 
 /**
- * Bukkit-safe Paper plugin entrypoint that exposes the shared persisted permission service and a simple diagnostic command.
+ * Paper plugin entrypoint that exposes the shared persisted permission service and a simple diagnostic command.
  */
 public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecutor {
 
@@ -45,7 +45,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecuto
             throw new IllegalStateException("Failed to load ClutchPerms permissions", exception);
         }
 
-        // Register the shared service so other Bukkit/Paper plugins can discover it.
+        // Register the shared service so other plugins on Paper can discover it.
         getServer().getServicesManager().register(PermissionService.class, permissionService, this, ServicePriority.Normal);
 
         // Fail fast if plugin.yml and the bootstrap code drift out of sync.

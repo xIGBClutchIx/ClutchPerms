@@ -3,7 +3,7 @@
   "id": "clutchperms",
   "version": "${version}",
   "name": "ClutchPerms",
-  "description": "Shared permission scaffolding for Paper/Spigot and Fabric.",
+  "description": "Shared permission scaffolding for Paper and Fabric.",
   "environment": "*",
   "entrypoints": {
     "main": [
