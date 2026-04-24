@@ -1,6 +1,6 @@
 # ClutchPerms
 
-`ClutchPerms` is a multi-framework Java scaffold for a future permission system that aims to behave consistently across Paper/Spigot and Fabric.
+`ClutchPerms` is a multi-framework Java scaffold for a future permission system that aims to behave consistently across Paper/Spigot, Fabric, NeoForge, and Forge.
 
 The current repository is intentionally small. It establishes the build, module boundaries, packaging strategy, and the first shared permission API so future work can grow from a clean base instead of mixing platform concerns too early.
 
@@ -9,6 +9,8 @@ The current repository is intentionally small. It establishes the build, module 
 - Shared `common` module for platform-agnostic permission logic
 - `paper` plugin module with Bukkit service registration and a diagnostic command
 - `fabric` mod module with the same in-memory service and a diagnostic command
+- `neoforge` mod module with the same in-memory service and a diagnostic command
+- `forge` mod module with the same in-memory service and a diagnostic command
 - JUnit coverage for the shared service
 - MockBukkit coverage for the Paper bootstrap path
 
@@ -68,6 +70,28 @@ Current behavior:
 Packaging behavior:
 - the final Fabric jar includes `common` as a nested included jar
 
+### `neoforge`
+NeoForge mod module built with ModDevGradle.
+
+Current behavior:
+- creates the same `InMemoryPermissionService` during mod construction
+- registers `/clutchperms` with Brigadier through the NeoForge event bus
+- resets the static service reference when the server stops
+
+Packaging behavior:
+- the final NeoForge jar includes `common` as a nested jar through NeoForge jar-in-jar metadata
+
+### `forge`
+Forge mod module built with ForgeGradle.
+
+Current behavior:
+- creates the same `InMemoryPermissionService` during mod construction
+- registers `/clutchperms` with Brigadier through the Forge event buses
+- resets the static service reference when the server stops
+
+Packaging behavior:
+- the final Forge jar includes the compiled classes from `common`
+
 ## Version Targets
 
 ### Primary build targets
@@ -78,6 +102,10 @@ Packaging behavior:
 - Fabric Loader: `0.19.2`
 - Fabric API: `0.146.1+26.1.2`
 - Loom: `1.16-SNAPSHOT` resolving to `1.16.1`
+- NeoForge: `26.1.2.22-beta`
+- ModDevGradle: `2.0.141`
+- Forge: `64.0.5`
+- ForgeGradle: `7.0.25`
 
 ### Test-specific compatibility note
 Paper tests use MockBukkit:
@@ -131,6 +159,8 @@ You do not need to preinstall Gradle. Use the wrapper.
 ./gradlew :common:test
 ./gradlew :paper:test
 ./gradlew :fabric:build
+./gradlew :neoforge:build
+./gradlew :forge:build
 ```
 
 ## Output Artifacts
@@ -140,8 +170,10 @@ After a successful build, the main artifacts are collected in:
 The primary runtime jars are:
 - `build/clutchperms-paper-0.1.0-SNAPSHOT.jar`
 - `build/clutchperms-fabric-0.1.0-SNAPSHOT.jar`
+- `build/clutchperms-neoforge-0.1.0-SNAPSHOT.jar`
+- `build/clutchperms-forge-0.1.0-SNAPSHOT.jar`
 
-Only the distributable Paper and Fabric runtime jars are copied there. The shared library jar and any `-sources.jar` files remain in their normal module `build/libs` directories.
+Only the distributable Paper, Fabric, NeoForge, and Forge runtime jars are copied there. The shared library jar and any `-sources.jar` files remain in their normal module `build/libs` directories.
 
 These are copies of the normal module outputs. The original archives remain in each subproject's `build/libs` directory as well.
 
@@ -149,6 +181,11 @@ The Paper jar includes the shared `common` classes directly.
 
 The Fabric jar contains a nested included jar:
 - `META-INF/jars/clutchperms-common-0.1.0-SNAPSHOT.jar`
+
+The NeoForge jar contains a nested jar-in-jar dependency:
+- `META-INF/jarjar/me.clutchy.clutchperms.clutchperms-common-0.1.0-SNAPSHOT.jar`
+
+The Forge jar includes the shared `common` classes directly.
 
 ## Commands And Behavior
 
@@ -161,7 +198,15 @@ The Fabric jar contains a nested included jar:
 `/clutchperms`
 - currently returns the same diagnostic message
 
-At this stage, both commands are meant to prove platform bootstrapping and shared behavior, not to provide end-user permission management.
+### NeoForge
+`/clutchperms`
+- currently returns the same diagnostic message
+
+### Forge
+`/clutchperms`
+- currently returns the same diagnostic message
+
+At this stage, the platform commands are meant to prove bootstrapping and shared behavior, not to provide end-user permission management.
 
 ## Testing
 
@@ -181,12 +226,20 @@ At this stage, both commands are meant to prove platform bootstrapping and share
 ### Fabric
 There are currently no Fabric runtime tests. The module is verified through compile/build checks only.
 
+### NeoForge
+There are currently no NeoForge runtime tests. The module is verified through compile/build checks only.
+
+### Forge
+There are currently no Forge runtime tests. The module is verified through compile/build checks only.
+
 ## Architecture Notes
 - `common` is the source of truth for permission abstractions.
 - Platform modules should adapt to `common`, not redefine their own permission models.
 - Shared behavior should move into `common` unless it depends on platform-specific APIs.
 - Paper stays Bukkit-safe for now.
 - Fabric is server-side only for now.
+- NeoForge is server-side only for now.
+- Forge is server-side only for now.
 
 ## Known Limitations
 - No persistence layer
@@ -219,6 +272,10 @@ Good next steps from this base:
   - this README if the user-facing behavior changed
 - If you change Fabric entrypoints or dependency metadata, update:
   - `fabric/src/main/resources/fabric.mod.json`
+- If you change NeoForge entrypoints or dependency metadata, update:
+  - `neoforge/src/main/resources/META-INF/neoforge.mods.toml`
+- If you change Forge entrypoints or dependency metadata, update:
+  - `forge/src/main/resources/META-INF/mods.toml`
 
 ## License
 No license file has been added yet.

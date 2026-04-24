@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format and Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Check formatting and lint
+        run: ./gradlew spotlessCheck --no-daemon -PverboseTests=false
+
+  common:
+    name: Common
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build and test common
+        run: ./gradlew :common:check --no-daemon -PverboseTests=false
+
+  platform:
+    name: Build ${{ matrix.platform }}
+    needs: common
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - paper
+          - fabric
+          - neoforge
+          - forge
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build and test ${{ matrix.platform }}
+        run: ./gradlew :${{ matrix.platform }}:build --no-daemon -PverboseTests=false
+
+      - name: List runtime artifacts
+        run: ls -lh ${{ matrix.platform }}/build/libs/clutchperms-${{ matrix.platform }}-*.jar
+
+      - name: Upload runtime artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: clutchperms-${{ matrix.platform }}-runtime-jar
+          path: |
+            ${{ matrix.platform }}/build/libs/clutchperms-${{ matrix.platform }}-*.jar
+            !${{ matrix.platform }}/build/libs/*-sources.jar
+          if-no-files-found: error
+          retention-days: 14

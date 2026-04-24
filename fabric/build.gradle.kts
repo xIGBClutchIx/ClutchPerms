@@ -5,6 +5,7 @@ plugins {
 val minecraftVersion: String by project
 val loaderVersion: String by project
 val fabricApiVersion: String by project
+val modVersion = project.version.toString()
 
 dependencies {
     minecraft("com.mojang:minecraft:$minecraftVersion")
@@ -16,9 +17,9 @@ dependencies {
 }
 
 tasks.processResources {
-    inputs.property("version", project.version)
+    inputs.property("version", modVersion)
 
     filesMatching("fabric.mod.json") {
-        expand("version" to project.version)
+        expand("version" to modVersion)
     }
 }

@@ -10,19 +10,22 @@ val commonProject = project(":common")
 val paperApiVersion: String by project
 val mockBukkitVersion: String by project
 val mockBukkitPaperApiVersion: String by project
+val slf4jVersion = "2.0.16"
+val pluginVersion = project.version.toString()
 
 dependencies {
     implementation(project(":common"))
     compileOnly("io.papermc.paper:paper-api:$paperApiVersion")
     testImplementation("io.papermc.paper:paper-api:$mockBukkitPaperApiVersion")
     testImplementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:$mockBukkitVersion")
+    testRuntimeOnly("org.slf4j:slf4j-nop:$slf4jVersion")
 }
 
 tasks.processResources {
-    inputs.property("version", project.version)
+    inputs.property("version", pluginVersion)
 
     filesMatching("plugin.yml") {
-        expand("version" to project.version)
+        expand("version" to pluginVersion)
     }
 }
 

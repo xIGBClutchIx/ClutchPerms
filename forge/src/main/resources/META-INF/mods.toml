@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="${forgeVersionRange}"
+license="All Rights Reserved"
+
+[[mods]]
+modId="clutchperms"
+version="${version}"
+displayName="ClutchPerms"
+description='''
+Shared permission scaffolding for Paper/Spigot, Fabric, NeoForge, and Forge.
+'''
+
+[[dependencies.clutchperms]]
+modId="forge"
+mandatory=true
+versionRange="${forgeVersionRange}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.clutchperms]]
+modId="minecraft"
+mandatory=true
+versionRange="${minecraftVersionRange}"
+ordering="NONE"
+side="BOTH"

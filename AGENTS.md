@@ -1,17 +1,19 @@
 # AGENTS.md
 
 ## Purpose
-- `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper/Spigot and Fabric.
+- `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper/Spigot, Fabric, NeoForge, and Forge.
 - The current state is a scaffold, not a finished permission platform.
 - The repo currently provides:
   - a shared `common` module with a minimal permission API and in-memory implementation
   - a `paper` plugin module with a diagnostic `/clutchperms` command and Bukkit service registration
   - a `fabric` mod module with a diagnostic `/clutchperms` command and the same shared service
+  - a `neoforge` mod module with a diagnostic `/clutchperms` command and the same shared service
+  - a `forge` mod module with a diagnostic `/clutchperms` command and the same shared service
 
 ## Repository Layout
 - `common`
   - pure Java shared code
-  - no Bukkit, Paper, Fabric, or Minecraft dependencies
+  - no Bukkit, Paper, Fabric, NeoForge, Forge, or Minecraft dependencies
   - owns the public permission model for now
 - `paper`
   - Bukkit-safe server plugin
@@ -21,6 +23,12 @@
 - `fabric`
   - Fabric mod built with Loom
   - bundles `common` as a nested jar via `include(project(":common"))`
+- `neoforge`
+  - NeoForge mod built with ModDevGradle
+  - bundles `common` as a nested jar via NeoForge jar-in-jar metadata
+- `forge`
+  - Forge mod built with ForgeGradle
+  - embeds `common` classes directly into the produced jar
 - root build
   - Gradle Kotlin DSL multi-project setup
   - centralized Java toolchain and test configuration
@@ -59,6 +67,8 @@
   - `clutchperms-common`
   - `clutchperms-paper`
   - `clutchperms-fabric`
+  - `clutchperms-neoforge`
+  - `clutchperms-forge`
 - Copies of distributable runtime jars are collected in the root `build` directory.
 
 ## Version Matrix And Known Constraints
@@ -69,6 +79,14 @@
   - Fabric Loader `0.19.2`
   - Fabric API `0.146.1+26.1.2`
   - Loom `1.16-SNAPSHOT` resolving to `1.16.1`
+- NeoForge target:
+  - Minecraft `26.1.2`
+  - NeoForge `26.1.2.22-beta`
+  - ModDevGradle `2.0.141`
+- Forge target:
+  - Minecraft `26.1.2`
+  - Forge `64.0.5`
+  - ForgeGradle `7.0.25`
 - MockBukkit tests:
   - `org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.108.0`
   - test runtime Paper API pinned to `1.21.11-R0.1-SNAPSHOT`
@@ -92,6 +110,10 @@
   - `./gradlew :paper:test`
 - Fabric build only:
   - `./gradlew :fabric:build`
+- NeoForge build only:
+  - `./gradlew :neoforge:build`
+- Forge build only:
+  - `./gradlew :forge:build`
 - Dependency inspection:
   - `./gradlew :paper:dependencies --configuration testRuntimeClasspath`
 
@@ -104,6 +126,10 @@
     - `./gradlew :paper:test`
   - Fabric-only changes:
     - `./gradlew :fabric:build`
+  - NeoForge-only changes:
+    - `./gradlew :neoforge:build`
+  - Forge-only changes:
+    - `./gradlew :forge:build`
   - build logic or dependency changes:
     - `./gradlew clean build`
 - Current test coverage:
@@ -112,6 +138,10 @@
   - `paper`
     - MockBukkit tests for plugin boot, service registration, and command response
   - `fabric`
+    - no runtime tests yet
+  - `neoforge`
+    - no runtime tests yet
+  - `forge`
     - no runtime tests yet
 
 ## Coding Guidelines
@@ -122,6 +152,8 @@
 - Keep the Paper module Bukkit-safe unless there is an explicit decision to use Paper-only APIs.
 - If you need Paper-only behavior later, isolate it clearly so Spigot compatibility is not accidentally broken.
 - For Fabric, keep the initial scope server-side unless client behavior is intentionally introduced.
+- For NeoForge, keep the initial scope server-side unless client behavior is intentionally introduced.
+- For Forge, keep the initial scope server-side unless client behavior is intentionally introduced.
 
 ## Formatting
 - Formatting is enforced with Spotless through the Gradle wrapper.
@@ -151,19 +183,29 @@
 - `fabric`
   - must continue to package `common` as a nested included jar
   - must keep `fabric.mod.json` version expansion wired through `processResources`
+- `neoforge`
+  - must continue to package `common` as a nested jar through NeoForge jar-in-jar metadata
+  - must keep `neoforge.mods.toml` version and dependency expansion wired through `processResources`
+- `forge`
+  - must continue to ship with `common` classes inside the final mod jar
+  - must keep `mods.toml` version and dependency expansion wired through `processResources`
 - If a refactor changes artifact names or packaging behavior, update both the docs and the verification commands.
-- Keep copies of the distributable Paper and Fabric runtime jars landing in the shared root `build` folder unless there is a deliberate packaging change.
+- Keep copies of the distributable Paper, Fabric, NeoForge, and Forge runtime jars landing in the shared root `build` folder unless there is a deliberate packaging change.
 
 ## Editing Guidance For Future Agents
 - Read the relevant module build file before changing dependencies.
 - Be careful with version bumps:
   - Paper API bumps may break MockBukkit tests even if main code still compiles.
   - Loom or Fabric bumps may require a Gradle wrapper change.
+  - NeoForge or ModDevGradle bumps may require metadata, Java toolchain, or Gradle wrapper changes.
+  - Forge or ForgeGradle bumps may require metadata, Java toolchain, or Gradle wrapper changes.
 - If tests fail in `paper` during MockBukkit bootstrap, check the Paper API line used in test scope before changing production code.
 - If you add commands or permissions on Paper, update both:
   - `plugin.yml`
   - MockBukkit tests
-- If you add new shared services or stateful behavior, prefer constructor-driven code in `common` and thin platform adapters in `paper` and `fabric`.
+- If you add new shared services or stateful behavior, prefer constructor-driven code in `common` and thin platform adapters in `paper`, `fabric`, `neoforge`, and `forge`.
+- If you change NeoForge entrypoints or dependencies, update `neoforge.mods.toml`.
+- If you change Forge entrypoints or dependencies, update `mods.toml`.
 
 ## Commit Rules
 - Use Conventional Commits: `type(scope): summary`
