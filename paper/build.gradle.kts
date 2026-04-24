@@ -13,6 +13,8 @@ val mockBukkitPaperApiVersion: String by project
 val slf4jVersion = "2.0.16"
 val pluginVersion = project.version.toString()
 
+evaluationDependsOn(commonProject.path)
+
 dependencies {
     implementation(project(":common"))
     compileOnly("io.papermc.paper:paper-api:$paperApiVersion")

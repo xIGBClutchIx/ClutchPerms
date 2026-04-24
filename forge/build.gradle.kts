@@ -17,6 +17,8 @@ val forgeVersion: String by project
 val forgeVersionRange: String by project
 val modVersion = project.version.toString()
 
+evaluationDependsOn(commonProject.path)
+
 val minecraftExtension = extensions.getByType<MinecraftExtensionForProject>()
 val forgeGradleExtension = extensions.getByType<ForgeGradleExtension>()
 

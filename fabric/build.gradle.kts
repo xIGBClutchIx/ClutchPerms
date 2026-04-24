@@ -7,6 +7,8 @@ val loaderVersion: String by project
 val fabricApiVersion: String by project
 val modVersion = project.version.toString()
 
+evaluationDependsOn(":common")
+
 dependencies {
     minecraft("com.mojang:minecraft:$minecraftVersion")
     implementation("net.fabricmc:fabric-loader:$loaderVersion")

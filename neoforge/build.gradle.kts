@@ -11,6 +11,8 @@ val neoForgeVersion: String by project
 val neoForgeVersionRange: String by project
 val modVersion = project.version.toString()
 
+evaluationDependsOn(commonProject.path)
+
 neoForge {
     version = neoForgeVersion
 
