@@ -295,6 +295,47 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms explain reports the winning assignment and ignored matching candidates.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanExplainEffectivePermissions() throws CommandSyntaxException {
+        permissionService.setPermission(TARGET_ID, "example.*", PermissionValue.TRUE);
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "example.node", PermissionValue.FALSE);
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        groupService.createGroup("default");
+        groupService.setGroupPermission("default", "*", PermissionValue.FALSE);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target explain example.node", console);
+
+        assertEquals(
+                List.of("Resolution for Target (00000000-0000-0000-0000-000000000002) example.node:", "Result: TRUE from direct via example.*.",
+                        "Order: direct > explicit groups by depth > default; exact > closest wildcard > broader wildcard > *; FALSE wins same-rank ties.",
+                        "Match: direct example.*=TRUE (winner).", "Match: group staff depth 0 example.node=FALSE (ignored).", "Match: default group depth 0 *=FALSE (ignored)."),
+                console.messages());
+    }
+
+    /**
+     * Confirms explain reports unset values without fake candidates.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanExplainUnsetPermissions() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target explain missing.node", console);
+
+        assertEquals(
+                List.of("Resolution for Target (00000000-0000-0000-0000-000000000002) missing.node:", "Result: UNSET.",
+                        "Order: direct > explicit groups by depth > default; exact > closest wildcard > broader wildcard > *; FALSE wins same-rank ties.", "Matches: none."),
+                console.messages());
+    }
+
+    /**
      * Confirms group parent commands manage inherited group links.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -613,10 +654,10 @@ class ClutchPermsCommandsTest {
         return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms reload", "/clutchperms user <target> list", "/clutchperms user <target> get <node>",
                 "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>", "/clutchperms user <target> groups",
                 "/clutchperms user <target> group add <group>", "/clutchperms user <target> group remove <group>", "/clutchperms user <target> check <node>",
-                "/clutchperms group list", "/clutchperms group <group> create", "/clutchperms group <group> delete", "/clutchperms group <group> list",
-                "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>",
-                "/clutchperms group <group> parents", "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>",
-                "/clutchperms users list", "/clutchperms users search <name>");
+                "/clutchperms user <target> explain <node>", "/clutchperms group list", "/clutchperms group <group> create", "/clutchperms group <group> delete",
+                "/clutchperms group <group> list", "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>",
+                "/clutchperms group <group> clear <node>", "/clutchperms group <group> parents", "/clutchperms group <group> parent add <parent>",
+                "/clutchperms group <group> parent remove <parent>", "/clutchperms users list", "/clutchperms users search <name>");
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {

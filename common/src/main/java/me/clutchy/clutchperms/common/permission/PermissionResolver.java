@@ -1,9 +1,11 @@
 package me.clutchy.clutchperms.common.permission;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -73,6 +75,36 @@ public final class PermissionResolver {
      */
     public boolean hasPermission(UUID subjectId, String node) {
         return resolve(subjectId, node).value() == PermissionValue.TRUE;
+    }
+
+    /**
+     * Explains every explicit assignment that matched a checked permission node.
+     *
+     * @param subjectId subject UUID to resolve
+     * @param node permission node to resolve
+     * @return immutable explanation snapshot
+     */
+    public PermissionExplanation explain(UUID subjectId, String node) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        String normalizedNode = PermissionNodes.normalize(node);
+        List<ExplainedAssignment> assignments = new ArrayList<>();
+
+        collectDirectExplanationAssignments(permissionService.getPermissions(subjectId), normalizedNode, assignments);
+        collectGroupExplanationAssignments(groupService.getSubjectGroups(subjectId), normalizedNode, PermissionResolution.Source.GROUP, assignments);
+        if (groupService.hasGroup(GroupService.DEFAULT_GROUP)) {
+            collectGroupExplanationAssignments(Set.of(GroupService.DEFAULT_GROUP), normalizedNode, PermissionResolution.Source.DEFAULT, assignments);
+        }
+
+        PermissionResolution resolution = assignments.isEmpty()
+                ? new PermissionResolution(PermissionValue.UNSET, PermissionResolution.Source.UNSET, null)
+                : resolutionFrom(assignments.getFirst());
+        List<PermissionExplanation.Match> matches = new ArrayList<>();
+        for (int index = 0; index < assignments.size(); index++) {
+            ExplainedAssignment assignment = assignments.get(index);
+            matches.add(
+                    new PermissionExplanation.Match(assignment.source(), assignment.groupName(), assignment.depth(), assignment.assignmentNode(), assignment.value(), index == 0));
+        }
+        return new PermissionExplanation(normalizedNode, resolution, matches);
     }
 
     /**
@@ -146,6 +178,44 @@ public final class PermissionResolver {
         return new ResolvedAssignment(PermissionValue.UNSET, null);
     }
 
+    private void collectDirectExplanationAssignments(Map<String, PermissionValue> assignments, String node, List<ExplainedAssignment> explanationAssignments) {
+        for (String candidateNode : PermissionNodes.matchingCandidates(node)) {
+            PermissionValue value = assignments.getOrDefault(candidateNode, PermissionValue.UNSET);
+            if (value != PermissionValue.UNSET) {
+                explanationAssignments.add(new ExplainedAssignment(PermissionResolution.Source.DIRECT, null, 0, candidateNode, value));
+            }
+        }
+    }
+
+    private void collectGroupExplanationAssignments(Set<String> rootGroups, String node, PermissionResolution.Source source, List<ExplainedAssignment> explanationAssignments) {
+        Map<String, Integer> groupDepths = collectGroupDepths(rootGroups);
+        Map<Integer, Set<String>> groupsByDepth = new TreeMap<>();
+        groupDepths.forEach((groupName, depth) -> groupsByDepth.computeIfAbsent(depth, ignored -> new TreeSet<>()).add(groupName));
+
+        for (Map.Entry<Integer, Set<String>> depthEntry : groupsByDepth.entrySet()) {
+            int depth = depthEntry.getKey();
+            Set<String> groupNames = depthEntry.getValue();
+            for (String candidateNode : PermissionNodes.matchingCandidates(node)) {
+                collectGroupExplanationAssignmentsByValue(source, explanationAssignments, depth, groupNames, candidateNode, PermissionValue.FALSE);
+                collectGroupExplanationAssignmentsByValue(source, explanationAssignments, depth, groupNames, candidateNode, PermissionValue.TRUE);
+            }
+        }
+    }
+
+    private void collectGroupExplanationAssignmentsByValue(PermissionResolution.Source source, List<ExplainedAssignment> explanationAssignments, int depth, Set<String> groupNames,
+            String candidateNode, PermissionValue value) {
+        for (String groupName : groupNames) {
+            PermissionValue groupValue = groupService.getGroupPermissions(groupName).getOrDefault(candidateNode, PermissionValue.UNSET);
+            if (groupValue == value) {
+                explanationAssignments.add(new ExplainedAssignment(source, groupName, depth, candidateNode, value));
+            }
+        }
+    }
+
+    private PermissionResolution resolutionFrom(ExplainedAssignment assignment) {
+        return new PermissionResolution(assignment.value(), assignment.source(), assignment.groupName(), assignment.assignmentNode());
+    }
+
     private Map<String, Integer> collectGroupDepths(Set<String> rootGroups) {
         Map<String, Integer> groupDepths = new HashMap<>();
         ArrayDeque<GroupDepth> queue = new ArrayDeque<>();
@@ -180,5 +250,8 @@ public final class PermissionResolver {
     }
 
     private record ResolvedAssignment(PermissionValue value, String assignmentNode) {
+    }
+
+    private record ExplainedAssignment(PermissionResolution.Source source, String groupName, int depth, String assignmentNode, PermissionValue value) {
     }
 }

@@ -26,6 +26,7 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 
 import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.permission.PermissionExplanation;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolution;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
@@ -112,8 +113,9 @@ public final class ClutchPermsCommands {
         RequiredArgumentBuilder<S, String> target = RequiredArgumentBuilder.<S, String>argument(TARGET_ARGUMENT, StringArgumentType.word())
                 .suggests((context, builder) -> suggestOnlineSubjects(environment, context.getSource(), builder));
 
-        return LiteralArgumentBuilder.<S>literal("user").then(target.then(listCommand(environment)).then(getCommand(environment)).then(setCommand(environment))
-                .then(clearCommand(environment)).then(userGroupsCommand(environment)).then(userGroupCommand(environment)).then(checkCommand(environment)));
+        return LiteralArgumentBuilder.<S>literal("user")
+                .then(target.then(listCommand(environment)).then(getCommand(environment)).then(setCommand(environment)).then(clearCommand(environment))
+                        .then(userGroupsCommand(environment)).then(userGroupCommand(environment)).then(checkCommand(environment)).then(explainCommand(environment)));
     }
 
     private static <S> LiteralArgumentBuilder<S> groupRootCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -188,6 +190,11 @@ public final class ClutchPermsCommands {
     private static <S> LiteralArgumentBuilder<S> checkCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("check")
                 .then(ClutchPermsCommands.nodeArgument(environment).executes(context -> executeAuthorized(environment, context, source -> checkPermission(environment, context))));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> explainCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("explain").then(
+                ClutchPermsCommands.nodeArgument(environment).executes(context -> executeAuthorized(environment, context, source -> explainPermission(environment, context))));
     }
 
     private static <S> RequiredArgumentBuilder<S, String> nodeArgument(ClutchPermsCommandEnvironment<S> environment) {
@@ -357,6 +364,34 @@ public final class ClutchPermsCommands {
             environment.sendMessage(context.getSource(), CommandLang.permissionCheck(formatSubject(subject), node, resolution.value(), source, assignmentNode));
         } else {
             environment.sendMessage(context.getSource(), CommandLang.permissionCheck(formatSubject(subject), node, resolution.value(), source));
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int explainPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        String node = getNode(context);
+        PermissionExplanation explanation = environment.permissionResolver().explain(subject.id(), node);
+        PermissionResolution resolution = explanation.resolution();
+
+        environment.sendMessage(context.getSource(), CommandLang.permissionExplainHeader(formatSubject(subject), explanation.node()));
+        if (resolution.value() == PermissionValue.UNSET) {
+            environment.sendMessage(context.getSource(), CommandLang.permissionExplainResultUnset());
+        } else {
+            String source = formatResolutionSource(resolution);
+            String assignmentNode = resolution.assignmentNode();
+            if (assignmentNode != null && !assignmentNode.equals(explanation.node())) {
+                environment.sendMessage(context.getSource(), CommandLang.permissionExplainResult(resolution.value(), source, assignmentNode));
+            } else {
+                environment.sendMessage(context.getSource(), CommandLang.permissionExplainResult(resolution.value(), source));
+            }
+        }
+        environment.sendMessage(context.getSource(), CommandLang.permissionExplainOrder());
+        if (explanation.matches().isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.permissionExplainNoMatches());
+        } else {
+            explanation.matches().forEach(match -> environment.sendMessage(context.getSource(),
+                    CommandLang.permissionExplainMatch(formatExplanationSource(match), match.assignmentNode(), match.value(), match.winning())));
         }
         return Command.SINGLE_SUCCESS;
     }
@@ -746,6 +781,17 @@ public final class ClutchPermsCommands {
             case DIRECT -> "direct";
             case GROUP -> "group " + resolution.groupName();
             case DEFAULT -> GroupService.DEFAULT_GROUP.equals(resolution.groupName()) ? "default group" : "default group parent " + resolution.groupName();
+            case UNSET -> "unset";
+        };
+    }
+
+    private static String formatExplanationSource(PermissionExplanation.Match match) {
+        return switch (match.source()) {
+            case DIRECT -> "direct";
+            case GROUP -> "group " + match.groupName() + " depth " + match.depth();
+            case DEFAULT -> GroupService.DEFAULT_GROUP.equals(match.groupName())
+                    ? "default group depth " + match.depth()
+                    : "default group parent " + match.groupName() + " depth " + match.depth();
             case UNSET -> "unset";
         };
     }

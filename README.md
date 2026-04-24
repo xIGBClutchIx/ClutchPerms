@@ -46,6 +46,7 @@ All platforms expose the same shared command tree:
 /clutchperms user <target> set <node> <true|false>
 /clutchperms user <target> clear <node>
 /clutchperms user <target> check <node>
+/clutchperms user <target> explain <node>
 /clutchperms user <target> groups
 /clutchperms user <target> group add <group>
 /clutchperms user <target> group remove <group>
@@ -74,6 +75,7 @@ Command notes:
 - Players need effective `clutchperms.admin`, either directly or through a group.
 - Non-player/non-console sources are denied where the platform can distinguish them.
 - Permission nodes may be exact nodes, `*`, or terminal wildcard nodes like `example.*`. Mid-node wildcards such as `example.*.edit` are rejected.
+- `check` reports the effective value. `explain` also lists matching direct/group/default assignments in resolver order and marks the winner.
 
 Wildcard resolution:
 

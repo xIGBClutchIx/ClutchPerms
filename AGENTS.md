@@ -122,7 +122,7 @@ Current command surface:
 - `/clutchperms`
 - `/clutchperms status`
 - `/clutchperms reload`
-- `/clutchperms user <target> list|get|set|clear|check`
+- `/clutchperms user <target> list|get|set|clear|check|explain`
 - `/clutchperms user <target> groups`
 - `/clutchperms user <target> group add|remove <group>`
 - `/clutchperms group list`
@@ -137,6 +137,7 @@ Authorization:
 - Console and remote console can run commands for bootstrap.
 - Players need effective `clutchperms.admin`.
 - Other source types should be denied where the platform can distinguish them.
+- `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.
 
 ## Build And Versions
 

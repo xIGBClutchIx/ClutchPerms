@@ -106,15 +106,29 @@ final class CommandLang {
 
     private static final String PERMISSION_CHECK_MATCHED = "%s effective %s = %s from %s via %s.";
 
+    private static final String PERMISSION_EXPLAIN_HEADER = "Resolution for %s %s:";
+
+    private static final String PERMISSION_EXPLAIN_RESULT = "Result: %s from %s.";
+
+    private static final String PERMISSION_EXPLAIN_RESULT_MATCHED = "Result: %s from %s via %s.";
+
+    private static final String PERMISSION_EXPLAIN_RESULT_UNSET = "Result: UNSET.";
+
+    private static final String PERMISSION_EXPLAIN_ORDER = "Order: direct > explicit groups by depth > default; exact > closest wildcard > broader wildcard > *; FALSE wins same-rank ties.";
+
+    private static final String PERMISSION_EXPLAIN_MATCH = "Match: %s %s=%s (%s).";
+
+    private static final String PERMISSION_EXPLAIN_NO_MATCHES = "Matches: none.";
+
     static List<String> commandList(String rootLiteral) {
         return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "reload"), command(rootLiteral, "user <target> list"),
                 command(rootLiteral, "user <target> get <node>"), command(rootLiteral, "user <target> set <node> <true|false>"), command(rootLiteral, "user <target> clear <node>"),
                 command(rootLiteral, "user <target> groups"), command(rootLiteral, "user <target> group add <group>"), command(rootLiteral, "user <target> group remove <group>"),
-                command(rootLiteral, "user <target> check <node>"), command(rootLiteral, "group list"), command(rootLiteral, "group <group> create"),
-                command(rootLiteral, "group <group> delete"), command(rootLiteral, "group <group> list"), command(rootLiteral, "group <group> get <node>"),
-                command(rootLiteral, "group <group> set <node> <true|false>"), command(rootLiteral, "group <group> clear <node>"), command(rootLiteral, "group <group> parents"),
-                command(rootLiteral, "group <group> parent add <parent>"), command(rootLiteral, "group <group> parent remove <parent>"), command(rootLiteral, "users list"),
-                command(rootLiteral, "users search <name>"));
+                command(rootLiteral, "user <target> check <node>"), command(rootLiteral, "user <target> explain <node>"), command(rootLiteral, "group list"),
+                command(rootLiteral, "group <group> create"), command(rootLiteral, "group <group> delete"), command(rootLiteral, "group <group> list"),
+                command(rootLiteral, "group <group> get <node>"), command(rootLiteral, "group <group> set <node> <true|false>"), command(rootLiteral, "group <group> clear <node>"),
+                command(rootLiteral, "group <group> parents"), command(rootLiteral, "group <group> parent add <parent>"),
+                command(rootLiteral, "group <group> parent remove <parent>"), command(rootLiteral, "users list"), command(rootLiteral, "users search <name>"));
     }
 
     static String statusPermissionsFile(String permissionsFile) {
@@ -299,6 +313,34 @@ final class CommandLang {
 
     static String permissionCheck(String subject, String node, PermissionValue value, String source, String assignmentNode) {
         return format(PERMISSION_CHECK_MATCHED, subject, node, value.name(), source, assignmentNode);
+    }
+
+    static String permissionExplainHeader(String subject, String node) {
+        return format(PERMISSION_EXPLAIN_HEADER, subject, node);
+    }
+
+    static String permissionExplainResult(PermissionValue value, String source) {
+        return format(PERMISSION_EXPLAIN_RESULT, value.name(), source);
+    }
+
+    static String permissionExplainResult(PermissionValue value, String source, String assignmentNode) {
+        return format(PERMISSION_EXPLAIN_RESULT_MATCHED, value.name(), source, assignmentNode);
+    }
+
+    static String permissionExplainResultUnset() {
+        return PERMISSION_EXPLAIN_RESULT_UNSET;
+    }
+
+    static String permissionExplainOrder() {
+        return PERMISSION_EXPLAIN_ORDER;
+    }
+
+    static String permissionExplainMatch(String source, String assignmentNode, PermissionValue value, boolean winning) {
+        return format(PERMISSION_EXPLAIN_MATCH, source, assignmentNode, value.name(), winning ? "winner" : "ignored");
+    }
+
+    static String permissionExplainNoMatches() {
+        return PERMISSION_EXPLAIN_NO_MATCHES;
     }
 
     private static String command(String rootLiteral, String command) {
