@@ -41,9 +41,9 @@ public final class ClutchPermsCommands {
     public static final String ROOT_LITERAL = "clutchperms";
 
     /**
-     * Status message returned by the root command.
+     * Health line returned by the status command.
      */
-    public static final String STATUS_MESSAGE = "ClutchPerms is running with a persisted permission service.";
+    public static final String STATUS_MESSAGE = CommandLang.STATUS;
 
     private static final String TARGET_ARGUMENT = "target";
 
@@ -53,17 +53,15 @@ public final class ClutchPermsCommands {
 
     private static final String NAME_ARGUMENT = "name";
 
-    private static final SimpleCommandExceptionType NO_PERMISSION = new SimpleCommandExceptionType(new LiteralMessage("You do not have permission to use ClutchPerms commands."));
+    private static final SimpleCommandExceptionType NO_PERMISSION = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_NO_PERMISSION));
 
-    private static final SimpleCommandExceptionType OTHER_SOURCE_DENIED = new SimpleCommandExceptionType(
-            new LiteralMessage("Only players and console sources can use ClutchPerms commands."));
+    private static final SimpleCommandExceptionType OTHER_SOURCE_DENIED = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_OTHER_SOURCE_DENIED));
 
-    private static final DynamicCommandExceptionType UNKNOWN_TARGET = new DynamicCommandExceptionType(
-            target -> new LiteralMessage("Unknown online player or invalid UUID: " + target));
+    private static final DynamicCommandExceptionType UNKNOWN_TARGET = new DynamicCommandExceptionType(target -> new LiteralMessage(CommandLang.unknownTarget(target)));
 
     private static final DynamicCommandExceptionType AMBIGUOUS_TARGET = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
-    private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage("Invalid permission node: " + node));
+    private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage(CommandLang.invalidNode(node)));
 
     /**
      * Creates the root ClutchPerms command node for a platform source type.
@@ -147,24 +145,17 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int sendCommandList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
-        environment.sendMessage(context.getSource(), "ClutchPerms commands:");
-        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " status");
-        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " user <target> list");
-        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " user <target> get <node>");
-        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " user <target> set <node> <true|false>");
-        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " user <target> clear <node>");
-        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " users list");
-        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " users search <name>");
+        CommandLang.commandList(ROOT_LITERAL).forEach(message -> environment.sendMessage(context.getSource(), message));
         return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int sendStatus(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         CommandStatusDiagnostics diagnostics = environment.statusDiagnostics();
         environment.sendMessage(context.getSource(), STATUS_MESSAGE);
-        environment.sendMessage(context.getSource(), "Permissions file: " + diagnostics.permissionsFile());
-        environment.sendMessage(context.getSource(), "Subjects file: " + diagnostics.subjectsFile());
-        environment.sendMessage(context.getSource(), "Known subjects: " + environment.subjectMetadataService().getSubjects().size());
-        environment.sendMessage(context.getSource(), "Runtime bridge: " + diagnostics.runtimeBridgeStatus());
+        environment.sendMessage(context.getSource(), CommandLang.statusPermissionsFile(diagnostics.permissionsFile()));
+        environment.sendMessage(context.getSource(), CommandLang.statusSubjectsFile(diagnostics.subjectsFile()));
+        environment.sendMessage(context.getSource(), CommandLang.statusKnownSubjects(environment.subjectMetadataService().getSubjects().size()));
+        environment.sendMessage(context.getSource(), CommandLang.statusRuntimeBridge(diagnostics.runtimeBridgeStatus()));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -185,13 +176,13 @@ public final class ClutchPermsCommands {
         CommandSubject subject = resolveSubject(environment, context);
         Map<String, PermissionValue> permissions = environment.permissionService().getPermissions(subject.id());
         if (permissions.isEmpty()) {
-            environment.sendMessage(context.getSource(), "No permissions set for " + formatSubject(subject) + ".");
+            environment.sendMessage(context.getSource(), CommandLang.permissionsEmpty(formatSubject(subject)));
             return Command.SINGLE_SUCCESS;
         }
 
         String assignments = permissions.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> entry.getKey() + "=" + entry.getValue().name())
                 .collect(Collectors.joining(", "));
-        environment.sendMessage(context.getSource(), "Permissions for " + formatSubject(subject) + ": " + assignments);
+        environment.sendMessage(context.getSource(), CommandLang.permissionsList(formatSubject(subject), assignments));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -200,7 +191,7 @@ public final class ClutchPermsCommands {
         String node = getNode(context);
         PermissionValue value = environment.permissionService().getPermission(subject.id(), node);
 
-        environment.sendMessage(context.getSource(), formatSubject(subject) + " has " + node + " = " + value.name() + ".");
+        environment.sendMessage(context.getSource(), CommandLang.permissionGet(formatSubject(subject), node, value));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -210,7 +201,7 @@ public final class ClutchPermsCommands {
         PermissionValue value = BoolArgumentType.getBool(context, VALUE_ARGUMENT) ? PermissionValue.TRUE : PermissionValue.FALSE;
 
         environment.permissionService().setPermission(subject.id(), node, value);
-        environment.sendMessage(context.getSource(), "Set " + node + " for " + formatSubject(subject) + " to " + value.name() + ".");
+        environment.sendMessage(context.getSource(), CommandLang.permissionSet(node, formatSubject(subject), value));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -219,21 +210,21 @@ public final class ClutchPermsCommands {
         String node = getNode(context);
 
         environment.permissionService().clearPermission(subject.id(), node);
-        environment.sendMessage(context.getSource(), "Cleared " + node + " for " + formatSubject(subject) + ".");
+        environment.sendMessage(context.getSource(), CommandLang.permissionClear(node, formatSubject(subject)));
         return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int listSubjects(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         Map<UUID, SubjectMetadata> subjects = environment.subjectMetadataService().getSubjects();
         if (subjects.isEmpty()) {
-            environment.sendMessage(context.getSource(), "No known users.");
+            environment.sendMessage(context.getSource(), CommandLang.usersEmpty());
             return Command.SINGLE_SUCCESS;
         }
 
         String subjectList = subjects.values().stream()
                 .sorted(Comparator.comparing(SubjectMetadata::lastKnownName, String.CASE_INSENSITIVE_ORDER).thenComparing(SubjectMetadata::subjectId))
                 .map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
-        environment.sendMessage(context.getSource(), "Known users: " + subjectList);
+        environment.sendMessage(context.getSource(), CommandLang.usersList(subjectList));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -241,7 +232,7 @@ public final class ClutchPermsCommands {
         String query = StringArgumentType.getString(context, NAME_ARGUMENT).trim();
         String normalizedQuery = query.toLowerCase(Locale.ROOT);
         if (normalizedQuery.isEmpty()) {
-            environment.sendMessage(context.getSource(), "No users matched " + query + ".");
+            environment.sendMessage(context.getSource(), CommandLang.usersSearchEmpty(query));
             return Command.SINGLE_SUCCESS;
         }
 
@@ -251,11 +242,11 @@ public final class ClutchPermsCommands {
                 .map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
 
         if (matches.isEmpty()) {
-            environment.sendMessage(context.getSource(), "No users matched " + query + ".");
+            environment.sendMessage(context.getSource(), CommandLang.usersSearchEmpty(query));
             return Command.SINGLE_SUCCESS;
         }
 
-        environment.sendMessage(context.getSource(), "Matched users: " + matches);
+        environment.sendMessage(context.getSource(), CommandLang.usersSearchMatches(matches));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -290,7 +281,7 @@ public final class ClutchPermsCommands {
         }
         if (matches.size() > 1) {
             String matchedSubjects = matches.stream().map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
-            throw AMBIGUOUS_TARGET.create("Ambiguous known user " + target + ": " + matchedSubjects);
+            throw AMBIGUOUS_TARGET.create(CommandLang.ambiguousKnownUser(target, matchedSubjects));
         }
 
         SubjectMetadata subject = matches.getFirst();

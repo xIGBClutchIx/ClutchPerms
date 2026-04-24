@@ -27,7 +27,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private static final String SUBJECTS_FILE_NAME = "subjects.json";
 
     /**
-     * Status message returned by the root command while the project is still in its early scaffold phase.
+     * Health line returned by the shared status command.
      */
     public static final String STATUS_MESSAGE = ClutchPermsCommands.STATUS_MESSAGE;
 
