@@ -1,6 +1,6 @@
 # ClutchPerms
 
-ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, a known permission node registry, validation/reload support, and platform runtime bridges.
+ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, a known permission node registry, validation/reload/backup support, and platform runtime bridges.
 
 This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, recursive multi-parent groups, an implicit `default` group, terminal wildcards, and effective permission resolution shared across platforms.
 
@@ -17,6 +17,7 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 - Validation and reload commands for manual JSON edits
 - Last-known player name recording and offline name targeting
 - Advisory known permission node registry for command discovery and Paper wildcard expansion
+- Rolling per-file backups before JSON saves, plus one-file restore commands with rollback on failed reload
 - Paper runtime bridge using plugin-owned `PermissionAttachment`s and known-node wildcard expansion
 - Fabric runtime bridge through fabric-permissions-api
 - Forge and NeoForge runtime handlers through their native permission APIs
@@ -43,6 +44,9 @@ All platforms expose the same shared command tree:
 /clutchperms status
 /clutchperms reload
 /clutchperms validate
+/clutchperms backup list
+/clutchperms backup list <permissions|subjects|groups|nodes>
+/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>
 /clutchperms user <target> list
 /clutchperms user <target> get <node>
 /clutchperms user <target> set <node> <true|false>
@@ -77,6 +81,8 @@ Command notes:
 - `/clutchperms status` shows storage paths, known subject count, group count, known node count, and runtime bridge status. On Paper, the runtime line also includes permission manager override mode.
 - `/clutchperms validate` parses `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json` without applying them or refreshing runtime permissions.
 - `/clutchperms reload` reloads `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json`. If any file is invalid, active runtime state is kept unchanged.
+- `/clutchperms backup list` shows stored backups newest first. Use `/clutchperms backup list permissions` or another file kind to filter.
+- `/clutchperms backup restore <kind> <backup-file>` restores one file, validates and reloads all storage immediately, then refreshes runtime bridges. If reload fails, ClutchPerms rolls the disk file back and keeps active runtime state unchanged.
 - `/clutchperms nodes ...` manages manually known exact permission nodes in `nodes.json`. This is for discovery, suggestions, diagnostics, and Paper wildcard expansion; it does not grant permissions by itself.
 - `<target>` resolves exact online player name first, then exact stored last-known name, then UUID.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
@@ -164,6 +170,27 @@ Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank
 Wildcard keys must be `*` or terminal `prefix.*`; invalid wildcard placement fails startup, validate, or reload.
 Known node keys must be exact permission nodes; wildcard known-node entries fail startup, validate, or reload.
 
+### Backups
+
+Before replacing an existing live JSON file, ClutchPerms copies the previous file into a per-file backup directory. The first save of a missing file does not create a backup.
+
+Backup layout:
+
+```text
+backups/
+  permissions/permissions-YYYYMMDD-HHMMSSSSS.json
+  subjects/subjects-YYYYMMDD-HHMMSSSSS.json
+  groups/groups-YYYYMMDD-HHMMSSSSS.json
+  nodes/nodes-YYYYMMDD-HHMMSSSSS.json
+```
+
+Backup root locations match the storage location:
+
+- Paper: plugin data folder, `backups/`
+- Fabric, NeoForge, Forge: config dir, `clutchperms/backups/`
+
+ClutchPerms keeps the newest 10 backups per file kind. Backups are recovery snapshots only; they are not migrations, scheduled exports, or a cross-server sync format.
+
 ## Forge And NeoForge Activation
 
 Forge and NeoForge allow only one active permission handler. ClutchPerms registers `clutchperms:direct`, but the server config must select it before other mods resolve permissions through ClutchPerms.
@@ -236,7 +263,7 @@ Important shared packages:
 - `common.group` - groups, memberships, parent links, group storage, and group observers
 - `common.node` - known permission node registry, manual node storage, and node registry observers
 - `common.subject` - last-known subject metadata
-- `common.storage` - storage exceptions
+- `common.storage` - storage exceptions, atomic writes, and backup/restore helpers
 - `common.command` - shared Brigadier command tree and command messages
 
 Version pins live in `gradle.properties`. Module metadata lives in:
@@ -267,6 +294,7 @@ Paper tests use MockBukkit `4.108.0` with Paper API `1.21.11-R0.1-SNAPSHOT`, whi
 - No contexts
 - No group priorities
 - No LuckPerms bridge or migration tooling
+- No backup compression, encryption, scheduled snapshots, or multi-file restore command
 - No cross-server or cross-platform synchronization
 - Command targets are exact online names, exact stored last-known names, or UUIDs only
 - Fabric enforcement only affects mods that query fabric-permissions-api

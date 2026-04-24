@@ -1,6 +1,7 @@
 package me.clutchy.clutchperms.paper;
 
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
@@ -25,6 +26,8 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
@@ -285,6 +288,18 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         loadSubjectMetadataService();
         loadGroupService();
         loadPermissionNodeRegistry();
+    }
+
+    /**
+     * Returns the backup service used by shared backup commands.
+     *
+     * @return active storage backup service
+     */
+    StorageBackupService getStorageBackupService() {
+        Path backupRoot = getDataFolder().toPath().resolve("backups");
+        return StorageBackupService.forFiles(backupRoot, Map.of(StorageFileKind.PERMISSIONS, Objects.requireNonNull(permissionsFile, "Permissions file is not available"),
+                StorageFileKind.SUBJECTS, Objects.requireNonNull(subjectsFile, "Subjects file is not available"), StorageFileKind.GROUPS,
+                Objects.requireNonNull(groupsFile, "Groups file is not available"), StorageFileKind.NODES, Objects.requireNonNull(nodesFile, "Known nodes file is not available")));
     }
 
     /**

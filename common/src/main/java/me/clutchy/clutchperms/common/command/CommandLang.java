@@ -54,6 +54,18 @@ final class CommandLang {
 
     private static final String ERROR_NODE_OPERATION_FAILED = "Known permission node operation failed: %s";
 
+    private static final String ERROR_BACKUP_OPERATION_FAILED = "Backup operation failed: %s";
+
+    private static final String ERROR_UNKNOWN_BACKUP_KIND = "Unknown backup file kind: %s";
+
+    private static final String BACKUPS_EMPTY = "No backups found.";
+
+    private static final String BACKUPS_EMPTY_FOR_KIND = "No backups found for %s.";
+
+    private static final String BACKUPS_LIST = "Backups for %s: %s";
+
+    private static final String BACKUP_RESTORED = "Restored %s from backup %s.";
+
     private static final String PERMISSIONS_EMPTY = "No permissions set for %s.";
 
     private static final String PERMISSIONS_LIST = "Permissions for %s: %s";
@@ -143,7 +155,8 @@ final class CommandLang {
     private static final String PERMISSION_EXPLAIN_NO_MATCHES = "Matches: none.";
 
     static List<String> commandList(String rootLiteral) {
-        return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "reload"), command(rootLiteral, "validate"),
+        return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "reload"), command(rootLiteral, "validate"), command(rootLiteral, "backup list"),
+                command(rootLiteral, "backup list <permissions|subjects|groups|nodes>"), command(rootLiteral, "backup restore <permissions|subjects|groups|nodes> <backup-file>"),
                 command(rootLiteral, "user <target> list"), command(rootLiteral, "user <target> get <node>"), command(rootLiteral, "user <target> set <node> <true|false>"),
                 command(rootLiteral, "user <target> clear <node>"), command(rootLiteral, "user <target> groups"), command(rootLiteral, "user <target> group add <group>"),
                 command(rootLiteral, "user <target> group remove <group>"), command(rootLiteral, "user <target> check <node>"),
@@ -241,6 +254,34 @@ final class CommandLang {
             message = exception.getClass().getSimpleName();
         }
         return format(ERROR_NODE_OPERATION_FAILED, message);
+    }
+
+    static String backupOperationFailed(Throwable exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = exception.getClass().getSimpleName();
+        }
+        return format(ERROR_BACKUP_OPERATION_FAILED, message);
+    }
+
+    static String unknownBackupKind(String token) {
+        return format(ERROR_UNKNOWN_BACKUP_KIND, token);
+    }
+
+    static String backupsEmpty() {
+        return BACKUPS_EMPTY;
+    }
+
+    static String backupsEmpty(String kind) {
+        return format(BACKUPS_EMPTY_FOR_KIND, kind);
+    }
+
+    static String backupsList(String kind, String backups) {
+        return format(BACKUPS_LIST, kind, backups);
+    }
+
+    static String backupRestored(String kind, String backupFileName) {
+        return format(BACKUP_RESTORED, kind, backupFileName);
     }
 
     static String permissionsEmpty(String subject) {

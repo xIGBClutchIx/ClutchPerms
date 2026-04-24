@@ -2,13 +2,10 @@ package me.clutchy.clutchperms.common.subject;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -25,6 +22,8 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
+import me.clutchy.clutchperms.common.storage.StorageFiles;
 
 /**
  * JSON-backed subject metadata service that persists the latest known subject name and last-seen time.
@@ -86,35 +85,12 @@ final class JsonFileSubjectMetadataService implements SubjectMetadataService {
 
     private void saveSubjects() {
         try {
-            Path parentDirectory = subjectsFile.getParent();
-            if (parentDirectory != null) {
-                Files.createDirectories(parentDirectory);
-            }
-
-            Path temporaryFile = Files.createTempFile(parentDirectory, subjectsFile.getFileName().toString(), ".tmp");
-            try {
-                try (Writer writer = Files.newBufferedWriter(temporaryFile, StandardCharsets.UTF_8)) {
-                    GSON.toJson(toJson(delegate.snapshot()), writer);
-                    writer.write(System.lineSeparator());
-                }
-
-                moveIntoPlace(temporaryFile);
-                temporaryFile = null;
-            } finally {
-                if (temporaryFile != null) {
-                    Files.deleteIfExists(temporaryFile);
-                }
-            }
+            StorageFiles.writeAtomicallyWithBackup(subjectsFile, StorageFileKind.SUBJECTS, writer -> {
+                GSON.toJson(toJson(delegate.snapshot()), writer);
+                writer.write(System.lineSeparator());
+            });
         } catch (IOException exception) {
             throw new PermissionStorageException("Failed to save subject metadata to " + subjectsFile, exception);
-        }
-    }
-
-    private void moveIntoPlace(Path temporaryFile) throws IOException {
-        try {
-            Files.move(temporaryFile, subjectsFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(temporaryFile, subjectsFile, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

@@ -2,13 +2,10 @@ package me.clutchy.clutchperms.common.permission;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -22,6 +19,8 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
+import me.clutchy.clutchperms.common.storage.StorageFiles;
 
 /**
  * JSON-backed permission service that persists direct subject permission assignments after every mutation.
@@ -92,35 +91,12 @@ final class JsonFilePermissionService implements PermissionService {
 
     private void savePermissions() {
         try {
-            Path parentDirectory = permissionsFile.getParent();
-            if (parentDirectory != null) {
-                Files.createDirectories(parentDirectory);
-            }
-
-            Path temporaryFile = Files.createTempFile(parentDirectory, permissionsFile.getFileName().toString(), ".tmp");
-            try {
-                try (Writer writer = Files.newBufferedWriter(temporaryFile, StandardCharsets.UTF_8)) {
-                    GSON.toJson(toJson(delegate.snapshot()), writer);
-                    writer.write(System.lineSeparator());
-                }
-
-                moveIntoPlace(temporaryFile);
-                temporaryFile = null;
-            } finally {
-                if (temporaryFile != null) {
-                    Files.deleteIfExists(temporaryFile);
-                }
-            }
+            StorageFiles.writeAtomicallyWithBackup(permissionsFile, StorageFileKind.PERMISSIONS, writer -> {
+                GSON.toJson(toJson(delegate.snapshot()), writer);
+                writer.write(System.lineSeparator());
+            });
         } catch (IOException exception) {
             throw new PermissionStorageException("Failed to save permissions to " + permissionsFile, exception);
-        }
-    }
-
-    private void moveIntoPlace(Path temporaryFile) throws IOException {
-        try {
-            Files.move(temporaryFile, permissionsFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(temporaryFile, permissionsFile, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

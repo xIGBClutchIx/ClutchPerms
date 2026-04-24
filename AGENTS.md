@@ -49,7 +49,7 @@ Shared package ownership:
 - `common.group` - group definitions, group permissions, memberships, group storage, and group observers
 - `common.node` - known permission node registry, manual node storage, registry composition, and node observers
 - `common.subject` - last-known subject metadata
-- `common.storage` - storage exceptions
+- `common.storage` - storage exceptions, atomic file writes, backup listing, and restore rollback helpers
 - `common.command` - shared Brigadier command tree, command messages, and platform command environment contract
 
 ## Current Functional Model
@@ -103,9 +103,17 @@ Storage expectations:
 - Create parent directories as needed.
 - Use deterministic output.
 - Write through temporary files and replace the target file.
+- Before replacing an existing live JSON file, create a rolling backup through `common.storage.StorageBackupService`.
+- Do not replace the live file if backup creation fails.
+- The first save of a missing live file must not create a backup.
+- Keep backup retention at the newest 10 files per storage kind until a runtime config exists.
+- Backup layout is `backups/<kind>/<kind>-YYYYMMDD-HHMMSSSSS.json`, where kind is `permissions`, `subjects`, `groups`, or `nodes`.
+- Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
 - Fail startup, validate, or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
 - `/clutchperms validate` should parse all persisted files without replacing active services, refreshing runtime bridges, or mutating storage.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
+- `/clutchperms backup restore` restores one file, then reloads all four persisted files and refreshes runtime bridges. If reload fails, it must roll disk back to the previous live file and keep active services/runtime state unchanged.
+- If restore rollback fails, command feedback should report that rollback failure explicitly.
 
 ## Runtime Bridges
 
@@ -129,6 +137,9 @@ Current command surface:
 - `/clutchperms status`
 - `/clutchperms reload`
 - `/clutchperms validate`
+- `/clutchperms backup list`
+- `/clutchperms backup list <permissions|subjects|groups|nodes>`
+- `/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>`
 - `/clutchperms user <target> list|get|set|clear|check|explain`
 - `/clutchperms user <target> groups`
 - `/clutchperms user <target> group add|remove <group>`

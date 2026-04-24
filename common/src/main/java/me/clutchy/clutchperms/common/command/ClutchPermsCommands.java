@@ -31,6 +31,9 @@ import me.clutchy.clutchperms.common.permission.PermissionExplanation;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolution;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.StorageBackup;
+import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadata;
 
 /**
@@ -62,6 +65,10 @@ public final class ClutchPermsCommands {
 
     private static final String PARENT_ARGUMENT = "parent";
 
+    private static final String BACKUP_KIND_ARGUMENT = "backupKind";
+
+    private static final String BACKUP_FILE_ARGUMENT = "backupFile";
+
     private static final SimpleCommandExceptionType NO_PERMISSION = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_NO_PERMISSION));
 
     private static final SimpleCommandExceptionType OTHER_SOURCE_DENIED = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_OTHER_SOURCE_DENIED));
@@ -81,6 +88,8 @@ public final class ClutchPermsCommands {
     private static final DynamicCommandExceptionType GROUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType NODE_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
+    private static final DynamicCommandExceptionType BACKUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     /**
      * Creates the root ClutchPerms command node for a platform source type.
@@ -104,8 +113,8 @@ public final class ClutchPermsCommands {
         Objects.requireNonNull(environment, "environment");
 
         return LiteralArgumentBuilder.<S>literal(ROOT_LITERAL).executes(context -> executeAuthorized(environment, context, source -> sendCommandList(environment, context)))
-                .then(statusCommand(environment)).then(reloadCommand(environment)).then(validateCommand(environment)).then(userCommand(environment))
-                .then(groupRootCommand(environment)).then(usersCommand(environment)).then(nodesCommand(environment));
+                .then(statusCommand(environment)).then(reloadCommand(environment)).then(validateCommand(environment)).then(backupCommand(environment))
+                .then(userCommand(environment)).then(groupRootCommand(environment)).then(usersCommand(environment)).then(nodesCommand(environment));
     }
 
     private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -118,6 +127,14 @@ public final class ClutchPermsCommands {
 
     private static <S> LiteralArgumentBuilder<S> validateCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("validate").executes(context -> executeAuthorized(environment, context, source -> validateStorage(environment, context)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> backupCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("backup")
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> executeAuthorized(environment, context, source -> listBackups(environment, context)))
+                        .then(backupKindArgument(environment).executes(context -> executeAuthorized(environment, context, source -> listBackups(environment, context)))))
+                .then(LiteralArgumentBuilder.<S>literal("restore").then(backupKindArgument(environment)
+                        .then(backupFileArgument(environment).executes(context -> executeAuthorized(environment, context, source -> restoreBackup(environment, context))))));
     }
 
     private static <S> LiteralArgumentBuilder<S> userCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -239,6 +256,16 @@ public final class ClutchPermsCommands {
                 .suggests((context, builder) -> suggestParentGroups(environment, context, builder));
     }
 
+    private static <S> RequiredArgumentBuilder<S, String> backupKindArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(BACKUP_KIND_ARGUMENT, StringArgumentType.word())
+                .suggests((context, builder) -> suggestBackupKinds(environment, builder));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> backupFileArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(BACKUP_FILE_ARGUMENT, StringArgumentType.word())
+                .suggests((context, builder) -> suggestBackupFiles(environment, context, builder));
+    }
+
     private static <S> int executeAuthorized(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, CommandAction<S> action) throws CommandSyntaxException {
         S source = context.getSource();
         if (!canUse(environment, source)) {
@@ -291,6 +318,58 @@ public final class ClutchPermsCommands {
 
         environment.sendMessage(context.getSource(), CommandLang.validateSuccess());
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int listBackups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        StorageBackupService backupService = environment.storageBackupService();
+        Optional<StorageFileKind> requestedKind = getOptionalBackupKind(context);
+        try {
+            if (requestedKind.isPresent()) {
+                sendBackupList(environment, context, requestedKind.get(), backupService.listBackups(requestedKind.get()));
+                return Command.SINGLE_SUCCESS;
+            }
+
+            Map<StorageFileKind, List<StorageBackup>> backups = backupService.listBackups();
+            boolean hasBackups = backups.values().stream().anyMatch(list -> !list.isEmpty());
+            if (!hasBackups) {
+                environment.sendMessage(context.getSource(), CommandLang.backupsEmpty());
+                return Command.SINGLE_SUCCESS;
+            }
+            backups.forEach((kind, kindBackups) -> {
+                if (!kindBackups.isEmpty()) {
+                    sendBackupList(environment, context, kind, kindBackups);
+                }
+            });
+        } catch (RuntimeException exception) {
+            throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int restoreBackup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        StorageFileKind kind = getBackupKind(context);
+        String backupFileName = StringArgumentType.getString(context, BACKUP_FILE_ARGUMENT);
+        try {
+            environment.storageBackupService().restoreBackup(kind, backupFileName, () -> {
+                environment.reloadStorage();
+                environment.refreshRuntimePermissions();
+            });
+        } catch (RuntimeException exception) {
+            throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.backupRestored(kind.token(), backupFileName));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> void sendBackupList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, StorageFileKind kind, List<StorageBackup> backups) {
+        if (backups.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.backupsEmpty(kind.token()));
+            return;
+        }
+
+        String backupFiles = backups.stream().map(StorageBackup::fileName).collect(Collectors.joining(", "));
+        environment.sendMessage(context.getSource(), CommandLang.backupsList(kind.token(), backupFiles));
     }
 
     private static <S> boolean canUse(ClutchPermsCommandEnvironment<S> environment, S source) {
@@ -733,6 +812,23 @@ public final class ClutchPermsCommands {
         return Optional.of(new CommandSubject(subject.subjectId(), subject.lastKnownName()));
     }
 
+    private static <S> Optional<StorageFileKind> getOptionalBackupKind(CommandContext<S> context) throws CommandSyntaxException {
+        boolean hasBackupKind = context.getNodes().stream().anyMatch(node -> BACKUP_KIND_ARGUMENT.equals(node.getNode().getName()));
+        if (!hasBackupKind) {
+            return Optional.empty();
+        }
+        return Optional.of(getBackupKind(context));
+    }
+
+    private static <S> StorageFileKind getBackupKind(CommandContext<S> context) throws CommandSyntaxException {
+        String token = StringArgumentType.getString(context, BACKUP_KIND_ARGUMENT).toLowerCase(Locale.ROOT);
+        Optional<StorageFileKind> kind = StorageFileKind.fromToken(token);
+        if (kind.isEmpty()) {
+            throw BACKUP_OPERATION_FAILED.create(CommandLang.unknownBackupKind(token));
+        }
+        return kind.get();
+    }
+
     private static <S> String getNode(CommandContext<S> context) throws CommandSyntaxException {
         String node = StringArgumentType.getString(context, NODE_ARGUMENT);
         return validateNode(node);
@@ -823,6 +919,29 @@ public final class ClutchPermsCommands {
         Set<String> currentParents = existingParents;
         environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> !group.equals(currentGroupName))
                 .filter(group -> !currentParents.contains(group)).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining)).forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestBackupKinds(ClutchPermsCommandEnvironment<S> environment, SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        try {
+            environment.storageBackupService().fileKinds().stream().map(StorageFileKind::token).sorted(Comparator.naturalOrder()).filter(token -> token.startsWith(remaining))
+                    .forEach(builder::suggest);
+        } catch (RuntimeException exception) {
+            // Backup suggestions are best-effort when a platform cannot expose storage paths yet.
+        }
+        return builder.buildFuture();
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestBackupFiles(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        try {
+            StorageFileKind kind = getBackupKind(context);
+            environment.storageBackupService().listBackups(kind).stream().map(StorageBackup::fileName).filter(fileName -> fileName.toLowerCase(Locale.ROOT).startsWith(remaining))
+                    .forEach(builder::suggest);
+        } catch (CommandSyntaxException | RuntimeException exception) {
+            // Backup filename suggestions depend on a valid file kind and readable backup directory.
+        }
         return builder.buildFuture();
     }
 

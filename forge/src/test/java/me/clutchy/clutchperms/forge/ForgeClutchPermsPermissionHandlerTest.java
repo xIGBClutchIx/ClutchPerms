@@ -33,6 +33,9 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.StorageBackup;
+import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
@@ -199,6 +202,61 @@ final class ForgeClutchPermsPermissionHandlerTest {
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set wildcard.* false", console));
         assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "wildcard.*"));
         assertEquals(Boolean.FALSE, persistedHandler.getOfflinePermission(SUBJECT_ID, wildcardNode));
+    }
+
+    @Test
+    void backupRestoreReloadsPermissionHandlerState(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
+        TestEnvironment environment = new TestEnvironment(PermissionServices.jsonFile(temporaryDirectory.resolve("permissions.json")), temporaryDirectory);
+        PermissionNode<Boolean> backupNode = new PermissionNode<>("example", "backup", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
+        ForgeClutchPermsPermissionHandler suppliedHandler = new ForgeClutchPermsPermissionHandler(environment::permissionResolver, List.of(backupNode));
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.backup true", console));
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.backup false", console));
+        assertEquals(Boolean.FALSE, suppliedHandler.getOfflinePermission(SUBJECT_ID, backupNode));
+        StorageBackup backup = environment.storageBackupService().listBackups(StorageFileKind.PERMISSIONS).getFirst();
+        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(backup.path()).getPermission(SUBJECT_ID, "example.backup"));
+
+        assertEquals(1, dispatcher.execute("clutchperms backup restore permissions " + backup.fileName(), console));
+
+        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(temporaryDirectory.resolve("permissions.json")).getPermission(SUBJECT_ID, "example.backup"));
+        assertEquals(Boolean.TRUE, suppliedHandler.getOfflinePermission(SUBJECT_ID, backupNode));
+        assertEquals(1, environment.runtimeRefreshes());
+    }
+
+    @Test
+    void malformedBackupRestoreRollsBackAndPreservesPermissionHandlerState(@TempDir Path temporaryDirectory) throws Exception {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
+        activePermissionService.setPermission(SUBJECT_ID, "example.backup", PermissionValue.TRUE);
+        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        PermissionNode<Boolean> backupNode = new PermissionNode<>("example", "backup", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
+        ForgeClutchPermsPermissionHandler suppliedHandler = new ForgeClutchPermsPermissionHandler(environment::permissionResolver, List.of(backupNode));
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+        String liveBeforeRestore = Files.readString(permissionsFile);
+        Path backupDirectory = temporaryDirectory.resolve("backups").resolve("permissions");
+        Files.createDirectories(backupDirectory);
+        String backupFileName = "permissions-20260424-120000000.json";
+        Files.writeString(backupDirectory.resolve(backupFileName), """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000003": {
+                      "example.*.bad": "TRUE"
+                    }
+                  }
+                }
+                """, StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class,
+                () -> dispatcher.execute("clutchperms backup restore permissions " + backupFileName, console));
+
+        assertTrue(exception.getMessage().contains("Backup operation failed: Failed to apply restored permissions backup " + backupFileName));
+        assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
+        assertEquals(Boolean.TRUE, suppliedHandler.getOfflinePermission(SUBJECT_ID, backupNode));
+        assertEquals(0, environment.runtimeRefreshes());
     }
 
     @Test
@@ -460,6 +518,13 @@ final class ForgeClutchPermsPermissionHandlerTest {
             SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
             GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
             PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json"));
+        }
+
+        @Override
+        public StorageBackupService storageBackupService() {
+            return StorageBackupService.forFiles(storageDirectory.resolve("backups"),
+                    java.util.Map.of(StorageFileKind.PERMISSIONS, storageDirectory.resolve("permissions.json"), StorageFileKind.SUBJECTS, storageDirectory.resolve("subjects.json"),
+                            StorageFileKind.GROUPS, storageDirectory.resolve("groups.json"), StorageFileKind.NODES, storageDirectory.resolve("nodes.json")));
         }
 
         @Override

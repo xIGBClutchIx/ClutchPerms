@@ -2,6 +2,7 @@ package me.clutchy.clutchperms.forge;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 
 import org.slf4j.Logger;
@@ -19,6 +20,8 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
@@ -123,7 +126,7 @@ public final class ClutchPermsForgeMod {
                 .register(ForgeClutchPermsCommand.create(ClutchPermsForgeMod::getPermissionService, ClutchPermsForgeMod::getSubjectMetadataService,
                         ClutchPermsForgeMod::getGroupService, ClutchPermsForgeMod::getPermissionNodeRegistry, ClutchPermsForgeMod::getManualPermissionNodeRegistry,
                         ClutchPermsForgeMod::getPermissionResolver, ClutchPermsForgeMod::getStatusDiagnostics, ClutchPermsForgeMod::reloadStorage,
-                        ClutchPermsForgeMod::validateStorage, ClutchPermsForgeMod::refreshRuntimePermissions));
+                        ClutchPermsForgeMod::validateStorage, ClutchPermsForgeMod::getStorageBackupService, ClutchPermsForgeMod::refreshRuntimePermissions));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -257,6 +260,18 @@ public final class ClutchPermsForgeMod {
         SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
         GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
         PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized"));
+    }
+
+    /**
+     * Returns the backup service used by shared backup commands.
+     *
+     * @return active storage backup service
+     */
+    public static StorageBackupService getStorageBackupService() {
+        return StorageBackupService.forFiles(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized").getParent().resolve("backups"),
+                Map.of(StorageFileKind.PERMISSIONS, permissionsFile, StorageFileKind.SUBJECTS, Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"),
+                        StorageFileKind.GROUPS, Objects.requireNonNull(groupsFile, "Groups file has not been initialized"), StorageFileKind.NODES,
+                        Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")));
     }
 
     /**

@@ -10,6 +10,7 @@ import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 /**
@@ -86,6 +87,15 @@ public interface ClutchPermsCommandEnvironment<S> {
      */
     default void validateStorage() {
         throw new UnsupportedOperationException("Storage validation is not available for this command environment");
+    }
+
+    /**
+     * Returns the backup service used by backup list and restore commands.
+     *
+     * @return active storage backup service
+     */
+    default StorageBackupService storageBackupService() {
+        throw new UnsupportedOperationException("Storage backups are not available for this command environment");
     }
 
     /**

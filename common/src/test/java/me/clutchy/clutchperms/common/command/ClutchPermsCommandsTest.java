@@ -1,5 +1,8 @@
 package me.clutchy.clutchperms.common.command;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -11,6 +14,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -28,6 +32,8 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
@@ -69,6 +75,9 @@ class ClutchPermsCommandsTest {
 
     private CommandDispatcher<TestSource> dispatcher;
 
+    @TempDir
+    private Path temporaryDirectory;
+
     /**
      * Creates a fresh command dispatcher and permission service for each test case.
      */
@@ -80,6 +89,9 @@ class ClutchPermsCommandsTest {
         manualPermissionNodeRegistry = PermissionNodeRegistries.inMemory();
         permissionResolver = new PermissionResolver(permissionService, groupService);
         environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, manualPermissionNodeRegistry, permissionResolver);
+        environment.setStorageBackupService(StorageBackupService.forFiles(temporaryDirectory.resolve("backups"),
+                Map.of(StorageFileKind.PERMISSIONS, temporaryDirectory.resolve("permissions.json"), StorageFileKind.SUBJECTS, temporaryDirectory.resolve("subjects.json"),
+                        StorageFileKind.GROUPS, temporaryDirectory.resolve("groups.json"), StorageFileKind.NODES, temporaryDirectory.resolve("nodes.json"))));
         environment.addOnlineSubject("Target", TARGET_ID);
         dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
@@ -178,6 +190,95 @@ class ClutchPermsCommandsTest {
         assertEquals(0, environment.reloads());
         assertEquals(0, environment.runtimeRefreshes());
         assertEquals(List.of(), console.messages());
+    }
+
+    /**
+     * Confirms backup list commands report all backups and per-file backups newest first.
+     *
+     * @throws IOException when test backup setup fails
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void backupListReportsAllAndFileSpecificBackups() throws IOException, CommandSyntaxException {
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "first");
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120001000.json", "second");
+        writeBackup(StorageFileKind.GROUPS, "groups-20260424-120000000.json", "groups");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms backup list", console);
+        dispatcher.execute("clutchperms backup list permissions", console);
+
+        assertEquals(List.of("Backups for permissions: permissions-20260424-120001000.json, permissions-20260424-120000000.json",
+                "Backups for groups: groups-20260424-120000000.json", "Backups for permissions: permissions-20260424-120001000.json, permissions-20260424-120000000.json"),
+                console.messages());
+    }
+
+    /**
+     * Confirms backup restore replaces the selected file and refreshes runtime state through the reload path.
+     *
+     * @throws IOException when test backup setup fails
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void backupRestoreRestoresFileAndRefreshesRuntimeState() throws IOException, CommandSyntaxException {
+        Path liveFile = temporaryDirectory.resolve("permissions.json");
+        Files.writeString(liveFile, "current");
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "restored");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms backup restore permissions permissions-20260424-120000000.json", console);
+
+        assertEquals("restored", Files.readString(liveFile));
+        assertEquals(1, environment.reloads());
+        assertEquals(1, environment.runtimeRefreshes());
+        assertEquals(List.of("Restored permissions from backup permissions-20260424-120000000.json."), console.messages());
+    }
+
+    /**
+     * Confirms backup restore rolls disk back and skips runtime refresh when reload rejects the restored file.
+     *
+     * @throws IOException when test backup setup fails
+     */
+    @Test
+    void backupRestoreFailureRollsBackFileAndDoesNotRefreshRuntimeState() throws IOException {
+        Path liveFile = temporaryDirectory.resolve("permissions.json");
+        Files.writeString(liveFile, "current");
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "restored");
+        environment.failReload(new PermissionStorageException("bad restored permissions"));
+        TestSource console = TestSource.console();
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class,
+                () -> dispatcher.execute("clutchperms backup restore permissions permissions-20260424-120000000.json", console));
+
+        assertTrue(exception.getMessage().contains("Backup operation failed: Failed to apply restored permissions backup permissions-20260424-120000000.json"));
+        assertEquals("current", Files.readString(liveFile));
+        assertEquals(0, environment.reloads());
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
+    }
+
+    /**
+     * Confirms players without admin permission cannot use backup commands.
+     */
+    @Test
+    void playerWithoutAdminPermissionCannotUseBackupCommands() {
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms backup list", player));
+    }
+
+    /**
+     * Confirms backup command suggestions include file kinds and backups for the selected kind.
+     *
+     * @throws IOException when test backup setup fails
+     */
+    @Test
+    void backupSuggestionsIncludeKindsAndBackupFiles() throws IOException {
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "first");
+        writeBackup(StorageFileKind.GROUPS, "groups-20260424-120000000.json", "groups");
+
+        assertEquals(List.of("groups", "nodes", "permissions", "subjects"), suggestionTexts("clutchperms backup list "));
+        assertEquals(List.of("permissions-20260424-120000000.json"), suggestionTexts("clutchperms backup restore permissions "));
     }
 
     /**
@@ -741,6 +842,12 @@ class ClutchPermsCommandsTest {
         return dispatcher.getCompletionSuggestions(dispatcher.parse(command, TestSource.console())).join().getList().stream().map(Suggestion::getText).toList();
     }
 
+    private void writeBackup(StorageFileKind kind, String fileName, String content) throws IOException {
+        Path backupDirectory = temporaryDirectory.resolve("backups").resolve(kind.token());
+        Files.createDirectories(backupDirectory);
+        Files.writeString(backupDirectory.resolve(fileName), content);
+    }
+
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
                 "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Known subjects: " + knownSubjects, "Known groups: 0",
@@ -748,14 +855,15 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListMessages() {
-        return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms reload", "/clutchperms validate", "/clutchperms user <target> list",
-                "/clutchperms user <target> get <node>", "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>",
-                "/clutchperms user <target> groups", "/clutchperms user <target> group add <group>", "/clutchperms user <target> group remove <group>",
-                "/clutchperms user <target> check <node>", "/clutchperms user <target> explain <node>", "/clutchperms group list", "/clutchperms group <group> create",
-                "/clutchperms group <group> delete", "/clutchperms group <group> list", "/clutchperms group <group> get <node>",
-                "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>", "/clutchperms group <group> parents",
-                "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>", "/clutchperms users list",
-                "/clutchperms users search <name>", "/clutchperms nodes list", "/clutchperms nodes search <query>", "/clutchperms nodes add <node>",
+        return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms reload", "/clutchperms validate", "/clutchperms backup list",
+                "/clutchperms backup list <permissions|subjects|groups|nodes>", "/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>",
+                "/clutchperms user <target> list", "/clutchperms user <target> get <node>", "/clutchperms user <target> set <node> <true|false>",
+                "/clutchperms user <target> clear <node>", "/clutchperms user <target> groups", "/clutchperms user <target> group add <group>",
+                "/clutchperms user <target> group remove <group>", "/clutchperms user <target> check <node>", "/clutchperms user <target> explain <node>",
+                "/clutchperms group list", "/clutchperms group <group> create", "/clutchperms group <group> delete", "/clutchperms group <group> list",
+                "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>",
+                "/clutchperms group <group> parents", "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>",
+                "/clutchperms users list", "/clutchperms users search <name>", "/clutchperms nodes list", "/clutchperms nodes search <query>", "/clutchperms nodes add <node>",
                 "/clutchperms nodes add <node> <description>", "/clutchperms nodes remove <node>");
     }
 
@@ -774,6 +882,8 @@ class ClutchPermsCommandsTest {
         private final Map<String, CommandSubject> onlineSubjects = new LinkedHashMap<>();
 
         private final List<String> platformNodes = new ArrayList<>();
+
+        private StorageBackupService storageBackupService;
 
         private int reloads;
 
@@ -808,6 +918,10 @@ class ClutchPermsCommandsTest {
 
         private void failValidation(RuntimeException validationFailure) {
             this.validationFailure = validationFailure;
+        }
+
+        private void setStorageBackupService(StorageBackupService storageBackupService) {
+            this.storageBackupService = storageBackupService;
         }
 
         private int reloads() {
@@ -872,6 +986,11 @@ class ClutchPermsCommandsTest {
                 throw validationFailure;
             }
             validations++;
+        }
+
+        @Override
+        public StorageBackupService storageBackupService() {
+            return storageBackupService;
         }
 
         @Override

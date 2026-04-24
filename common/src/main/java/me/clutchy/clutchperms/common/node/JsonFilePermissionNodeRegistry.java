@@ -2,13 +2,10 @@ package me.clutchy.clutchperms.common.node;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +20,8 @@ import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
+import me.clutchy.clutchperms.common.storage.StorageFiles;
 
 /**
  * JSON-backed manual known-node registry.
@@ -76,35 +75,12 @@ final class JsonFilePermissionNodeRegistry implements MutablePermissionNodeRegis
 
     private void saveNodes() {
         try {
-            Path parentDirectory = nodesFile.getParent();
-            if (parentDirectory != null) {
-                Files.createDirectories(parentDirectory);
-            }
-
-            Path temporaryFile = Files.createTempFile(parentDirectory, nodesFile.getFileName().toString(), ".tmp");
-            try {
-                try (Writer writer = Files.newBufferedWriter(temporaryFile, StandardCharsets.UTF_8)) {
-                    GSON.toJson(toJson(delegate.getKnownNodes()), writer);
-                    writer.write(System.lineSeparator());
-                }
-
-                moveIntoPlace(temporaryFile);
-                temporaryFile = null;
-            } finally {
-                if (temporaryFile != null) {
-                    Files.deleteIfExists(temporaryFile);
-                }
-            }
+            StorageFiles.writeAtomicallyWithBackup(nodesFile, StorageFileKind.NODES, writer -> {
+                GSON.toJson(toJson(delegate.getKnownNodes()), writer);
+                writer.write(System.lineSeparator());
+            });
         } catch (IOException exception) {
             throw new PermissionStorageException("Failed to save known permission nodes to " + nodesFile, exception);
-        }
-    }
-
-    private void moveIntoPlace(Path temporaryFile) throws IOException {
-        try {
-            Files.move(temporaryFile, nodesFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(temporaryFile, nodesFile, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

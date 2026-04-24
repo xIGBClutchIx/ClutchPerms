@@ -37,6 +37,8 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.StorageBackup;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadata;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
@@ -502,6 +504,76 @@ class ClutchPermsPaperPluginTest {
         assertTrue(PermissionNodeRegistries.jsonFile(nodesFile).getKnownNode("wildcard.node").isPresent());
         assertTrue(target.isPermissionSet("wildcard.node"));
         assertFalse(target.hasPermission("wildcard.node"));
+    }
+
+    /**
+     * Confirms command mutations create backups on later saves and restore reloads Paper runtime permissions.
+     *
+     * @throws Exception when command execution or storage inspection fails unexpectedly
+     */
+    @Test
+    void backupRestoreReloadsStorageAndRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
+        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
+
+        assertEquals(1, dispatcher.execute("clutchperms user Target set example.backup true", adminSource));
+        assertTrue(target.hasPermission("example.backup"));
+        assertEquals(1, dispatcher.execute("clutchperms user Target set example.backup false", adminSource));
+        assertFalse(target.hasPermission("example.backup"));
+
+        StorageBackup backup = plugin.getStorageBackupService().listBackups(StorageFileKind.PERMISSIONS).getFirst();
+        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(backup.path()).getPermission(target.getUniqueId(), "example.backup"));
+
+        assertEquals(1, dispatcher.execute("clutchperms backup restore permissions " + backup.fileName(), adminSource));
+
+        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.backup"));
+        assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.backup"));
+        assertTrue(target.isPermissionSet("example.backup"));
+        assertTrue(target.hasPermission("example.backup"));
+    }
+
+    /**
+     * Confirms malformed restored files roll disk back and preserve active Paper runtime state.
+     *
+     * @throws Exception when file setup fails unexpectedly
+     */
+    @Test
+    void malformedBackupRestoreRollsBackAndPreservesRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Backup", PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
+        String liveBeforeRestore = Files.readString(permissionsFile);
+        Path backupDirectory = plugin.getDataFolder().toPath().resolve("backups").resolve("permissions");
+        Files.createDirectories(backupDirectory);
+        String backupFileName = "permissions-20260424-120000000.json";
+        Files.writeString(backupDirectory.resolve(backupFileName), """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "bad.*.node": "TRUE"
+                    }
+                  }
+                }
+                """, StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class,
+                () -> dispatcher.execute("clutchperms backup restore permissions " + backupFileName, new TestCommandSourceStack(admin)));
+
+        assertTrue(exception.getMessage().contains("Backup operation failed: Failed to apply restored permissions backup " + backupFileName));
+        assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
+        assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.backup"));
+        assertTrue(target.isPermissionSet("example.backup"));
+        assertTrue(target.hasPermission("example.backup"));
     }
 
     /**

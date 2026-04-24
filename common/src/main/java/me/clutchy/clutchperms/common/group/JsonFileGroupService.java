@@ -2,13 +2,10 @@ package me.clutchy.clutchperms.common.group;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -27,6 +24,8 @@ import com.google.gson.JsonPrimitive;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
+import me.clutchy.clutchperms.common.storage.StorageFiles;
 
 /**
  * JSON-backed {@link GroupService} that persists basic group definitions and direct subject memberships after every mutation.
@@ -147,35 +146,12 @@ final class JsonFileGroupService implements GroupService {
 
     private void saveGroups() {
         try {
-            Path parentDirectory = groupsFile.getParent();
-            if (parentDirectory != null) {
-                Files.createDirectories(parentDirectory);
-            }
-
-            Path temporaryFile = Files.createTempFile(parentDirectory, groupsFile.getFileName().toString(), ".tmp");
-            try {
-                try (Writer writer = Files.newBufferedWriter(temporaryFile, StandardCharsets.UTF_8)) {
-                    GSON.toJson(toJson(delegate.groupPermissionsSnapshot(), delegate.groupParentsSnapshot(), delegate.membershipsSnapshot()), writer);
-                    writer.write(System.lineSeparator());
-                }
-
-                moveIntoPlace(temporaryFile);
-                temporaryFile = null;
-            } finally {
-                if (temporaryFile != null) {
-                    Files.deleteIfExists(temporaryFile);
-                }
-            }
+            StorageFiles.writeAtomicallyWithBackup(groupsFile, StorageFileKind.GROUPS, writer -> {
+                GSON.toJson(toJson(delegate.groupPermissionsSnapshot(), delegate.groupParentsSnapshot(), delegate.membershipsSnapshot()), writer);
+                writer.write(System.lineSeparator());
+            });
         } catch (IOException exception) {
             throw new PermissionStorageException("Failed to save groups to " + groupsFile, exception);
-        }
-    }
-
-    private void moveIntoPlace(Path temporaryFile) throws IOException {
-        try {
-            Files.move(temporaryFile, groupsFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(temporaryFile, groupsFile, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
