@@ -1,299 +1,228 @@
 # AGENTS.md
 
-## Purpose
-- `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper, Fabric, NeoForge, and Forge.
-- The current state is an early persisted prototype, not a finished permission platform.
-- The repo currently provides:
-  - a shared `common` module with a permission API, basic group API, effective permission resolver, in-memory implementations, JSON-backed persistence factories, observable service wrappers, subject metadata API, and shared Brigadier command tree
-  - a `paper` plugin module with Paper service registration, a Paper lifecycle Brigadier adapter, and runtime permission attachment bridge
-  - a `fabric` mod module with the same shared service, shared Brigadier command behavior, and fabric-permissions-api provider bridge
-  - a `neoforge` mod module with the same shared service, shared Brigadier command behavior, and native permission handler bridge
-  - a `forge` mod module with the same shared service, shared Brigadier command behavior, and native permission handler bridge
+## Working Defaults
+
+- Make reasonable assumptions and proceed unless the task is genuinely blocked.
+- Keep changes scoped to the user request. Do not bundle unrelated refactors into feature work.
+- Never revert unrelated local changes. Treat unexpected edits as user work unless proven otherwise.
+- Use the Gradle wrapper: `./gradlew`.
+- Run relevant checks before finishing and report exactly what ran.
+- `.codex` is a local workspace file and is ignored. Do not stage it unless explicitly requested.
+- NeoForge tasks may generate `neoforge/logs/`; remove that directory before finishing if it appears.
+
+## Project Purpose
+
+ClutchPerms is an early cross-platform Minecraft permissions prototype for Paper, Fabric, NeoForge, and Forge. It is not a mature permissions suite yet, but it does have a real core loop:
+
+- shared permission, group, subject metadata, storage, and command code in `common`
+- JSON-backed persisted state
+- shared Brigadier `/clutchperms` commands
+- Paper runtime attachments
+- Fabric fabric-permissions-api integration
+- Forge and NeoForge native permission handlers
+
+Keep the project moving toward a useful permissions system without adding mature-suite complexity too early.
 
 ## Repository Layout
+
 - `common`
   - pure Java shared code
   - no Bukkit, Paper, Fabric, NeoForge, Forge, or Minecraft dependencies
-  - owns the public permission model for now
-  - organizes shared code by domain:
-    - `common.permission` for direct permission storage, node normalization, effective resolution, and permission observers
-    - `common.group` for group definitions, group permissions, memberships, and group observers
-    - `common.subject` for last-known subject metadata
-    - `common.storage` for shared storage exceptions
-    - `common.command` for the shared Brigadier command tree and command language
+  - owns the shared permission model, storage model, effective resolution, and command behavior
 - `paper`
-  - Paper server plugin
-  - compiles against Paper API
-  - embeds `common` classes directly into the produced jar
-  - uses `plugin.yml`, not `paper-plugin.yml`
-  - may use Paper-only APIs; Spigot compatibility is not a project goal
+  - Paper plugin adapter
+  - Paper-only target; Spigot compatibility is not maintained
+  - embeds compiled `common` classes in the plugin jar
 - `fabric`
-  - Fabric mod built with Loom
-  - bundles `common` as a nested jar via `include(project(":common"))`
-  - bundles fabric-permissions-api as a nested jar
+  - Fabric mod adapter built with Loom
+  - packages `common` and fabric-permissions-api as nested included jars
 - `neoforge`
-  - NeoForge mod built with ModDevGradle
-  - bundles `common` as a nested jar via NeoForge jar-in-jar metadata
+  - NeoForge mod adapter built with ModDevGradle
+  - packages `common` as a nested jar through jar-in-jar metadata
 - `forge`
-  - Forge mod built with ForgeGradle
-  - embeds `common` classes directly into the produced jar
-- root build
-  - Gradle Kotlin DSL multi-project setup
-  - centralized Java toolchain and test configuration
+  - Forge mod adapter built with ForgeGradle
+  - embeds compiled `common` classes in the mod jar
 
-## Current Functional Scope
-- Shared public API:
-  - `common.permission.PermissionService`
-  - `common.permission.PermissionValue`
-  - `common.permission.PermissionNodes`
-  - `common.permission.PermissionChangeListener`
-  - `common.permission.PermissionResolver`
-  - `common.permission.PermissionResolution`
-  - `common.group.GroupService`
-  - `common.group.GroupChangeListener`
-  - `common.subject.SubjectMetadata`
-  - `common.subject.SubjectMetadataService`
-- Shared command API:
-  - `ClutchPermsCommands`
-  - `ClutchPermsCommandEnvironment`
-  - `CommandSourceKind`
-  - `CommandSubject`
-- Current backends:
-  - `InMemoryPermissionService`
-  - `InMemoryGroupService`
-  - `PermissionServices.jsonFile(Path)` for JSON-backed persisted direct assignments
-  - `PermissionServices.observing(PermissionService, PermissionChangeListener)` for subject-level mutation notifications
-  - `GroupServices.jsonFile(Path)` for JSON-backed persisted group definitions and memberships
-  - `GroupServices.observing(GroupService, GroupChangeListener)` for subject-level or all-subject group mutation notifications
-  - `SubjectMetadataServices.jsonFile(Path)` for JSON-backed persisted subject metadata
-- Current behavior:
-  - stores permissions by `UUID` and normalized permission node
-  - normalizes nodes with `trim().toLowerCase(Locale.ROOT)`
-  - treats missing permissions as `UNSET`
-  - `hasPermission(...)` returns `true` only for `PermissionValue.TRUE`
-  - `getPermissions(...)` returns an immutable snapshot of explicit assignments for a subject
-  - persists direct `UUID -> node -> TRUE/FALSE` assignments to `permissions.json`
-  - persists group definitions, group permissions, and explicit subject memberships to `groups.json`
-  - treats `UNSET` as entry removal
-  - resolves effective permissions in shared code: direct user assignment, then explicit user groups, then implicit `default` group
-  - treats `FALSE` as winning over `TRUE` within the same explicit group tier
-  - fails startup on malformed persisted permission, group, or subject metadata data
-  - registers shared `/clutchperms` command listing, reload, status diagnostics, direct user permission, group, membership, user check, and known-user commands on every platform
-  - reports storage paths, known-subject count, known-group count, and runtime bridge status from `/clutchperms status`
-  - reloads `permissions.json`, `subjects.json`, and `groups.json` from `/clutchperms reload`, then refreshes runtime permission bridges for online subjects where needed
-  - centralizes shared command feedback text in `common.command.CommandLang`
-  - registers shared known-user list/search commands backed by subject metadata
-  - resolves command targets by exact online player name first, then exact stored last-known name, then UUID
-  - fails ambiguous stored last-known name targets with matching UUIDs
-  - displays last-known names for UUID command targets when subject metadata exists
-  - suggests `clutchperms.admin` and effective target or group assignments for command permission node arguments
-  - allows console and remote console bootstrap command execution
-  - requires effective `clutchperms.admin` for player command execution
-  - Paper applies effective assignments to online players through plugin-owned `PermissionAttachment`s
-  - Fabric provides effective assignments to mods that query fabric-permissions-api
-  - NeoForge and Forge expose effective assignments through a `clutchperms:direct` native permission handler when that handler is selected in server config
-  - records subject UUID, last known name, and last seen timestamp when players join
-- Not implemented yet:
-  - inheritance
-  - contexts
-  - wildcard permissions
-  - group priorities
-  - cross-platform synchronization
+Shared package ownership:
 
-## Build And Tooling Rules
-- Use the Gradle wrapper: `./gradlew`
-- The wrapper is intentionally `9.4.1`
-  - This is required by the current Fabric 26.1.2 + Loom 1.16.x setup.
-  - Do not downgrade the wrapper to `8.x` unless the Fabric toolchain is changed too.
-- Project code targets Java 25 through Gradle toolchains.
-- Root project coordinates:
-  - group: `me.clutchy.clutchperms`
-  - version: `0.1.0-SNAPSHOT`
-- Artifact naming is standardized at the root:
-  - `clutchperms-common`
-  - `clutchperms-paper`
-  - `clutchperms-fabric`
-  - `clutchperms-neoforge`
-  - `clutchperms-forge`
-- Copies of distributable runtime jars are collected in the root `build` directory.
+- `common.permission` - direct permissions, node normalization, effective resolution, permission observers, and permission service factories
+- `common.group` - group definitions, group permissions, memberships, group storage, and group observers
+- `common.subject` - last-known subject metadata
+- `common.storage` - storage exceptions
+- `common.command` - shared Brigadier command tree, command messages, and platform command environment contract
 
-## Version Matrix And Known Constraints
-- Paper compile target:
-  - `io.papermc.paper:paper-api:26.1.2.build.19-alpha`
-- Fabric target:
-  - Minecraft `26.1.2`
-  - Fabric Loader `0.19.2`
-  - Fabric API `0.146.1+26.1.2`
-  - Fabric Permissions API `0.7.0`
-  - Loom `1.16-SNAPSHOT` resolving to `1.16.1`
-- NeoForge target:
-  - Minecraft `26.1.2`
-  - NeoForge `26.1.2.22-beta`
-  - ModDevGradle `2.0.141`
-- Forge target:
-  - Minecraft `26.1.2`
-  - Forge `64.0.5`
-  - ForgeGradle `7.0.25`
-- Gson:
-  - `2.13.2`
-- Brigadier:
-  - `1.3.10`
-- MockBukkit tests:
-  - `org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.108.0`
-  - test runtime Paper API pinned to `1.21.11-R0.1-SNAPSHOT`
-- Important:
-  - MockBukkit does not currently align with the Paper `26.1.2` alpha API line.
-  - The `paper` module compiles against the newer Paper API but tests against the MockBukkit-compatible Paper line.
-  - Paper-only APIs are allowed in production code, but tests may need thin adapters or compile/build coverage when MockBukkit lags behind the current Paper API.
+## Current Functional Model
+
+- Direct permissions are stored by subject `UUID` and normalized permission node.
+- Permission nodes normalize with `trim().toLowerCase(Locale.ROOT)`.
+- Stored values are `TRUE`, `FALSE`, or absent. Absence is `UNSET`.
+- `PermissionService#hasPermission(...)` is true only for `TRUE`.
+- Groups are named, normalized, and store explicit permission assignments.
+- User group membership is direct only.
+- A group named `default` applies implicitly to every subject when it exists.
+- Users cannot be explicitly added to or removed from `default`.
+- Effective resolution order is direct user assignment, explicit user groups, then implicit `default`.
+- Within the same explicit group tier, `FALSE` wins over `TRUE`.
+- Subject metadata stores UUID, last-known name, and last-seen timestamp.
+- Command targets resolve exact online name first, exact stored last-known name second, and UUID third.
+- Ambiguous stored last-known names must fail clearly instead of mutating an arbitrary UUID.
+
+Do not add inheritance, wildcards, contexts, priorities, imports, migrations, or LuckPerms bridges unless the user asks for that slice.
+
+## Storage And Reload
+
+Current persisted files:
+
+- `permissions.json` for direct user permission assignments
+- `groups.json` for group definitions, group permissions, and memberships
+- `subjects.json` for subject metadata
+
+Locations:
+
+- Paper: plugin data folder
+- Fabric: Fabric config dir, `clutchperms/`
+- NeoForge: NeoForge config dir, `clutchperms/`
+- Forge: Forge config dir, `clutchperms/`
+
+Storage expectations:
+
+- Treat missing files as empty state.
+- Save mutations immediately.
+- Create parent directories as needed.
+- Use deterministic output.
+- Write through temporary files and replace the target file.
+- Fail startup or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, and explicit `default` memberships.
+- Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
+
+## Runtime Bridges
+
+- Paper applies effective permissions to online players with plugin-owned `PermissionAttachment`s.
+- Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
+- Fabric exposes effective permissions through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
+- Forge and NeoForge expose effective permissions through native Boolean permission handlers registered as `clutchperms:direct`.
+- Forge and NeoForge only affect mods that use the platform permission APIs and only when server config selects `clutchperms:direct`.
+- Keep bridge code thin. Shared behavior belongs in `common`; platform code should adapt lifecycle/source/runtime APIs.
 
 ## Commands
-- Full verification:
-  - `./gradlew clean build`
-- Standard test run:
-  - `./gradlew check`
-- Formatter check:
-  - `./gradlew spotlessCheck`
-- Auto-format sources and supported config files:
-  - `./gradlew spotlessApply`
-- Common module only:
-  - `./gradlew :common:test`
-- Paper tests only:
-  - `./gradlew :paper:test`
-- Fabric build only:
-  - `./gradlew :fabric:build`
-- NeoForge build only:
-  - `./gradlew :neoforge:build`
-- Forge build only:
-  - `./gradlew :forge:build`
-- Dependency inspection:
-  - `./gradlew :paper:dependencies --configuration testRuntimeClasspath`
 
-## Testing Expectations
-- Before committing code changes, run the smallest relevant verification plus a repo-level check when the change crosses modules.
-- Minimum expectations by change type:
-  - shared API or shared behavior changes:
-    - `./gradlew :common:test :paper:test`
-  - Paper plugin changes:
-    - `./gradlew :paper:test`
-  - Fabric-only changes:
-    - `./gradlew :fabric:build`
-  - NeoForge-only changes:
-    - `./gradlew :neoforge:build`
-  - Forge-only changes:
-    - `./gradlew :forge:build`
-  - build logic or dependency changes:
-    - `./gradlew clean build`
-- Current test coverage:
-  - `common`
-    - unit tests for unset, true, false, and clear behavior
-    - unit tests for permission enumeration and JSON persistence
-    - unit tests for subject metadata enumeration and JSON persistence
-    - unit tests for group persistence, membership behavior, observing notifications, and effective resolution
-    - unit tests for observing service delegation and mutation notifications
-    - unit tests for shared Brigadier command status, authorization, target resolution, direct/group mutation, effective checks, and failure behavior
-    - unit tests for shared status diagnostics output
-    - unit tests for shared permission node and group suggestions
-    - unit tests for shared known-user list and search commands
-  - `paper`
-    - MockBukkit tests for plugin boot, service registration, subject metadata recording, the Paper command adapter, direct/group runtime permission attachment refresh behavior, and command-to-storage-to-runtime smoke coverage
-  - `fabric`
-    - smoke tests for fabric-permissions-api provider bridge value mapping, direct/group command-to-storage-to-bridge coverage, and reload failure handling
-  - `neoforge`
-    - smoke tests for native permission handler bridge value mapping, node registration, direct/group command-to-storage-to-handler coverage, and reload failure handling
-  - `forge`
-    - smoke tests for native permission handler bridge value mapping, node registration, direct/group command-to-storage-to-handler coverage, and reload failure handling
+Command behavior belongs in `common.command` unless it depends on platform APIs. Platform command classes should be thin adapters around the shared Brigadier tree.
+
+Current command surface:
+
+- `/clutchperms`
+- `/clutchperms status`
+- `/clutchperms reload`
+- `/clutchperms user <target> list|get|set|clear|check`
+- `/clutchperms user <target> groups`
+- `/clutchperms user <target> group add|remove <group>`
+- `/clutchperms group list`
+- `/clutchperms group <group> create|delete|list|get|set|clear`
+- `/clutchperms users list`
+- `/clutchperms users search <name>`
+
+Authorization:
+
+- Console and remote console can run commands for bootstrap.
+- Players need effective `clutchperms.admin`.
+- Other source types should be denied where the platform can distinguish them.
+
+## Build And Versions
+
+- Java toolchain: 25
+- Gradle wrapper: 9.4.1
+- Root group: `me.clutchy.clutchperms`
+- Root version: `0.1.0-SNAPSHOT`
+- Main version pins live in `gradle.properties`.
+- Do not downgrade the Gradle wrapper unless the Fabric/Loom setup changes too.
+- Paper tests use MockBukkit with an older Paper API line than production Paper compile. This mismatch is intentional.
+- Version bumps can ripple through metadata, packaging, MockBukkit compatibility, or toolchain requirements. Read the relevant module build file before changing dependencies.
+
+Key metadata files:
+
+- `paper/src/main/resources/plugin.yml`
+- `fabric/src/main/resources/fabric.mod.json`
+- `neoforge/src/main/resources/META-INF/neoforge.mods.toml`
+- `forge/src/main/resources/META-INF/mods.toml`
+
+## Verification
+
+Full verification:
+
+```bash
+./gradlew clean build
+```
+
+Common targeted checks:
+
+```bash
+./gradlew spotlessCheck
+./gradlew :common:test
+./gradlew :paper:test
+./gradlew :fabric:build
+./gradlew :neoforge:build
+./gradlew :forge:build
+```
+
+Minimum expectations:
+
+- Shared API, storage, resolver, or command changes: `./gradlew :common:test :paper:test`
+- Paper changes: `./gradlew :paper:test`
+- Fabric changes: `./gradlew :fabric:build`
+- NeoForge changes: `./gradlew :neoforge:build`
+- Forge changes: `./gradlew :forge:build`
+- Build logic or dependency changes: `./gradlew clean build`
+- Formatting-sensitive changes: `./gradlew spotlessCheck`
+
+For cross-platform behavior changes, prefer:
+
+```bash
+./gradlew :common:test :paper:test :fabric:build :neoforge:build :forge:build spotlessCheck
+```
 
 ## Coding Guidelines
+
 - Keep shared logic in `common` whenever it is not inherently platform-specific.
-- Avoid introducing Bukkit or Fabric types into `common`.
-- Preserve the current public surface in `common` unless the change clearly requires API expansion.
-- Prefer small additive changes over premature abstractions.
-- The Paper module is Paper-only; do not preserve Spigot compatibility unless explicitly requested.
-- Keep Paper-only behavior isolated in thin platform adapters where practical so shared behavior remains testable in `common`.
-- Keep Paper runtime permission state in plugin-owned attachments; do not mix direct ClutchPerms state into unrelated plugin attachments.
-- Keep Fabric runtime permission behavior in the fabric-permissions-api provider bridge; do not add vanilla permission mixins unless explicitly requested.
-- Keep NeoForge and Forge runtime permission behavior in native `clutchperms:direct` permission handlers; do not assume they affect mods that bypass the platform permission APIs.
-- For Fabric, keep the initial scope server-side unless client behavior is intentionally introduced.
-- For NeoForge, keep the initial scope server-side unless client behavior is intentionally introduced.
-- For Forge, keep the initial scope server-side unless client behavior is intentionally introduced.
-
-## Formatting
-- Formatting is enforced with Spotless through the Gradle wrapper.
-- Use `./gradlew spotlessApply` after editing Java sources, Gradle Kotlin DSL files, or supported repo config files.
-- Use `./gradlew spotlessCheck` in CI-style validation or before committing formatting-sensitive changes.
-- The project standard is a 180 character line length.
-- Java formatting is handled by Spotless with the Eclipse JDT formatter so the 180 character limit is configurable.
-- The shared Eclipse formatter profile lives at `eclipse-java-formatter.xml`.
-- If Java formatting rules change, update both the Eclipse formatter profile and any related Spotless wiring in `build.gradle.kts`.
-- `*.gradle.kts` files are formatted with Spotless + ktlint using the same 180 character line length.
-- The Eclipse formatter profile is configured to join comment lines where possible, so manually wrapped short comments may be condensed by `spotlessApply`.
-- Keep `.editorconfig` in sync with the Spotless rules when formatting conventions change.
-
-## Javadocs And Comments
-- Maintain Javadocs on public types and public or protected methods.
-- When adding new Java classes, include a type-level Javadoc that explains the role of the class in the scaffold or platform lifecycle.
-- When changing method behavior, update the method Javadoc in the same edit so the docs stay accurate.
-- Keep short explanatory comments around non-obvious lifecycle, packaging, normalization, or test setup behavior.
-- Do not add filler comments that only restate the code line-by-line.
-- Preserve useful existing comments during refactors unless the behavior they describe has actually changed.
-- If a refactor removes a public API or changes semantics, update any affected Javadocs, package docs, tests, `README.md`, and `AGENTS.md` together.
+- Do not introduce platform or Minecraft types into `common`.
+- Prefer constructor-driven shared services and thin platform lifecycle adapters.
+- Keep changes additive and small unless the user explicitly asks for a broader refactor.
+- Preserve public APIs unless the requested behavior clearly requires changing them.
+- Update Javadocs on public types and methods when behavior changes.
+- Add comments only for non-obvious lifecycle, packaging, normalization, or test setup behavior.
+- Keep command feedback text centralized in `common.command.CommandLang`.
+- Keep JSON schemas strict and deterministic.
+- Do not silently start with empty state after a bad persisted file.
 
 ## Packaging Rules
-- `paper`
-  - must continue to ship with `common` classes inside the final plugin jar
-  - must register commands through Paper lifecycle Brigadier registration, not a `plugin.yml` commands block
-  - must keep `plugin.yml` permission metadata accurate when permissions or main class names change
-- `fabric`
-  - must continue to package `common` as a nested included jar
-  - must continue to package fabric-permissions-api as a nested included jar while the Fabric bridge depends on it
-  - must keep `fabric.mod.json` version expansion wired through `processResources`
-- `neoforge`
-  - must continue to package `common` as a nested jar through NeoForge jar-in-jar metadata
-  - must keep `neoforge.mods.toml` version and dependency expansion wired through `processResources`
-- `forge`
-  - must continue to ship with `common` classes inside the final mod jar
-  - must keep `mods.toml` version and dependency expansion wired through `processResources`
-- If a refactor changes artifact names or packaging behavior, update both the docs and the verification commands.
-- Keep copies of the distributable Paper, Fabric, NeoForge, and Forge runtime jars landing in the shared root `build` folder unless there is a deliberate packaging change.
 
-## Editing Guidance For Future Agents
-- Read the relevant module build file before changing dependencies.
-- Be careful with version bumps:
-  - Paper API bumps may break MockBukkit tests even if main code still compiles.
-  - Loom or Fabric bumps may require a Gradle wrapper change.
-  - NeoForge or ModDevGradle bumps may require metadata, Java toolchain, or Gradle wrapper changes.
-  - Forge or ForgeGradle bumps may require metadata, Java toolchain, or Gradle wrapper changes.
-- If tests fail in `paper` during MockBukkit bootstrap, check the Paper API line used in test scope before changing production code.
-- If a Paper-only API is not covered by MockBukkit yet, prefer a small adapter plus shared tests over moving platform types into `common`.
-- If you add commands or permissions on Paper, update the shared command tests, the Paper adapter tests, and `plugin.yml` permission metadata where needed.
-- If you add new shared services or stateful behavior, prefer constructor-driven code in `common` and thin platform adapters in `paper`, `fabric`, `neoforge`, and `forge`.
-- If you change persisted permission behavior or file locations, update both `README.md` and this file.
-- If you change NeoForge entrypoints or dependencies, update `neoforge.mods.toml`.
-- If you change Forge entrypoints or dependencies, update `mods.toml`.
+- Paper must continue to ship `common` classes inside the final plugin jar.
+- Paper commands are registered through Paper lifecycle Brigadier registration, not a `plugin.yml` command block.
+- `plugin.yml` should keep permission metadata accurate.
+- Fabric must continue to include `common` and fabric-permissions-api as nested jars while the bridge depends on fabric-permissions-api.
+- NeoForge must continue to package `common` through jar-in-jar metadata.
+- Forge must continue to embed `common` classes directly.
+- Distributable runtime jars should continue to be copied into the root `build/` directory unless there is a deliberate packaging change.
 
-## Commit Rules
-- Use Conventional Commits: `type(scope): summary`
-- Keep the summary lowercase.
-- Prefer scopes when they clarify the area changed, such as:
-  - `build`
-  - `common`
-  - `paper`
-  - `fabric`
-  - `docs`
-  - `tooling`
-- Examples:
-  - `feat(common): add permission node validator`
-  - `fix(paper): register service on plugin enable`
-  - `docs(readme): explain mockbukkit version constraint`
-- Use a single `-m` unless a short list body adds real value.
-- Do not amend commits unless explicitly asked.
+## Formatting
+
+- Formatting is enforced by Spotless.
+- Use `./gradlew spotlessApply` after editing Java, Gradle Kotlin DSL, Markdown, JSON, YAML, properties, or supported config files.
+- Java formatting uses the Eclipse JDT profile in `eclipse-java-formatter.xml`.
+- Java and Gradle Kotlin DSL line length target is 180.
+- Keep `.editorconfig` aligned with Spotless if formatting rules change.
 
 ## Documentation Maintenance
-- Keep `README.md` aligned with reality.
-- Keep Javadocs and inline comments aligned with reality.
-- Update `AGENTS.md` when any of these change:
-  - module responsibilities
-  - required build commands
-  - version compatibility caveats
-  - packaging behavior
-  - testing expectations
+
+- Keep `README.md` focused on users and contributors.
+- Keep this file focused on agent-facing implementation constraints and project guardrails.
+- Update both `README.md` and `AGENTS.md` when behavior, command syntax, storage paths, platform support, packaging, or verification expectations change.
+- If command behavior changes, update shared command tests and README command docs.
+- If persisted schemas change, update tests, README examples, and storage validation notes.
+- If platform metadata changes, update the matching metadata file and mention user-visible behavior in README.
+
+## Commit Rules
+
+- Use Conventional Commits: `type(scope): summary`.
+- Keep the summary lowercase and omit a trailing period.
+- Prefer scopes when useful: `common`, `paper`, `fabric`, `neoforge`, `forge`, `docs`, `build`, `tooling`.
+- Use a body only when it adds concrete context.
+- Do not amend commits unless explicitly requested.
