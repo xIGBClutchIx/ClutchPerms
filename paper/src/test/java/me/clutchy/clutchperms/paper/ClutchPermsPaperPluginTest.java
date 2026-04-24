@@ -23,6 +23,8 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 import me.clutchy.clutchperms.common.PermissionNodes;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionValue;
+import me.clutchy.clutchperms.common.SubjectMetadata;
+import me.clutchy.clutchperms.common.SubjectMetadataService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -82,6 +84,32 @@ class ClutchPermsPaperPluginTest {
         assertNotNull(registration);
         assertSame(plugin.getPermissionService(), registration.getProvider());
         assertEquals(Map.of(), registration.getProvider().getPermissions(playerId()));
+    }
+
+    /**
+     * Confirms that subject metadata is exposed through Paper's Bukkit-derived service registry.
+     */
+    @Test
+    void subjectMetadataServiceIsRegistered() {
+        RegisteredServiceProvider<SubjectMetadataService> registration = server.getServicesManager().getRegistration(SubjectMetadataService.class);
+
+        assertNotNull(registration);
+        assertSame(plugin.getSubjectMetadataService(), registration.getProvider());
+        assertEquals(Map.of(), registration.getProvider().getSubjects());
+    }
+
+    /**
+     * Confirms player joins record lightweight subject metadata.
+     */
+    @Test
+    void playerJoinRecordsSubjectMetadata() {
+        PlayerMock player = server.addPlayer("Target");
+
+        SubjectMetadata metadata = plugin.getSubjectMetadataService().getSubject(player.getUniqueId()).orElseThrow();
+
+        assertEquals(player.getUniqueId(), metadata.subjectId());
+        assertEquals("Target", metadata.lastKnownName());
+        assertNotNull(metadata.lastSeen());
     }
 
     /**

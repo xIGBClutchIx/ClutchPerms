@@ -12,6 +12,8 @@ import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
+import me.clutchy.clutchperms.common.SubjectMetadataService;
+import me.clutchy.clutchperms.common.SubjectMetadataServices;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 
 /**
@@ -20,6 +22,8 @@ import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 public class ClutchPermsPaperPlugin extends JavaPlugin {
 
     private static final String PERMISSIONS_FILE_NAME = "permissions.json";
+
+    private static final String SUBJECTS_FILE_NAME = "subjects.json";
 
     /**
      * Status message returned by the root command while the project is still in its early scaffold phase.
@@ -32,6 +36,11 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private PermissionService permissionService;
 
     /**
+     * Active subject metadata service instance for the lifecycle of this plugin enable.
+     */
+    private SubjectMetadataService subjectMetadataService;
+
+    /**
      * Applies persisted direct assignments to online Paper players.
      */
     private PaperRuntimePermissionBridge runtimePermissionBridge;
@@ -42,21 +51,27 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         Path permissionsFile = getDataFolder().toPath().resolve(PERMISSIONS_FILE_NAME);
+        Path subjectsFile = getDataFolder().toPath().resolve(SUBJECTS_FILE_NAME);
         PermissionService storagePermissionService;
         try {
             storagePermissionService = PermissionServices.jsonFile(permissionsFile);
+            subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
         } catch (PermissionStorageException exception) {
-            getLogger().log(Level.SEVERE, "Failed to load ClutchPerms permissions from " + permissionsFile, exception);
-            throw new IllegalStateException("Failed to load ClutchPerms permissions", exception);
+            getLogger().log(Level.SEVERE, "Failed to load ClutchPerms storage from " + getDataFolder(), exception);
+            throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
         runtimePermissionBridge = new PaperRuntimePermissionBridge(this, storagePermissionService);
         permissionService = PermissionServices.observing(storagePermissionService, runtimePermissionBridge::refreshSubject);
+        PaperSubjectMetadataListener subjectMetadataListener = new PaperSubjectMetadataListener(subjectMetadataService);
 
         // Register the shared service so other plugins on Paper can discover it.
         getServer().getServicesManager().register(PermissionService.class, permissionService, this, ServicePriority.Normal);
+        getServer().getServicesManager().register(SubjectMetadataService.class, subjectMetadataService, this, ServicePriority.Normal);
         getServer().getPluginManager().registerEvents(runtimePermissionBridge, this);
+        getServer().getPluginManager().registerEvents(subjectMetadataListener, this);
         runtimePermissionBridge.refreshOnlinePlayers();
+        subjectMetadataListener.recordOnlinePlayers(getServer().getOnlinePlayers());
 
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS,
                 event -> event.registrar().register(PaperClutchPermsCommand.create(this), "Manages ClutchPerms direct permissions"));
@@ -73,6 +88,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
             runtimePermissionBridge = null;
         }
         permissionService = null;
+        subjectMetadataService = null;
     }
 
     /**
@@ -83,6 +99,16 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
      */
     public PermissionService getPermissionService() {
         return Objects.requireNonNull(permissionService, "Permission service is not available");
+    }
+
+    /**
+     * Exposes the active subject metadata service instance for callers and tests.
+     *
+     * @return the active subject metadata service for the current plugin enable
+     * @throws NullPointerException if called before the plugin has finished enabling
+     */
+    public SubjectMetadataService getSubjectMetadataService() {
+        return Objects.requireNonNull(subjectMetadataService, "Subject metadata service is not available");
     }
 
 }

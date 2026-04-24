@@ -37,6 +37,10 @@ Current public types:
   - currently exposes `clutchperms.admin`
 - `PermissionChangeListener`
   - receives subject-level mutation notifications from observing permission services
+- `SubjectMetadata`
+  - records a subject UUID, last known name, and last seen timestamp
+- `SubjectMetadataService`
+  - stores lightweight subject metadata keyed by UUID
 - `common.command`
   - builds the shared Brigadier `/clutchperms` command tree
   - keeps command authorization and direct user permission behavior platform-neutral
@@ -54,6 +58,11 @@ Current implementation:
   - fails startup on malformed or unsupported permission data
 - `PermissionServices.observing(PermissionService, PermissionChangeListener)`
   - wraps a service and reports successful direct permission mutations
+- `SubjectMetadataServices.jsonFile(Path)`
+  - loads and saves subject metadata from JSON
+  - treats a missing file as empty state
+  - saves after every subject observation
+  - fails startup on malformed or unsupported subject metadata
 
 ### `paper`
 Paper plugin module.
@@ -63,10 +72,13 @@ Current behavior:
 - may use Paper-only APIs; Spigot compatibility is not a project goal
 - creates a JSON-backed permission service on plugin enable
 - registers the shared service through Paper's Bukkit-derived `ServicesManager`
+- registers the subject metadata service through Paper's Bukkit-derived `ServicesManager`
 - registers `/clutchperms` through Paper lifecycle Brigadier command registration
 - exposes status plus direct online-player-or-UUID permission get/list/set/clear commands
 - bridges direct persisted assignments into Bukkit `PermissionAttachment`s for online players
+- records player UUID, name, and last seen time when players join
 - stores direct permission assignments in the plugin data folder at `permissions.json`
+- stores subject metadata in the plugin data folder at `subjects.json`
 
 Current metadata:
 - plugin name: `ClutchPerms`
@@ -82,8 +94,10 @@ Current behavior:
 - creates the same JSON-backed permission service during mod initialization
 - registers the shared `/clutchperms` command tree with Brigadier through Fabric API
 - exposes direct persisted assignments through fabric-permissions-api for mods that query that API
+- records player UUID, name, and last seen time when players join
 - resets the static service reference when the server stops
 - stores direct permission assignments in the Fabric config directory at `clutchperms/permissions.json`
+- stores subject metadata in the Fabric config directory at `clutchperms/subjects.json`
 
 Packaging behavior:
 - the final Fabric jar includes `common` as a nested included jar
@@ -98,8 +112,10 @@ Current behavior:
 - registers a native permission handler as `clutchperms:direct`
 - exposes direct persisted assignments for registered Boolean `PermissionNode`s when the server config selects `clutchperms:direct` as the active permission handler
 - registers `clutchperms.admin` as a Boolean permission node with default `false`
+- records player UUID, name, and last seen time when players join
 - resets the static service reference when the server stops
 - stores direct permission assignments in the NeoForge config directory at `clutchperms/permissions.json`
+- stores subject metadata in the NeoForge config directory at `clutchperms/subjects.json`
 
 Packaging behavior:
 - the final NeoForge jar includes `common` as a nested jar through NeoForge jar-in-jar metadata
@@ -113,8 +129,10 @@ Current behavior:
 - registers a native permission handler as `clutchperms:direct`
 - exposes direct persisted assignments for registered Boolean `PermissionNode`s when the server config selects `clutchperms:direct` as the active permission handler
 - registers `clutchperms.admin` as a Boolean permission node with default `false`
+- records player UUID, name, and last seen time when players join
 - resets the static service reference when the server stops
 - stores direct permission assignments in the Forge config directory at `clutchperms/permissions.json`
+- stores subject metadata in the Forge config directory at `clutchperms/subjects.json`
 
 Packaging behavior:
 - the final Forge jar includes the compiled classes from `common`
@@ -274,7 +292,7 @@ When active, Forge and NeoForge permission checks for registered Boolean `Permis
 
 ## Permission Data
 
-The current persisted data model stores only direct permission assignments:
+The current persisted permission data model stores only direct permission assignments:
 - subject IDs are stored as UUID strings
 - permission nodes are normalized with `trim().toLowerCase(Locale.ROOT)`
 - only explicit `TRUE` and `FALSE` values are written
@@ -294,6 +312,27 @@ Example:
 }
 ```
 
+## Subject Metadata
+
+The current subject metadata model stores the latest platform-observed identity for a subject:
+- subject IDs are stored as UUID strings
+- `lastKnownName` preserves the latest player name observed by the platform
+- `lastSeen` is stored as an ISO-8601 instant
+- malformed files, invalid UUIDs, blank names, invalid timestamps, or unsupported versions fail startup
+
+Example:
+```json
+{
+  "version": 1,
+  "subjects": {
+    "00000000-0000-0000-0000-000000000000": {
+      "lastKnownName": "ExamplePlayer",
+      "lastSeen": "2026-04-24T12:00:00Z"
+    }
+  }
+}
+```
+
 ## Testing
 
 ### Shared logic
@@ -304,6 +343,7 @@ Example:
 - listing explicit normalized permission assignments
 - clearing permissions back to `UNSET`
 - JSON persistence loading, saving, invalid data handling, and deterministic output
+- subject metadata loading, saving, invalid data handling, and deterministic output
 - observing service delegation and mutation notifications
 - shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
 - shared permission node suggestions for built-in and target-assigned nodes
@@ -312,6 +352,7 @@ Example:
 `paper` has MockBukkit tests for:
 - plugin enable
 - Paper service registration through the Bukkit-derived service API
+- Paper subject metadata service registration and join-time recording
 - the Paper command adapter executing the shared Brigadier tree
 - join-time and live runtime permission attachment refresh behavior
 
@@ -351,6 +392,7 @@ Example:
 - No contexts
 - Command targets are limited to exact online player names or UUIDs
 - Command permission changes only affect direct user assignments
+- Subject metadata records last known player names but commands do not resolve offline names yet
 - Fabric runtime enforcement only affects mods that query fabric-permissions-api
 - NeoForge runtime enforcement only affects registered Boolean `PermissionNode`s and requires the active permission handler config to be `clutchperms:direct`
 - Forge runtime enforcement only affects registered Boolean `PermissionNode`s and requires the active permission handler config to be `clutchperms:direct`

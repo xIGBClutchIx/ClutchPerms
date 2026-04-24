@@ -1,6 +1,7 @@
 package me.clutchy.clutchperms.neoforge;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Objects;
 
 import org.slf4j.Logger;
@@ -10,11 +11,15 @@ import com.mojang.logging.LogUtils;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
+import me.clutchy.clutchperms.common.SubjectMetadataService;
+import me.clutchy.clutchperms.common.SubjectMetadataServices;
 
+import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.server.permission.PermissionAPI;
@@ -39,21 +44,29 @@ public final class ClutchPermsNeoForgeMod {
     private static PermissionService permissionService;
 
     /**
+     * Active subject metadata service instance for the current NeoForge server lifecycle.
+     */
+    private static SubjectMetadataService subjectMetadataService;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the NeoForge lifecycle.
      */
     public ClutchPermsNeoForgeMod() {
         Path permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
+        Path subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
         try {
             permissionService = PermissionServices.jsonFile(permissionsFile);
+            subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
         } catch (PermissionStorageException exception) {
-            LOGGER.error("Failed to load ClutchPerms permissions from {}", permissionsFile, exception);
-            throw new IllegalStateException("Failed to load ClutchPerms permissions", exception);
+            LOGGER.error("Failed to load ClutchPerms storage from {}", FMLPaths.CONFIGDIR.get().resolve(MOD_ID), exception);
+            throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::registerPermissionHandler);
         NeoForge.EVENT_BUS.addListener(this::registerPermissionNodes);
         NeoForge.EVENT_BUS.addListener(this::onServerStarted);
+        NeoForge.EVENT_BUS.addListener(this::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(this::onServerStopped);
     }
 
@@ -71,6 +84,8 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private void onServerStarted(ServerStartedEvent event) {
+        event.getServer().getPlayerList().getPlayers().forEach(this::recordSubject);
+
         if (NeoForgeClutchPermsPermissionHandler.IDENTIFIER.equals(PermissionAPI.getActivePermissionHandler())) {
             LOGGER.info("ClutchPerms NeoForge runtime permission bridge is active.");
             return;
@@ -80,8 +95,15 @@ public final class ClutchPermsNeoForgeMod {
                 NeoForgeClutchPermsPermissionHandler.IDENTIFIER);
     }
 
+    private void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            recordSubject(player);
+        }
+    }
+
     private void onServerStopped(ServerStoppedEvent event) {
         permissionService = null;
+        subjectMetadataService = null;
     }
 
     /**
@@ -92,5 +114,19 @@ public final class ClutchPermsNeoForgeMod {
      */
     public static PermissionService getPermissionService() {
         return Objects.requireNonNull(permissionService, "Permission service has not been initialized");
+    }
+
+    /**
+     * Returns the active subject metadata service instance.
+     *
+     * @return the service initialized during NeoForge bootstrap
+     * @throws NullPointerException if the service is requested before initialization completes
+     */
+    public static SubjectMetadataService getSubjectMetadataService() {
+        return Objects.requireNonNull(subjectMetadataService, "Subject metadata service has not been initialized");
+    }
+
+    private void recordSubject(ServerPlayer player) {
+        getSubjectMetadataService().recordSubject(player.getUUID(), player.getGameProfile().name(), Instant.now());
     }
 }

@@ -4,7 +4,7 @@
 - `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper, Fabric, NeoForge, and Forge.
 - The current state is an early persisted prototype, not a finished permission platform.
 - The repo currently provides:
-  - a shared `common` module with a minimal permission API, in-memory implementation, JSON-backed persistence factory, observable service wrapper, and shared Brigadier command tree
+  - a shared `common` module with a minimal permission API, in-memory implementation, JSON-backed persistence factories, observable service wrapper, subject metadata API, and shared Brigadier command tree
   - a `paper` plugin module with Paper service registration, a Paper lifecycle Brigadier adapter, and runtime permission attachment bridge
   - a `fabric` mod module with the same shared service, shared Brigadier command behavior, and fabric-permissions-api provider bridge
   - a `neoforge` mod module with the same shared service, shared Brigadier command behavior, and native permission handler bridge
@@ -41,6 +41,8 @@
   - `PermissionValue`
   - `PermissionNodes`
   - `PermissionChangeListener`
+  - `SubjectMetadata`
+  - `SubjectMetadataService`
 - Shared command API:
   - `ClutchPermsCommands`
   - `ClutchPermsCommandEnvironment`
@@ -50,6 +52,7 @@
   - `InMemoryPermissionService`
   - `PermissionServices.jsonFile(Path)` for JSON-backed persisted direct assignments
   - `PermissionServices.observing(PermissionService, PermissionChangeListener)` for subject-level mutation notifications
+  - `SubjectMetadataServices.jsonFile(Path)` for JSON-backed persisted subject metadata
 - Current behavior:
   - stores permissions by `UUID` and normalized permission node
   - normalizes nodes with `trim().toLowerCase(Locale.ROOT)`
@@ -67,6 +70,7 @@
   - Paper applies persisted direct assignments to online players through plugin-owned `PermissionAttachment`s
   - Fabric provides persisted direct assignments to mods that query fabric-permissions-api
   - NeoForge and Forge expose persisted direct assignments through a `clutchperms:direct` native permission handler when that handler is selected in server config
+  - records subject UUID, last known name, and last seen timestamp when players join
 - Not implemented yet:
   - groups
   - inheritance
@@ -161,11 +165,12 @@
   - `common`
     - unit tests for unset, true, false, and clear behavior
     - unit tests for permission enumeration and JSON persistence
+    - unit tests for subject metadata enumeration and JSON persistence
     - unit tests for observing service delegation and mutation notifications
     - unit tests for shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
     - unit tests for shared permission node suggestions
   - `paper`
-    - MockBukkit tests for plugin boot, service registration, the Paper command adapter, and runtime permission attachment refresh behavior
+    - MockBukkit tests for plugin boot, service registration, subject metadata recording, the Paper command adapter, and runtime permission attachment refresh behavior
   - `fabric`
     - smoke tests for fabric-permissions-api provider bridge value mapping
   - `neoforge`
