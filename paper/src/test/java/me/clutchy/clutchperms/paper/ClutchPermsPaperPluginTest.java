@@ -1,5 +1,6 @@
 package me.clutchy.clutchperms.paper;
 
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
 
@@ -22,6 +23,7 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 
 import me.clutchy.clutchperms.common.PermissionNodes;
 import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionValue;
 import me.clutchy.clutchperms.common.SubjectMetadata;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
@@ -183,6 +185,37 @@ class ClutchPermsPaperPluginTest {
 
         assertTrue(target.isPermissionSet("example.command"));
         assertTrue(target.hasPermission("example.command"));
+    }
+
+    /**
+     * Confirms command mutations persist to disk and refresh Paper runtime permissions end to end.
+     *
+     * @throws Exception when Brigadier command execution or storage reload fails unexpectedly
+     */
+    @Test
+    void commandMutationPersistsAndRefreshesRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
+        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
+
+        assertEquals(1, dispatcher.execute("clutchperms user Target set example.smoke true", adminSource));
+        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
+        assertTrue(target.isPermissionSet("example.smoke"));
+        assertTrue(target.hasPermission("example.smoke"));
+
+        assertEquals(1, dispatcher.execute("clutchperms user Target set example.smoke false", adminSource));
+        assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
+        assertTrue(target.isPermissionSet("example.smoke"));
+        assertFalse(target.hasPermission("example.smoke"));
+
+        assertEquals(1, dispatcher.execute("clutchperms user Target clear example.smoke", adminSource));
+        assertEquals(PermissionValue.UNSET, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
+        assertFalse(target.isPermissionSet("example.smoke"));
+        assertFalse(target.hasPermission("example.smoke"));
     }
 
     /**

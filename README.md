@@ -363,11 +363,13 @@ Example:
 - Paper subject metadata service registration and join-time recording
 - the Paper command adapter executing the shared Brigadier tree
 - join-time and live runtime permission attachment refresh behavior
+- command mutation to JSON storage to runtime attachment behavior
 
 ### Fabric
 `fabric` has smoke tests for the fabric-permissions-api provider bridge:
 - direct `TRUE`, `FALSE`, and `UNSET` mapping to Fabric `TriState`
 - invalid node fallback to `TriState.DEFAULT`
+- command mutation to JSON storage to Fabric `TriState` behavior
 
 ### NeoForge
 `neoforge` has smoke tests for the native permission handler bridge:
@@ -375,6 +377,7 @@ Example:
 - direct `TRUE`, `FALSE`, and `UNSET` behavior for Boolean permission nodes
 - non-Boolean node fallback to the platform node default
 - `clutchperms.admin` Boolean node registration
+- command mutation to JSON storage to native permission handler behavior
 
 ### Forge
 `forge` has smoke tests for the native permission handler bridge:
@@ -382,6 +385,7 @@ Example:
 - direct `TRUE`, `FALSE`, and `UNSET` behavior for Boolean permission nodes
 - non-Boolean node fallback to the platform node default
 - `clutchperms.admin` Boolean node registration
+- command mutation to JSON storage to native permission handler behavior
 
 ## Architecture Notes
 - `common` is the source of truth for permission abstractions.

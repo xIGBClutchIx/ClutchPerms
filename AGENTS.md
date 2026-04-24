@@ -175,13 +175,13 @@
     - unit tests for shared permission node suggestions
     - unit tests for shared known-user list and search commands
   - `paper`
-    - MockBukkit tests for plugin boot, service registration, subject metadata recording, the Paper command adapter, and runtime permission attachment refresh behavior
+    - MockBukkit tests for plugin boot, service registration, subject metadata recording, the Paper command adapter, runtime permission attachment refresh behavior, and command-to-storage-to-runtime smoke coverage
   - `fabric`
-    - smoke tests for fabric-permissions-api provider bridge value mapping
+    - smoke tests for fabric-permissions-api provider bridge value mapping and command-to-storage-to-bridge coverage
   - `neoforge`
-    - smoke tests for native permission handler bridge value mapping and node registration
+    - smoke tests for native permission handler bridge value mapping, node registration, and command-to-storage-to-handler coverage
   - `forge`
-    - smoke tests for native permission handler bridge value mapping and node registration
+    - smoke tests for native permission handler bridge value mapping, node registration, and command-to-storage-to-handler coverage
 
 ## Coding Guidelines
 - Keep shared logic in `common` whenever it is not inherently platform-specific.
