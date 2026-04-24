@@ -446,6 +446,7 @@ class GroupServicesTest {
         assertEquals("default-parent", resolver.resolve(SECOND_SUBJECT, "default.parent").groupName());
 
         permissionService.setPermission(FIRST_SUBJECT, "example.node", PermissionValue.TRUE);
+        resolver.invalidateSubject(FIRST_SUBJECT);
 
         assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "example.node").value());
         assertEquals(PermissionResolution.Source.DIRECT, resolver.resolve(FIRST_SUBJECT, "example.node").source());

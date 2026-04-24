@@ -45,7 +45,7 @@ Keep the project moving toward a useful permissions system without adding mature
 
 Shared package ownership:
 
-- `common.permission` - direct permissions, node normalization, wildcard matching, effective resolution, permission observers, and permission service factories
+- `common.permission` - direct permissions, node normalization, wildcard matching, cached effective resolution, permission observers, and permission service factories
 - `common.group` - group definitions, group permissions, memberships, group storage, and group observers
 - `common.node` - known permission node registry, manual node storage, registry composition, and node observers
 - `common.subject` - last-known subject metadata
@@ -71,6 +71,9 @@ Shared package ownership:
 - Wildcard resolution happens inside each source tier/depth: exact node, closest `prefix.*`, broader parent wildcards, then `*`.
 - `prefix.*` matches descendant nodes such as `prefix.child` and `prefix.child.deep`, but not `prefix`.
 - Direct wildcard assignments still beat group/default exact assignments because source tier precedence comes first.
+- Effective permission resolution is cached in memory by subject/node and by subject effective-permission snapshot.
+- Direct permission and membership mutations invalidate one subject; group definition, group permission, and parent mutations clear the full resolver cache.
+- Reload and restore replace the active resolver, so cache state is runtime-only and starts empty after reload/startup.
 - Known permission nodes are advisory exact-node descriptors used for discovery, suggestions, diagnostics, and Paper wildcard expansion.
 - `nodes.json` stores only manually registered exact nodes. Platform-discovered nodes are runtime-only and must not be written back to `nodes.json`.
 - Unknown permission nodes remain assignable; do not make assignment mutation depend on the known-node registry.
@@ -112,6 +115,7 @@ Storage expectations:
 - Fail startup, validate, or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
 - `/clutchperms validate` should parse all persisted files without replacing active services, refreshing runtime bridges, or mutating storage.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
+- Successful reload should replace active services and the active resolver cache; failed reload should leave the old resolver and its cache in place.
 - `/clutchperms backup restore` restores one file, then reloads all four persisted files and refreshes runtime bridges. If reload fails, it must roll disk back to the previous live file and keep active services/runtime state unchanged.
 - If restore rollback fails, command feedback should report that rollback failure explicitly.
 
@@ -158,6 +162,7 @@ Authorization:
 - Console and remote console can run commands for bootstrap.
 - Players need effective `clutchperms.admin`.
 - Other source types should be denied where the platform can distinguish them.
+- `status` should include storage paths, subject/group/node counts, resolver cache counts, and platform bridge status.
 - `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.
 - Node registry commands mutate only the manual registry. Built-in and platform-discovered known nodes are visible but not removable.
 

@@ -34,6 +34,7 @@ import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
+import me.clutchy.clutchperms.common.permission.PermissionResolverCacheStats;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
@@ -181,6 +182,9 @@ class ClutchPermsPaperPluginTest {
         assertEquals(Component.text("Known subjects: 1"), player.nextComponentMessage());
         assertEquals(Component.text("Known groups: 0"), player.nextComponentMessage());
         assertEquals(Component.text("Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size()), player.nextComponentMessage());
+        PermissionResolverCacheStats cacheStats = plugin.getPermissionResolver().cacheStats();
+        assertEquals(Component.text("Resolver cache: " + cacheStats.subjects() + " subjects, " + cacheStats.nodeResults() + " node results, " + cacheStats.effectiveSnapshots()
+                + " effective snapshots."), player.nextComponentMessage());
         assertEquals(Component.text("Runtime bridge: " + plugin.getStatusDiagnostics().runtimeBridgeStatus()), player.nextComponentMessage());
     }
 

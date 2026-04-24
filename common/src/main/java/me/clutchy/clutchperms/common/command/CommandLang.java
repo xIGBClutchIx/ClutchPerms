@@ -32,6 +32,8 @@ final class CommandLang {
 
     private static final String STATUS_KNOWN_NODES = "Known permission nodes: %s";
 
+    private static final String STATUS_RESOLVER_CACHE = "Resolver cache: %s subjects, %s node results, %s effective snapshots.";
+
     private static final String STATUS_RUNTIME_BRIDGE = "Runtime bridge: %s";
 
     private static final String RELOAD_SUCCESS = "Reloaded permissions, subjects, groups, and known nodes from disk.";
@@ -194,6 +196,10 @@ final class CommandLang {
 
     static String statusKnownNodes(int knownNodes) {
         return format(STATUS_KNOWN_NODES, knownNodes);
+    }
+
+    static String statusResolverCache(int subjects, int nodeResults, int effectiveSnapshots) {
+        return format(STATUS_RESOLVER_CACHE, subjects, nodeResults, effectiveSnapshots);
     }
 
     static String statusRuntimeBridge(String runtimeBridgeStatus) {

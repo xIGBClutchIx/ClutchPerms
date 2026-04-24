@@ -30,6 +30,7 @@ import me.clutchy.clutchperms.common.node.KnownPermissionNode;
 import me.clutchy.clutchperms.common.permission.PermissionExplanation;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolution;
+import me.clutchy.clutchperms.common.permission.PermissionResolverCacheStats;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.StorageBackup;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
@@ -293,6 +294,8 @@ public final class ClutchPermsCommands {
         environment.sendMessage(context.getSource(), CommandLang.statusKnownSubjects(environment.subjectMetadataService().getSubjects().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownGroups(environment.groupService().getGroups().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownNodes(environment.permissionNodeRegistry().getKnownNodes().size()));
+        PermissionResolverCacheStats cacheStats = environment.permissionResolver().cacheStats();
+        environment.sendMessage(context.getSource(), CommandLang.statusResolverCache(cacheStats.subjects(), cacheStats.nodeResults(), cacheStats.effectiveSnapshots()));
         environment.sendMessage(context.getSource(), CommandLang.statusRuntimeBridge(diagnostics.runtimeBridgeStatus()));
         return Command.SINGLE_SUCCESS;
     }

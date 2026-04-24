@@ -4,12 +4,14 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
+import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -237,9 +239,10 @@ public final class ClutchPermsForgeMod {
      * Reloads persisted storage from disk for the shared reload command.
      */
     public static void reloadStorage() {
-        PermissionService reloadedPermissionService = PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
+        PermissionService reloadedPermissionService = observablePermissionService(
+                PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")));
         SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
-        GroupService reloadedGroupService = GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
+        GroupService reloadedGroupService = observableGroupService(GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")));
         MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries.observing(
                 PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")), ClutchPermsForgeMod::refreshRuntimePermissions);
         PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry,
@@ -294,6 +297,37 @@ public final class ClutchPermsForgeMod {
 
     private static String formatPath(Path path) {
         return path.toAbsolutePath().normalize().toString();
+    }
+
+    private static PermissionService observablePermissionService(PermissionService storagePermissionService) {
+        return PermissionServices.observing(storagePermissionService, ClutchPermsForgeMod::invalidateSubjectCache);
+    }
+
+    private static GroupService observableGroupService(GroupService storageGroupService) {
+        return GroupServices.observing(storageGroupService, new GroupChangeListener() {
+
+            @Override
+            public void subjectGroupsChanged(UUID subjectId) {
+                invalidateSubjectCache(subjectId);
+            }
+
+            @Override
+            public void groupsChanged() {
+                invalidateAllResolverCache();
+            }
+        });
+    }
+
+    private static void invalidateSubjectCache(UUID subjectId) {
+        if (permissionResolver != null) {
+            permissionResolver.invalidateSubject(subjectId);
+        }
+    }
+
+    private static void invalidateAllResolverCache() {
+        if (permissionResolver != null) {
+            permissionResolver.invalidateAll();
+        }
     }
 
     private void recordSubject(ServerPlayer player) {

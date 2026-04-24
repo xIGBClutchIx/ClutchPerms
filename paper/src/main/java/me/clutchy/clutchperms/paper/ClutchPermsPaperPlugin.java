@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.logging.Level;
 
 import org.bukkit.plugin.ServicePriority;
@@ -349,8 +350,11 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     }
 
     private PermissionService observablePermissionService(PermissionService storagePermissionService) {
-        return PermissionServices.observing(storagePermissionService,
-                Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available")::refreshSubject);
+        PaperRuntimePermissionBridge bridge = Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available");
+        return PermissionServices.observing(storagePermissionService, subjectId -> {
+            invalidateSubjectCache(subjectId);
+            bridge.refreshSubject(subjectId);
+        });
     }
 
     private GroupService observableGroupService(GroupService storageGroupService) {
@@ -358,15 +362,29 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         return GroupServices.observing(storageGroupService, new GroupChangeListener() {
 
             @Override
-            public void subjectGroupsChanged(java.util.UUID subjectId) {
+            public void subjectGroupsChanged(UUID subjectId) {
+                invalidateSubjectCache(subjectId);
                 bridge.refreshSubject(subjectId);
             }
 
             @Override
             public void groupsChanged() {
+                invalidateAllResolverCache();
                 bridge.refreshOnlinePlayers();
             }
         });
+    }
+
+    private void invalidateSubjectCache(UUID subjectId) {
+        if (permissionResolver != null) {
+            permissionResolver.invalidateSubject(subjectId);
+        }
+    }
+
+    private void invalidateAllResolverCache() {
+        if (permissionResolver != null) {
+            permissionResolver.invalidateAll();
+        }
     }
 
     private MutablePermissionNodeRegistry observablePermissionNodeRegistry(MutablePermissionNodeRegistry storagePermissionNodeRegistry) {

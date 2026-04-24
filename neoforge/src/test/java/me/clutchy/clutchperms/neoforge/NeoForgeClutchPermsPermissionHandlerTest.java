@@ -22,6 +22,7 @@ import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
+import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.group.InMemoryGroupService;
@@ -64,9 +65,11 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
 
     @BeforeEach
     void setUp() {
-        permissionService = new InMemoryPermissionService();
-        groupService = new InMemoryGroupService();
-        permissionResolver = new PermissionResolver(permissionService, groupService);
+        PermissionService storagePermissionService = new InMemoryPermissionService();
+        GroupService storageGroupService = new InMemoryGroupService();
+        permissionResolver = new PermissionResolver(storagePermissionService, storageGroupService);
+        permissionService = PermissionServices.observing(storagePermissionService, permissionResolver::invalidateSubject);
+        groupService = observingGroupService(storageGroupService, permissionResolver);
         booleanNode = new PermissionNode<>("example", "node", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.TRUE);
         handler = new NeoForgeClutchPermsPermissionHandler(permissionResolver, List.of(booleanNode));
     }
@@ -451,9 +454,9 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         }
 
         private TestEnvironment(PermissionService permissionService, GroupService groupService, PermissionResolver permissionResolver, Path storageDirectory) {
-            this.permissionService = permissionService;
-            this.groupService = groupService;
             this.permissionResolver = permissionResolver == null ? new PermissionResolver(permissionService, groupService) : permissionResolver;
+            this.permissionService = PermissionServices.observing(permissionService, this.permissionResolver::invalidateSubject);
+            this.groupService = observingGroupService(groupService, this.permissionResolver);
             this.storageDirectory = storageDirectory;
             this.manualPermissionNodeRegistry = PermissionNodeRegistries.observing(PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json")),
                     this::refreshRuntimePermissions);
@@ -498,18 +501,18 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
 
         @Override
         public void reloadStorage() {
-            PermissionService reloadedPermissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
+            PermissionService reloadedStoragePermissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
             SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
-            GroupService reloadedGroupService = GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
+            GroupService reloadedStorageGroupService = GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
             MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries
                     .observing(PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json")), this::refreshRuntimePermissions);
             PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry);
-            permissionService = reloadedPermissionService;
+            permissionResolver = new PermissionResolver(reloadedStoragePermissionService, reloadedStorageGroupService);
+            permissionService = PermissionServices.observing(reloadedStoragePermissionService, permissionResolver::invalidateSubject);
             subjectMetadataService = reloadedSubjectMetadataService;
-            groupService = reloadedGroupService;
+            groupService = observingGroupService(reloadedStorageGroupService, permissionResolver);
             manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
             permissionNodeRegistry = reloadedPermissionNodeRegistry;
-            permissionResolver = new PermissionResolver(permissionService, groupService);
         }
 
         @Override
@@ -567,5 +570,20 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         private static TestSource console() {
             return new TestSource(CommandSourceKind.CONSOLE, new ArrayList<>());
         }
+    }
+
+    private static GroupService observingGroupService(GroupService groupService, PermissionResolver permissionResolver) {
+        return GroupServices.observing(groupService, new GroupChangeListener() {
+
+            @Override
+            public void subjectGroupsChanged(UUID subjectId) {
+                permissionResolver.invalidateSubject(subjectId);
+            }
+
+            @Override
+            public void groupsChanged() {
+                permissionResolver.invalidateAll();
+            }
+        });
     }
 }

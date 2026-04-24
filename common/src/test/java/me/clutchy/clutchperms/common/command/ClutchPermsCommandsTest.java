@@ -20,7 +20,9 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestion;
 
+import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.group.InMemoryGroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
@@ -30,6 +32,7 @@ import me.clutchy.clutchperms.common.permission.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
@@ -83,11 +86,24 @@ class ClutchPermsCommandsTest {
      */
     @BeforeEach
     void setUp() {
-        permissionService = new InMemoryPermissionService();
+        PermissionService storagePermissionService = new InMemoryPermissionService();
         subjectMetadataService = new InMemorySubjectMetadataService();
-        groupService = new InMemoryGroupService();
+        GroupService storageGroupService = new InMemoryGroupService();
         manualPermissionNodeRegistry = PermissionNodeRegistries.inMemory();
-        permissionResolver = new PermissionResolver(permissionService, groupService);
+        permissionResolver = new PermissionResolver(storagePermissionService, storageGroupService);
+        permissionService = PermissionServices.observing(storagePermissionService, permissionResolver::invalidateSubject);
+        groupService = GroupServices.observing(storageGroupService, new GroupChangeListener() {
+
+            @Override
+            public void subjectGroupsChanged(UUID subjectId) {
+                permissionResolver.invalidateSubject(subjectId);
+            }
+
+            @Override
+            public void groupsChanged() {
+                permissionResolver.invalidateAll();
+            }
+        });
         environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, manualPermissionNodeRegistry, permissionResolver);
         environment.setStorageBackupService(StorageBackupService.forFiles(temporaryDirectory.resolve("backups"),
                 Map.of(StorageFileKind.PERMISSIONS, temporaryDirectory.resolve("permissions.json"), StorageFileKind.SUBJECTS, temporaryDirectory.resolve("subjects.json"),
@@ -434,6 +450,33 @@ class ClutchPermsCommandsTest {
                 "Added Target (00000000-0000-0000-0000-000000000002) to group wildcard.",
                 "Target (00000000-0000-0000-0000-000000000002) effective other.node = FALSE from group wildcard via other.*.",
                 "Cleared example.* for Target (00000000-0000-0000-0000-000000000002)."), console.messages());
+    }
+
+    /**
+     * Confirms command mutations invalidate cached resolver results before later command reads.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void commandMutationsInvalidateResolverCacheBeforeCheckOutput() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target set example.cache true", console);
+        assertEquals(PermissionValue.TRUE, permissionResolver.resolve(TARGET_ID, "example.cache").value());
+        dispatcher.execute("clutchperms user Target set example.cache false", console);
+        dispatcher.execute("clutchperms user Target check example.cache", console);
+
+        dispatcher.execute("clutchperms group staff create", console);
+        dispatcher.execute("clutchperms group staff set example.groupcache true", console);
+        dispatcher.execute("clutchperms user Target group add staff", console);
+        assertEquals(PermissionValue.TRUE, permissionResolver.resolve(TARGET_ID, "example.groupcache").value());
+        dispatcher.execute("clutchperms group staff set example.groupcache false", console);
+        dispatcher.execute("clutchperms user Target check example.groupcache", console);
+
+        assertEquals(PermissionValue.FALSE, permissionResolver.resolve(TARGET_ID, "example.cache").value());
+        assertEquals(PermissionValue.FALSE, permissionResolver.resolve(TARGET_ID, "example.groupcache").value());
+        assertTrue(console.messages().contains("Target (00000000-0000-0000-0000-000000000002) effective example.cache = FALSE from direct."));
+        assertTrue(console.messages().contains("Target (00000000-0000-0000-0000-000000000002) effective example.groupcache = FALSE from group staff."));
     }
 
     /**
@@ -851,7 +894,7 @@ class ClutchPermsCommandsTest {
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
                 "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Known subjects: " + knownSubjects, "Known groups: 0",
-                "Known permission nodes: 1", "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
+                "Known permission nodes: 1", "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.", "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 
     private static List<String> commandListMessages() {

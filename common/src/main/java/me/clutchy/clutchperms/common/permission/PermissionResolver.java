@@ -2,6 +2,7 @@ package me.clutchy.clutchperms.common.permission;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -12,6 +13,8 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import me.clutchy.clutchperms.common.group.GroupService;
 
@@ -23,6 +26,10 @@ public final class PermissionResolver {
     private final PermissionService permissionService;
 
     private final GroupService groupService;
+
+    private final ConcurrentMap<UUID, ConcurrentMap<String, PermissionResolution>> resolutionCache = new ConcurrentHashMap<>();
+
+    private final ConcurrentMap<UUID, Map<String, PermissionValue>> effectivePermissionsCache = new ConcurrentHashMap<>();
 
     /**
      * Creates a resolver over the current direct permission and group services.
@@ -46,6 +53,11 @@ public final class PermissionResolver {
         Objects.requireNonNull(subjectId, "subjectId");
         String normalizedNode = PermissionNodes.normalize(node);
 
+        return resolutionCache.computeIfAbsent(subjectId, ignored -> new ConcurrentHashMap<>()).computeIfAbsent(normalizedNode,
+                candidateNode -> resolveUncached(subjectId, candidateNode));
+    }
+
+    private PermissionResolution resolveUncached(UUID subjectId, String normalizedNode) {
         ResolvedAssignment directAssignment = resolveAssignments(permissionService.getPermissions(subjectId), normalizedNode);
         if (directAssignment.value() != PermissionValue.UNSET) {
             return new PermissionResolution(directAssignment.value(), PermissionResolution.Source.DIRECT, null, directAssignment.assignmentNode());
@@ -115,6 +127,41 @@ public final class PermissionResolver {
      */
     public Map<String, PermissionValue> getEffectivePermissions(UUID subjectId) {
         Objects.requireNonNull(subjectId, "subjectId");
+        return effectivePermissionsCache.computeIfAbsent(subjectId, this::computeEffectivePermissions);
+    }
+
+    /**
+     * Removes cached resolution data for one subject.
+     *
+     * @param subjectId subject UUID whose cached resolutions should be removed
+     */
+    public void invalidateSubject(UUID subjectId) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        resolutionCache.remove(subjectId);
+        effectivePermissionsCache.remove(subjectId);
+    }
+
+    /**
+     * Removes every cached resolution and effective-permission snapshot.
+     */
+    public void invalidateAll() {
+        resolutionCache.clear();
+        effectivePermissionsCache.clear();
+    }
+
+    /**
+     * Returns a point-in-time snapshot of resolver cache occupancy.
+     *
+     * @return current cache statistics
+     */
+    public PermissionResolverCacheStats cacheStats() {
+        Set<UUID> cachedSubjects = new HashSet<>(resolutionCache.keySet());
+        cachedSubjects.addAll(effectivePermissionsCache.keySet());
+        int nodeResults = resolutionCache.values().stream().mapToInt(Map::size).sum();
+        return new PermissionResolverCacheStats(cachedSubjects.size(), nodeResults, effectivePermissionsCache.size());
+    }
+
+    private Map<String, PermissionValue> computeEffectivePermissions(UUID subjectId) {
         Set<String> nodes = new TreeSet<>();
         nodes.addAll(permissionService.getPermissions(subjectId).keySet());
 
@@ -130,12 +177,12 @@ public final class PermissionResolver {
 
         Map<String, PermissionValue> effectivePermissions = new TreeMap<>();
         for (String node : nodes) {
-            PermissionValue value = resolve(subjectId, node).value();
+            PermissionValue value = resolveUncached(subjectId, node).value();
             if (value != PermissionValue.UNSET) {
                 effectivePermissions.put(node, value);
             }
         }
-        return Map.copyOf(effectivePermissions);
+        return Collections.unmodifiableMap(new TreeMap<>(effectivePermissions));
     }
 
     private PermissionResolution resolveGroupHierarchy(Set<String> rootGroups, String node, PermissionResolution.Source source) {

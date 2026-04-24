@@ -1,6 +1,6 @@
 # ClutchPerms
 
-ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, a known permission node registry, validation/reload/backup support, and platform runtime bridges.
+ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, a known permission node registry, runtime resolver caching, validation/reload/backup support, and platform runtime bridges.
 
 This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, recursive multi-parent groups, an implicit `default` group, terminal wildcards, and effective permission resolution shared across platforms.
 
@@ -17,6 +17,7 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 - Validation and reload commands for manual JSON edits
 - Last-known player name recording and offline name targeting
 - Advisory known permission node registry for command discovery and Paper wildcard expansion
+- Runtime effective-permission resolver caching with mutation/reload invalidation
 - Rolling per-file backups before JSON saves, plus one-file restore commands with rollback on failed reload
 - Paper runtime bridge using plugin-owned `PermissionAttachment`s and known-node wildcard expansion
 - Fabric runtime bridge through fabric-permissions-api
@@ -78,7 +79,7 @@ All platforms expose the same shared command tree:
 Command notes:
 
 - `/clutchperms` lists available commands.
-- `/clutchperms status` shows storage paths, known subject count, group count, known node count, and runtime bridge status. On Paper, the runtime line also includes permission manager override mode.
+- `/clutchperms status` shows storage paths, known subject count, group count, known node count, resolver cache counts, and runtime bridge status. On Paper, the runtime line also includes permission manager override mode.
 - `/clutchperms validate` parses `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json` without applying them or refreshing runtime permissions.
 - `/clutchperms reload` reloads `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json`. If any file is invalid, active runtime state is kept unchanged.
 - `/clutchperms backup list` shows stored backups newest first. Use `/clutchperms backup list permissions` or another file kind to filter.
@@ -98,6 +99,14 @@ Wildcard resolution:
 - `prefix.*` matches descendants such as `prefix.child` and `prefix.child.deep`, but not `prefix`.
 - Matching checks exact nodes first, then the closest wildcard, broader wildcards, and finally `*`.
 - Source tiers still win before specificity: direct user assignments beat groups, and groups beat the implicit `default` hierarchy.
+
+Resolver cache:
+
+- Effective permission checks are cached in memory by subject and normalized node.
+- Effective permission snapshots are cached by subject for runtime bridge refreshes.
+- Direct permission and membership changes invalidate one subject; group definition, group permission, and parent changes clear the cache.
+- Reload and restore replace the active resolver with a fresh empty cache.
+- Cache state is runtime-only and is not stored in JSON.
 
 ## Data Files
 
@@ -296,6 +305,7 @@ Paper tests use MockBukkit `4.108.0` with Paper API `1.21.11-R0.1-SNAPSHOT`, whi
 - No LuckPerms bridge or migration tooling
 - No backup compression, encryption, scheduled snapshots, or multi-file restore command
 - No cross-server or cross-platform synchronization
+- No persisted or externally manageable resolver cache
 - Command targets are exact online names, exact stored last-known names, or UUIDs only
 - Fabric enforcement only affects mods that query fabric-permissions-api
 - Forge and NeoForge enforcement only affects registered Boolean permission nodes and requires `clutchperms:direct` to be selected
