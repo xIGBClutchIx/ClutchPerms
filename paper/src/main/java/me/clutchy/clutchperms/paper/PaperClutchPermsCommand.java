@@ -12,9 +12,11 @@ import org.bukkit.entity.Player;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
 import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
+import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
 
 /**
@@ -34,6 +36,16 @@ final class PaperClutchPermsCommand {
         @Override
         public PermissionService permissionService() {
             return plugin.getPermissionService();
+        }
+
+        @Override
+        public SubjectMetadataService subjectMetadataService() {
+            return plugin.getSubjectMetadataService();
+        }
+
+        @Override
+        public CommandStatusDiagnostics statusDiagnostics() {
+            return plugin.getStatusDiagnostics();
         }
 
         @Override

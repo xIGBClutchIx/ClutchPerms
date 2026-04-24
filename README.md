@@ -242,21 +242,28 @@ All platforms register the same shared Brigadier command behavior:
 
 ```text
 /clutchperms
+/clutchperms status
 /clutchperms user <target> list
 /clutchperms user <target> get <node>
 /clutchperms user <target> set <node> <true|false>
 /clutchperms user <target> clear <node>
+/clutchperms users list
+/clutchperms users search <name>
 ```
 
 Behavior:
-- `/clutchperms` returns `ClutchPerms is running with a persisted permission service.`
+- `/clutchperms` lists the available ClutchPerms commands
+- `/clutchperms status` shows the permissions file, subjects file, known-subject count, and runtime bridge status
 - `<target>` resolves an exact online player name first, then a UUID string
+- UUID targets with recorded subject metadata are displayed as `Name (uuid)` in command feedback
 - `<node>` is a single Brigadier word and is normalized by the shared permission service
 - `<node>` suggestions include `clutchperms.admin` and explicit nodes already assigned to the selected target
 - `set` writes explicit `TRUE` or `FALSE`; `clear` removes the explicit assignment
 - console and remote console sources may run commands for bootstrap
 - players must have the persisted `clutchperms.admin` node set to `TRUE`
 - non-player/non-console sources are denied where the platform adapter can distinguish them
+- `users list` shows every subject recorded in `subjects.json`
+- `users search <name>` finds recorded subjects by case-insensitive last-known-name substring
 
 ## Forge And NeoForge Runtime Bridge Activation
 
@@ -347,6 +354,7 @@ Example:
 - observing service delegation and mutation notifications
 - shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
 - shared permission node suggestions for built-in and target-assigned nodes
+- shared known-user list and search command behavior
 
 ### Paper
 `paper` has MockBukkit tests for:

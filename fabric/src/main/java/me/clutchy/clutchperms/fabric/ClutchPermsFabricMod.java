@@ -12,6 +12,7 @@ import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.SubjectMetadataServices;
+import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -43,12 +44,27 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     private static SubjectMetadataService subjectMetadataService;
 
     /**
+     * Permission assignment storage path for diagnostics.
+     */
+    private static Path permissionsFile;
+
+    /**
+     * Subject metadata storage path for diagnostics.
+     */
+    private static Path subjectsFile;
+
+    /**
+     * Tracks whether the Fabric permissions API bridge was registered during bootstrap.
+     */
+    private static boolean runtimeBridgeRegistered;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the Fabric lifecycle.
      */
     @Override
     public void onInitialize() {
-        Path permissionsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("permissions.json");
-        Path subjectsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("subjects.json");
+        permissionsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("permissions.json");
+        subjectsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("subjects.json");
         try {
             permissionService = PermissionServices.jsonFile(permissionsFile);
             subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
@@ -57,8 +73,10 @@ public final class ClutchPermsFabricMod implements ModInitializer {
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(FabricClutchPermsCommand.create(permissionService)));
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher
+                .register(FabricClutchPermsCommand.create(permissionService, subjectMetadataService, ClutchPermsFabricMod::getStatusDiagnostics)));
         FabricRuntimePermissionBridge.register(permissionService);
+        runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
         ServerLifecycleEvents.SERVER_STARTED.register(server -> server.getPlayerList().getPlayers().forEach(ClutchPermsFabricMod::recordSubject));
 
@@ -87,6 +105,21 @@ public final class ClutchPermsFabricMod implements ModInitializer {
      */
     public static SubjectMetadataService getSubjectMetadataService() {
         return Objects.requireNonNull(subjectMetadataService, "Subject metadata service has not been initialized");
+    }
+
+    /**
+     * Returns status diagnostics for the shared command tree.
+     *
+     * @return active command status diagnostics
+     */
+    public static CommandStatusDiagnostics getStatusDiagnostics() {
+        String bridgeStatus = runtimeBridgeRegistered ? "Fabric permissions API bridge registered" : "Fabric permissions API bridge not registered";
+        return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
+                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")), bridgeStatus);
+    }
+
+    private static String formatPath(Path path) {
+        return path.toAbsolutePath().normalize().toString();
     }
 
     private static void recordSubject(ServerPlayer player) {

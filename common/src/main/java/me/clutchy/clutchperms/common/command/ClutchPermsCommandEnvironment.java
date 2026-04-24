@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.SubjectMetadataService;
 
 /**
  * Adapts platform-specific Brigadier command sources to the shared ClutchPerms command tree.
@@ -19,6 +20,20 @@ public interface ClutchPermsCommandEnvironment<S> {
      * @return active permission service
      */
     PermissionService permissionService();
+
+    /**
+     * Returns the subject metadata service inspected by command execution.
+     *
+     * @return active subject metadata service
+     */
+    SubjectMetadataService subjectMetadataService();
+
+    /**
+     * Returns platform-provided diagnostics for the status command.
+     *
+     * @return active status diagnostics
+     */
+    CommandStatusDiagnostics statusDiagnostics();
 
     /**
      * Classifies a platform source for command authorization.

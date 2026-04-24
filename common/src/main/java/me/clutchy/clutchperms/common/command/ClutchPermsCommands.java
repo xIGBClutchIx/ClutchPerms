@@ -27,6 +27,7 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 
 import me.clutchy.clutchperms.common.PermissionNodes;
 import me.clutchy.clutchperms.common.PermissionValue;
+import me.clutchy.clutchperms.common.SubjectMetadata;
 
 /**
  * Builds the shared Brigadier command tree for ClutchPerms platform adapters.
@@ -48,6 +49,8 @@ public final class ClutchPermsCommands {
     private static final String NODE_ARGUMENT = "node";
 
     private static final String VALUE_ARGUMENT = "value";
+
+    private static final String NAME_ARGUMENT = "name";
 
     private static final SimpleCommandExceptionType NO_PERMISSION = new SimpleCommandExceptionType(new LiteralMessage("You do not have permission to use ClutchPerms commands."));
 
@@ -80,10 +83,12 @@ public final class ClutchPermsCommands {
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment) {
         Objects.requireNonNull(environment, "environment");
 
-        return LiteralArgumentBuilder.<S>literal(ROOT_LITERAL).executes(context -> executeAuthorized(environment, context, source -> {
-            environment.sendMessage(source, STATUS_MESSAGE);
-            return Command.SINGLE_SUCCESS;
-        })).then(userCommand(environment));
+        return LiteralArgumentBuilder.<S>literal(ROOT_LITERAL).executes(context -> executeAuthorized(environment, context, source -> sendCommandList(environment, context)))
+                .then(statusCommand(environment)).then(userCommand(environment)).then(usersCommand(environment));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("status").executes(context -> executeAuthorized(environment, context, source -> sendStatus(environment, context)));
     }
 
     private static <S> LiteralArgumentBuilder<S> userCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -92,6 +97,13 @@ public final class ClutchPermsCommands {
 
         return LiteralArgumentBuilder.<S>literal("user")
                 .then(target.then(listCommand(environment)).then(getCommand(environment)).then(setCommand(environment)).then(clearCommand(environment)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> usersCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("users")
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> executeAuthorized(environment, context, source -> listSubjects(environment, context))))
+                .then(LiteralArgumentBuilder.<S>literal("search").then(RequiredArgumentBuilder.<S, String>argument(NAME_ARGUMENT, StringArgumentType.word())
+                        .executes(context -> executeAuthorized(environment, context, source -> searchSubjects(environment, context)))));
     }
 
     private static <S> LiteralArgumentBuilder<S> listCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -129,6 +141,28 @@ public final class ClutchPermsCommands {
         }
 
         return action.run(source);
+    }
+
+    private static <S> int sendCommandList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        environment.sendMessage(context.getSource(), "ClutchPerms commands:");
+        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " status");
+        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " user <target> list");
+        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " user <target> get <node>");
+        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " user <target> set <node> <true|false>");
+        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " user <target> clear <node>");
+        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " users list");
+        environment.sendMessage(context.getSource(), "/" + ROOT_LITERAL + " users search <name>");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int sendStatus(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        CommandStatusDiagnostics diagnostics = environment.statusDiagnostics();
+        environment.sendMessage(context.getSource(), STATUS_MESSAGE);
+        environment.sendMessage(context.getSource(), "Permissions file: " + diagnostics.permissionsFile());
+        environment.sendMessage(context.getSource(), "Subjects file: " + diagnostics.subjectsFile());
+        environment.sendMessage(context.getSource(), "Known subjects: " + environment.subjectMetadataService().getSubjects().size());
+        environment.sendMessage(context.getSource(), "Runtime bridge: " + diagnostics.runtimeBridgeStatus());
+        return Command.SINGLE_SUCCESS;
     }
 
     private static <S> boolean canUse(ClutchPermsCommandEnvironment<S> environment, S source) {
@@ -186,6 +220,42 @@ public final class ClutchPermsCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    private static <S> int listSubjects(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        Map<UUID, SubjectMetadata> subjects = environment.subjectMetadataService().getSubjects();
+        if (subjects.isEmpty()) {
+            environment.sendMessage(context.getSource(), "No known users.");
+            return Command.SINGLE_SUCCESS;
+        }
+
+        String subjectList = subjects.values().stream()
+                .sorted(Comparator.comparing(SubjectMetadata::lastKnownName, String.CASE_INSENSITIVE_ORDER).thenComparing(SubjectMetadata::subjectId))
+                .map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
+        environment.sendMessage(context.getSource(), "Known users: " + subjectList);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int searchSubjects(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String query = StringArgumentType.getString(context, NAME_ARGUMENT).trim();
+        String normalizedQuery = query.toLowerCase(Locale.ROOT);
+        if (normalizedQuery.isEmpty()) {
+            environment.sendMessage(context.getSource(), "No users matched " + query + ".");
+            return Command.SINGLE_SUCCESS;
+        }
+
+        String matches = environment.subjectMetadataService().getSubjects().values().stream()
+                .filter(subject -> subject.lastKnownName().toLowerCase(Locale.ROOT).contains(normalizedQuery))
+                .sorted(Comparator.comparing(SubjectMetadata::lastKnownName, String.CASE_INSENSITIVE_ORDER).thenComparing(SubjectMetadata::subjectId))
+                .map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
+
+        if (matches.isEmpty()) {
+            environment.sendMessage(context.getSource(), "No users matched " + query + ".");
+            return Command.SINGLE_SUCCESS;
+        }
+
+        environment.sendMessage(context.getSource(), "Matched users: " + matches);
+        return Command.SINGLE_SUCCESS;
+    }
+
     private static <S> CommandSubject resolveSubject(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
         Optional<CommandSubject> onlineSubject = environment.findOnlineSubject(context.getSource(), target);
@@ -195,7 +265,8 @@ public final class ClutchPermsCommands {
 
         try {
             UUID subjectId = UUID.fromString(target);
-            return new CommandSubject(subjectId, subjectId.toString());
+            String displayName = environment.subjectMetadataService().getSubject(subjectId).map(SubjectMetadata::lastKnownName).orElse(subjectId.toString());
+            return new CommandSubject(subjectId, displayName);
         } catch (IllegalArgumentException exception) {
             throw UNKNOWN_TARGET.create(target);
         }
@@ -232,6 +303,10 @@ public final class ClutchPermsCommands {
 
     private static String formatSubject(CommandSubject subject) {
         return subject.displayName() + " (" + subject.id() + ")";
+    }
+
+    private static String formatSubjectMetadata(SubjectMetadata subject) {
+        return subject.lastKnownName() + " (" + subject.subjectId() + ", last seen " + subject.lastSeen() + ")";
     }
 
     private ClutchPermsCommands() {

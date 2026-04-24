@@ -13,6 +13,7 @@ import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.SubjectMetadataServices;
+import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.common.Mod;
@@ -49,11 +50,21 @@ public final class ClutchPermsNeoForgeMod {
     private static SubjectMetadataService subjectMetadataService;
 
     /**
+     * Permission assignment storage path for diagnostics.
+     */
+    private static Path permissionsFile;
+
+    /**
+     * Subject metadata storage path for diagnostics.
+     */
+    private static Path subjectsFile;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the NeoForge lifecycle.
      */
     public ClutchPermsNeoForgeMod() {
-        Path permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
-        Path subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
+        permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
+        subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
         try {
             permissionService = PermissionServices.jsonFile(permissionsFile);
             subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
@@ -71,7 +82,7 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private void registerCommands(RegisterCommandsEvent event) {
-        event.getDispatcher().register(NeoForgeClutchPermsCommand.create(permissionService));
+        event.getDispatcher().register(NeoForgeClutchPermsCommand.create(permissionService, subjectMetadataService, ClutchPermsNeoForgeMod::getStatusDiagnostics));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -124,6 +135,27 @@ public final class ClutchPermsNeoForgeMod {
      */
     public static SubjectMetadataService getSubjectMetadataService() {
         return Objects.requireNonNull(subjectMetadataService, "Subject metadata service has not been initialized");
+    }
+
+    /**
+     * Returns status diagnostics for the shared command tree.
+     *
+     * @return active command status diagnostics
+     */
+    public static CommandStatusDiagnostics getStatusDiagnostics() {
+        return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
+                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")), runtimeBridgeStatus());
+    }
+
+    private static String runtimeBridgeStatus() {
+        if (NeoForgeClutchPermsPermissionHandler.IDENTIFIER.equals(PermissionAPI.getActivePermissionHandler())) {
+            return "NeoForge permission handler active as " + NeoForgeClutchPermsPermissionHandler.IDENTIFIER;
+        }
+        return "NeoForge permission handler registered but inactive; set server permissionHandler to " + NeoForgeClutchPermsPermissionHandler.IDENTIFIER;
+    }
+
+    private static String formatPath(Path path) {
+        return path.toAbsolutePath().normalize().toString();
     }
 
     private void recordSubject(ServerPlayer player) {

@@ -1,5 +1,6 @@
 package me.clutchy.clutchperms.common.command;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -16,9 +17,11 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestion;
 
 import me.clutchy.clutchperms.common.InMemoryPermissionService;
+import me.clutchy.clutchperms.common.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.PermissionNodes;
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionValue;
+import me.clutchy.clutchperms.common.SubjectMetadataService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -34,7 +37,18 @@ class ClutchPermsCommandsTest {
 
     private static final UUID UUID_NAMED_PLAYER_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
 
+    private static final UUID SECOND_TARGET_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
+
+    private static final Instant FIRST_SEEN = Instant.parse("2026-04-24T12:00:00Z");
+
+    private static final Instant SECOND_SEEN = Instant.parse("2026-04-24T13:00:00Z");
+
+    private static final CommandStatusDiagnostics STATUS_DIAGNOSTICS = new CommandStatusDiagnostics("/tmp/clutchperms/permissions.json", "/tmp/clutchperms/subjects.json",
+            "test bridge active");
+
     private PermissionService permissionService;
+
+    private SubjectMetadataService subjectMetadataService;
 
     private TestEnvironment environment;
 
@@ -46,24 +60,40 @@ class ClutchPermsCommandsTest {
     @BeforeEach
     void setUp() {
         permissionService = new InMemoryPermissionService();
-        environment = new TestEnvironment(permissionService);
+        subjectMetadataService = new InMemorySubjectMetadataService();
+        environment = new TestEnvironment(permissionService, subjectMetadataService);
         environment.addOnlineSubject("Target", TARGET_ID);
         dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
     }
 
     /**
-     * Confirms the root command returns the shared status message.
+     * Confirms the root command returns the shared command list.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
      */
     @Test
-    void statusCommandSendsStatusMessage() throws CommandSyntaxException {
+    void rootCommandSendsCommandList() throws CommandSyntaxException {
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(List.of(ClutchPermsCommands.STATUS_MESSAGE), console.messages());
+        assertEquals(commandListMessages(), console.messages());
+    }
+
+    /**
+     * Confirms the explicit status subcommand returns the same diagnostics with the current subject count.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void statusSubcommandSendsDiagnostics() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(TARGET_ID, "Target", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms status", console);
+
+        assertEquals(statusMessages(1), console.messages());
     }
 
     /**
@@ -132,6 +162,23 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms UUID targets use stored metadata names in command feedback when available.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void uuidTargetUsesLastKnownNameInCommandFeedback() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "OfflineTarget", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user " + SECOND_TARGET_ID + " set example.node true", console);
+        dispatcher.execute("clutchperms user " + SECOND_TARGET_ID + " get example.node", console);
+
+        assertEquals(List.of("Set example.node for OfflineTarget (00000000-0000-0000-0000-000000000004) to TRUE.",
+                "OfflineTarget (00000000-0000-0000-0000-000000000004) has example.node = TRUE."), console.messages());
+    }
+
+    /**
      * Confirms unknown targets and malformed command input fail through Brigadier.
      */
     @Test
@@ -165,18 +212,93 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("example.node"), suggestionTexts("clutchperms user Target clear ex"));
     }
 
+    /**
+     * Confirms the users list command reports an empty metadata store clearly.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void usersListReportsNoKnownUsers() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms users list", console);
+
+        assertEquals(List.of("No known users."), console.messages());
+    }
+
+    /**
+     * Confirms the users list command reports known users in stable name order.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void usersListReportsKnownUsers() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(TARGET_ID, "Zed", SECOND_SEEN);
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "Alpha", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms users list", console);
+
+        assertEquals(List.of("Known users: Alpha (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T12:00:00Z), "
+                + "Zed (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T13:00:00Z)"), console.messages());
+    }
+
+    /**
+     * Confirms the users search command matches names case-insensitively.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void usersSearchReportsMatchingKnownUsers() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(TARGET_ID, "Target", FIRST_SEEN);
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "Other", SECOND_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms users search tar", console);
+
+        assertEquals(List.of("Matched users: Target (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T12:00:00Z)"), console.messages());
+    }
+
+    /**
+     * Confirms the users search command reports no-match searches clearly.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void usersSearchReportsNoMatches() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(TARGET_ID, "Target", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms users search Missing", console);
+
+        assertEquals(List.of("No users matched Missing."), console.messages());
+    }
+
     private List<String> suggestionTexts(String command) {
         return dispatcher.getCompletionSuggestions(dispatcher.parse(command, TestSource.console())).join().getList().stream().map(Suggestion::getText).toList();
+    }
+
+    private static List<String> statusMessages(int knownSubjects) {
+        return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
+                "Known subjects: " + knownSubjects, "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
+    }
+
+    private static List<String> commandListMessages() {
+        return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms user <target> list", "/clutchperms user <target> get <node>",
+                "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>", "/clutchperms users list", "/clutchperms users search <name>");
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {
 
         private final PermissionService permissionService;
 
+        private final SubjectMetadataService subjectMetadataService;
+
         private final Map<String, CommandSubject> onlineSubjects = new LinkedHashMap<>();
 
-        private TestEnvironment(PermissionService permissionService) {
+        private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService) {
             this.permissionService = permissionService;
+            this.subjectMetadataService = subjectMetadataService;
         }
 
         private void addOnlineSubject(String name, UUID subjectId) {
@@ -186,6 +308,16 @@ class ClutchPermsCommandsTest {
         @Override
         public PermissionService permissionService() {
             return permissionService;
+        }
+
+        @Override
+        public SubjectMetadataService subjectMetadataService() {
+            return subjectMetadataService;
+        }
+
+        @Override
+        public CommandStatusDiagnostics statusDiagnostics() {
+            return STATUS_DIAGNOSTICS;
         }
 
         @Override

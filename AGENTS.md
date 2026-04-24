@@ -62,8 +62,11 @@
   - persists direct `UUID -> node -> TRUE/FALSE` assignments to `permissions.json`
   - treats `UNSET` as entry removal
   - fails startup on malformed persisted permission data
-  - registers shared `/clutchperms` status and direct user permission get/list/set/clear commands on every platform
+  - registers shared `/clutchperms` command listing, status diagnostics, and direct user permission get/list/set/clear commands on every platform
+  - reports storage paths, known-subject count, and runtime bridge status from `/clutchperms status`
+  - registers shared known-user list/search commands backed by subject metadata
   - resolves command targets by exact online player name first, then UUID
+  - displays last-known names for UUID command targets when subject metadata exists
   - suggests `clutchperms.admin` and explicit target assignments for command permission node arguments
   - allows console and remote console bootstrap command execution
   - requires persisted `clutchperms.admin` for player command execution
@@ -168,7 +171,9 @@
     - unit tests for subject metadata enumeration and JSON persistence
     - unit tests for observing service delegation and mutation notifications
     - unit tests for shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
+    - unit tests for shared status diagnostics output
     - unit tests for shared permission node suggestions
+    - unit tests for shared known-user list and search commands
   - `paper`
     - MockBukkit tests for plugin boot, service registration, subject metadata recording, the Paper command adapter, and runtime permission attachment refresh behavior
   - `fabric`

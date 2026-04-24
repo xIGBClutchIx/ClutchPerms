@@ -39,6 +39,15 @@ final class PaperRuntimePermissionBridge implements Listener, AutoCloseable {
     }
 
     /**
+     * Describes the active Paper runtime permission bridge state for diagnostics.
+     *
+     * @return human-readable runtime bridge status
+     */
+    String status() {
+        return "Paper permission attachment bridge active with " + attachments.size() + " attached players";
+    }
+
+    /**
      * Refreshes one online subject after a persisted permission mutation.
      *
      * @param subjectId subject UUID that changed

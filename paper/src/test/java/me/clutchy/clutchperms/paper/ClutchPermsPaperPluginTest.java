@@ -113,19 +113,24 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
-     * Confirms that the Paper adapter executes the shared Brigadier command tree.
+     * Confirms that the Paper adapter executes the shared Brigadier status diagnostics.
      *
      * @throws Exception when Brigadier command execution fails unexpectedly
      */
     @Test
-    void clutchPermsCommandRespondsWithStatusMessage() throws Exception {
+    void clutchPermsCommandRespondsWithStatusDiagnostics() throws Exception {
         PlayerMock player = server.addPlayer("Admin");
         plugin.getPermissionService().setPermission(player.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
 
-        assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
+        assertEquals(1, dispatcher.execute("clutchperms status", new TestCommandSourceStack(player)));
         assertEquals(Component.text(ClutchPermsPaperPlugin.STATUS_MESSAGE), player.nextComponentMessage());
+        assertEquals(Component.text("Permissions file: " + plugin.getDataFolder().toPath().resolve("permissions.json").toAbsolutePath().normalize()),
+                player.nextComponentMessage());
+        assertEquals(Component.text("Subjects file: " + plugin.getDataFolder().toPath().resolve("subjects.json").toAbsolutePath().normalize()), player.nextComponentMessage());
+        assertEquals(Component.text("Known subjects: 1"), player.nextComponentMessage());
+        assertEquals(Component.text("Runtime bridge: Paper permission attachment bridge active with 1 attached players"), player.nextComponentMessage());
     }
 
     /**

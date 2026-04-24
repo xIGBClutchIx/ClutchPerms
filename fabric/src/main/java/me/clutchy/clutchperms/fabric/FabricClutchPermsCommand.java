@@ -3,11 +3,14 @@ package me.clutchy.clutchperms.fabric;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
+import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
 
 import net.minecraft.commands.CommandSourceStack;
@@ -19,14 +22,21 @@ import net.minecraft.server.level.ServerPlayer;
  */
 final class FabricClutchPermsCommand {
 
-    static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(PermissionService permissionService) {
-        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService));
+    static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(PermissionService permissionService, SubjectMetadataService subjectMetadataService,
+            Supplier<CommandStatusDiagnostics> statusDiagnostics) {
+        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, statusDiagnostics));
     }
 
     private FabricClutchPermsCommand() {
     }
 
-    private record FabricCommandEnvironment(PermissionService permissionService) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
+    private record FabricCommandEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService,
+            Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
+
+        @Override
+        public CommandStatusDiagnostics statusDiagnostics() {
+            return statusDiagnosticsSupplier.get();
+        }
 
         @Override
         public CommandSourceKind sourceKind(CommandSourceStack source) {

@@ -15,6 +15,7 @@ import me.clutchy.clutchperms.common.PermissionStorageException;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.SubjectMetadataServices;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
+import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 
 /**
  * Paper plugin entrypoint that exposes the shared persisted permission service and Brigadier command adapter.
@@ -41,6 +42,16 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private SubjectMetadataService subjectMetadataService;
 
     /**
+     * Permission assignment storage path for diagnostics.
+     */
+    private Path permissionsFile;
+
+    /**
+     * Subject metadata storage path for diagnostics.
+     */
+    private Path subjectsFile;
+
+    /**
      * Applies persisted direct assignments to online Paper players.
      */
     private PaperRuntimePermissionBridge runtimePermissionBridge;
@@ -50,8 +61,8 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
      */
     @Override
     public void onEnable() {
-        Path permissionsFile = getDataFolder().toPath().resolve(PERMISSIONS_FILE_NAME);
-        Path subjectsFile = getDataFolder().toPath().resolve(SUBJECTS_FILE_NAME);
+        permissionsFile = getDataFolder().toPath().resolve(PERMISSIONS_FILE_NAME);
+        subjectsFile = getDataFolder().toPath().resolve(SUBJECTS_FILE_NAME);
         PermissionService storagePermissionService;
         try {
             storagePermissionService = PermissionServices.jsonFile(permissionsFile);
@@ -89,6 +100,8 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         }
         permissionService = null;
         subjectMetadataService = null;
+        permissionsFile = null;
+        subjectsFile = null;
     }
 
     /**
@@ -109,6 +122,21 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
      */
     public SubjectMetadataService getSubjectMetadataService() {
         return Objects.requireNonNull(subjectMetadataService, "Subject metadata service is not available");
+    }
+
+    /**
+     * Returns status diagnostics for the shared command tree.
+     *
+     * @return active command status diagnostics
+     */
+    CommandStatusDiagnostics getStatusDiagnostics() {
+        PaperRuntimePermissionBridge bridge = Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available");
+        return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file is not available")),
+                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file is not available")), bridge.status());
+    }
+
+    private static String formatPath(Path path) {
+        return path.toAbsolutePath().normalize().toString();
     }
 
 }

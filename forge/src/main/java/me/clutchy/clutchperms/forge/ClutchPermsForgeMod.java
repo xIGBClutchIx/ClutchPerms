@@ -13,6 +13,7 @@ import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
 import me.clutchy.clutchperms.common.SubjectMetadataServices;
+import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -48,11 +49,21 @@ public final class ClutchPermsForgeMod {
     private static SubjectMetadataService subjectMetadataService;
 
     /**
+     * Permission assignment storage path for diagnostics.
+     */
+    private static Path permissionsFile;
+
+    /**
+     * Subject metadata storage path for diagnostics.
+     */
+    private static Path subjectsFile;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the Forge lifecycle.
      */
     public ClutchPermsForgeMod() {
-        Path permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
-        Path subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
+        permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
+        subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
         try {
             permissionService = PermissionServices.jsonFile(permissionsFile);
             subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
@@ -70,7 +81,7 @@ public final class ClutchPermsForgeMod {
     }
 
     private void registerCommands(RegisterCommandsEvent event) {
-        event.getDispatcher().register(ForgeClutchPermsCommand.create(permissionService));
+        event.getDispatcher().register(ForgeClutchPermsCommand.create(permissionService, subjectMetadataService, ClutchPermsForgeMod::getStatusDiagnostics));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -122,6 +133,27 @@ public final class ClutchPermsForgeMod {
      */
     public static SubjectMetadataService getSubjectMetadataService() {
         return Objects.requireNonNull(subjectMetadataService, "Subject metadata service has not been initialized");
+    }
+
+    /**
+     * Returns status diagnostics for the shared command tree.
+     *
+     * @return active command status diagnostics
+     */
+    public static CommandStatusDiagnostics getStatusDiagnostics() {
+        return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
+                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")), runtimeBridgeStatus());
+    }
+
+    private static String runtimeBridgeStatus() {
+        if (ForgeClutchPermsPermissionHandler.IDENTIFIER.equals(PermissionAPI.getActivePermissionHandler())) {
+            return "Forge permission handler active as " + ForgeClutchPermsPermissionHandler.IDENTIFIER;
+        }
+        return "Forge permission handler registered but inactive; set server permissionHandler to " + ForgeClutchPermsPermissionHandler.IDENTIFIER;
+    }
+
+    private static String formatPath(Path path) {
+        return path.toAbsolutePath().normalize().toString();
     }
 
     private void recordSubject(ServerPlayer player) {
