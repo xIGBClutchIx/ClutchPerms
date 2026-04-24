@@ -26,6 +26,7 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 
 import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.node.KnownPermissionNode;
 import me.clutchy.clutchperms.common.permission.PermissionExplanation;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolution;
@@ -55,6 +56,8 @@ public final class ClutchPermsCommands {
 
     private static final String NAME_ARGUMENT = "name";
 
+    private static final String QUERY_ARGUMENT = "query";
+
     private static final String GROUP_ARGUMENT = "group";
 
     private static final String PARENT_ARGUMENT = "parent";
@@ -74,6 +77,8 @@ public final class ClutchPermsCommands {
     private static final DynamicCommandExceptionType RELOAD_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType GROUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
+    private static final DynamicCommandExceptionType NODE_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     /**
      * Creates the root ClutchPerms command node for a platform source type.
@@ -98,7 +103,7 @@ public final class ClutchPermsCommands {
 
         return LiteralArgumentBuilder.<S>literal(ROOT_LITERAL).executes(context -> executeAuthorized(environment, context, source -> sendCommandList(environment, context)))
                 .then(statusCommand(environment)).then(reloadCommand(environment)).then(userCommand(environment)).then(groupRootCommand(environment))
-                .then(usersCommand(environment));
+                .then(usersCommand(environment)).then(nodesCommand(environment));
     }
 
     private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -146,6 +151,18 @@ public final class ClutchPermsCommands {
                 .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> executeAuthorized(environment, context, source -> listSubjects(environment, context))))
                 .then(LiteralArgumentBuilder.<S>literal("search").then(RequiredArgumentBuilder.<S, String>argument(NAME_ARGUMENT, StringArgumentType.word())
                         .executes(context -> executeAuthorized(environment, context, source -> searchSubjects(environment, context)))));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> nodesCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("nodes")
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> executeAuthorized(environment, context, source -> listKnownNodes(environment, context))))
+                .then(LiteralArgumentBuilder.<S>literal("search")
+                        .then(RequiredArgumentBuilder.<S, String>argument(QUERY_ARGUMENT, StringArgumentType.word())
+                                .executes(context -> executeAuthorized(environment, context, source -> searchKnownNodes(environment, context)))))
+                .then(LiteralArgumentBuilder.<S>literal("add").then(
+                        ClutchPermsCommands.nodeArgument(environment).executes(context -> executeAuthorized(environment, context, source -> addKnownNode(environment, context)))))
+                .then(LiteralArgumentBuilder.<S>literal("remove").then(ClutchPermsCommands.nodeArgument(environment)
+                        .executes(context -> executeAuthorized(environment, context, source -> removeKnownNode(environment, context)))));
     }
 
     private static <S> LiteralArgumentBuilder<S> listCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -239,8 +256,10 @@ public final class ClutchPermsCommands {
         environment.sendMessage(context.getSource(), CommandLang.statusPermissionsFile(diagnostics.permissionsFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusSubjectsFile(diagnostics.subjectsFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusGroupsFile(diagnostics.groupsFile()));
+        environment.sendMessage(context.getSource(), CommandLang.statusNodesFile(diagnostics.nodesFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownSubjects(environment.subjectMetadataService().getSubjects().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownGroups(environment.groupService().getGroups().size()));
+        environment.sendMessage(context.getSource(), CommandLang.statusKnownNodes(environment.permissionNodeRegistry().getKnownNodes().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusRuntimeBridge(diagnostics.runtimeBridgeStatus()));
         return Command.SINGLE_SUCCESS;
     }
@@ -588,6 +607,77 @@ public final class ClutchPermsCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    private static <S> int listKnownNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        List<KnownPermissionNode> nodes = environment.permissionNodeRegistry().getKnownNodes().stream().sorted(Comparator.comparing(KnownPermissionNode::node)).toList();
+        if (nodes.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.nodesEmpty());
+            return Command.SINGLE_SUCCESS;
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.nodesList(nodes.stream().map(ClutchPermsCommands::formatKnownNode).collect(Collectors.joining(", "))));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int searchKnownNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String query = StringArgumentType.getString(context, QUERY_ARGUMENT).trim();
+        String normalizedQuery = query.toLowerCase(Locale.ROOT);
+        if (normalizedQuery.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.nodesSearchEmpty(query));
+            return Command.SINGLE_SUCCESS;
+        }
+
+        List<KnownPermissionNode> nodes = environment.permissionNodeRegistry().getKnownNodes().stream()
+                .filter(node -> node.node().contains(normalizedQuery) || node.description().toLowerCase(Locale.ROOT).contains(normalizedQuery))
+                .sorted(Comparator.comparing(KnownPermissionNode::node)).toList();
+        if (nodes.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.nodesSearchEmpty(query));
+            return Command.SINGLE_SUCCESS;
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.nodesSearchMatches(nodes.stream().map(ClutchPermsCommands::formatKnownNode).collect(Collectors.joining(", "))));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int addKnownNode(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String input = StringArgumentType.getString(context, NODE_ARGUMENT).trim();
+        int nodeEnd = firstWhitespaceIndex(input);
+        String node = nodeEnd < 0 ? input : input.substring(0, nodeEnd);
+        String description = nodeEnd < 0 ? "" : input.substring(nodeEnd).trim();
+        String normalizedNode;
+        try {
+            normalizedNode = KnownPermissionNode.normalizeKnownNode(node);
+            environment.manualPermissionNodeRegistry().addNode(normalizedNode, description);
+        } catch (IllegalArgumentException | UnsupportedOperationException exception) {
+            throw NODE_OPERATION_FAILED.create(CommandLang.nodeOperationFailed(exception));
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.nodeAdded(normalizedNode));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int firstWhitespaceIndex(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            if (Character.isWhitespace(value.charAt(index))) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static <S> int removeKnownNode(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String node = StringArgumentType.getString(context, NODE_ARGUMENT);
+        String normalizedNode;
+        try {
+            normalizedNode = KnownPermissionNode.normalizeKnownNode(node);
+            environment.manualPermissionNodeRegistry().removeNode(normalizedNode);
+        } catch (IllegalArgumentException | UnsupportedOperationException exception) {
+            throw NODE_OPERATION_FAILED.create(CommandLang.nodeOperationFailed(exception));
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.nodeRemoved(normalizedNode));
+        return Command.SINGLE_SUCCESS;
+    }
+
     private static <S> CommandSubject resolveSubject(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
         Optional<CommandSubject> onlineSubject = environment.findOnlineSubject(context.getSource(), target);
@@ -741,6 +831,7 @@ public final class ClutchPermsCommands {
     private static <S> CompletableFuture<Suggestions> suggestPermissionNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {
         Set<String> nodes = new LinkedHashSet<>();
         nodes.add(PermissionNodes.ADMIN);
+        environment.permissionNodeRegistry().getKnownNodes().stream().map(KnownPermissionNode::node).forEach(nodes::add);
 
         try {
             String groupName = StringArgumentType.getString(context, GROUP_ARGUMENT);
@@ -774,6 +865,14 @@ public final class ClutchPermsCommands {
 
     private static String formatSubjectMetadata(SubjectMetadata subject) {
         return subject.lastKnownName() + " (" + subject.subjectId() + ", last seen " + subject.lastSeen() + ")";
+    }
+
+    private static String formatKnownNode(KnownPermissionNode node) {
+        String formattedNode = node.node() + " [" + node.source().name().toLowerCase(Locale.ROOT).replace('_', '-') + "]";
+        if (!node.description().isEmpty()) {
+            formattedNode += " - " + node.description();
+        }
+        return formattedNode;
     }
 
     private static String formatResolutionSource(PermissionResolution resolution) {

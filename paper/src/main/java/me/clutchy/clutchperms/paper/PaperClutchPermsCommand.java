@@ -17,6 +17,8 @@ import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
 import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
@@ -43,6 +45,16 @@ final class PaperClutchPermsCommand {
         @Override
         public GroupService groupService() {
             return plugin.getGroupService();
+        }
+
+        @Override
+        public PermissionNodeRegistry permissionNodeRegistry() {
+            return plugin.getPermissionNodeRegistry();
+        }
+
+        @Override
+        public MutablePermissionNodeRegistry manualPermissionNodeRegistry() {
+            return plugin.getManualPermissionNodeRegistry();
         }
 
         @Override

@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.forge;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -73,6 +74,10 @@ final class ForgeClutchPermsPermissionHandler implements IPermissionHandler {
             case FALSE -> (T) Boolean.FALSE;
             case UNSET -> defaultValue;
         };
+    }
+
+    static List<String> booleanNodeNames(Collection<PermissionNode<?>> nodes) {
+        return nodes.stream().filter(node -> node.getType() == PermissionTypes.BOOLEAN).map(PermissionNode::getNodeName).sorted().toList();
     }
 
     private static PermissionNode<Boolean> createAdminNode() {

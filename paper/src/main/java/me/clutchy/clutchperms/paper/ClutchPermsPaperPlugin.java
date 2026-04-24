@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.paper;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.logging.Level;
 
 import org.bukkit.plugin.ServicePriority;
@@ -15,6 +16,11 @@ import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
+import me.clutchy.clutchperms.common.node.KnownPermissionNode;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
@@ -32,6 +38,8 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private static final String SUBJECTS_FILE_NAME = "subjects.json";
 
     private static final String GROUPS_FILE_NAME = "groups.json";
+
+    private static final String NODES_FILE_NAME = "nodes.json";
 
     /**
      * Health line returned by the shared status command.
@@ -54,6 +62,16 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private GroupService groupService;
 
     /**
+     * Active manual known node registry for the lifecycle of this plugin enable.
+     */
+    private MutablePermissionNodeRegistry manualPermissionNodeRegistry;
+
+    /**
+     * Active merged known node registry for the lifecycle of this plugin enable.
+     */
+    private PermissionNodeRegistry permissionNodeRegistry;
+
+    /**
      * Active effective permission resolver for the lifecycle of this plugin enable.
      */
     private PermissionResolver permissionResolver;
@@ -74,6 +92,11 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private Path groupsFile;
 
     /**
+     * Manual known permission node registry storage path for diagnostics.
+     */
+    private Path nodesFile;
+
+    /**
      * Applies effective persisted assignments to online Paper players.
      */
     private PaperRuntimePermissionBridge runtimePermissionBridge;
@@ -91,14 +114,18 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         permissionsFile = getDataFolder().toPath().resolve(PERMISSIONS_FILE_NAME);
         subjectsFile = getDataFolder().toPath().resolve(SUBJECTS_FILE_NAME);
         groupsFile = getDataFolder().toPath().resolve(GROUPS_FILE_NAME);
+        nodesFile = getDataFolder().toPath().resolve(NODES_FILE_NAME);
         try {
             PermissionService storagePermissionService = loadPermissionService();
             GroupService storageGroupService = loadGroupService();
+            MutablePermissionNodeRegistry storagePermissionNodeRegistry = loadPermissionNodeRegistry();
             subjectMetadataService = loadSubjectMetadataService();
             permissionManagerBridge = PaperPermissionManagerBridge.install(this);
             runtimePermissionBridge = new PaperRuntimePermissionBridge(this, this::getPermissionResolver, this::getKnownPaperPermissionNodes,
                     this::getPaperPermissionManagerStatus);
             permissionManagerBridge.setRegistryChangeListener(runtimePermissionBridge::refreshOnlinePlayers);
+            manualPermissionNodeRegistry = observablePermissionNodeRegistry(storagePermissionNodeRegistry);
+            permissionNodeRegistry = createPermissionNodeRegistry(manualPermissionNodeRegistry);
             permissionService = observablePermissionService(storagePermissionService);
             groupService = observableGroupService(storageGroupService);
             permissionResolver = new PermissionResolver(permissionService, groupService);
@@ -137,10 +164,13 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         permissionService = null;
         subjectMetadataService = null;
         groupService = null;
+        manualPermissionNodeRegistry = null;
+        permissionNodeRegistry = null;
         permissionResolver = null;
         permissionsFile = null;
         subjectsFile = null;
         groupsFile = null;
+        nodesFile = null;
     }
 
     /**
@@ -173,6 +203,24 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     }
 
     /**
+     * Exposes the active manual known node registry for callers and tests.
+     *
+     * @return the active manual known node registry for the current plugin enable
+     */
+    public MutablePermissionNodeRegistry getManualPermissionNodeRegistry() {
+        return Objects.requireNonNull(manualPermissionNodeRegistry, "Manual permission node registry is not available");
+    }
+
+    /**
+     * Exposes the active merged known node registry for callers and tests.
+     *
+     * @return the active known node registry for the current plugin enable
+     */
+    public PermissionNodeRegistry getPermissionNodeRegistry() {
+        return Objects.requireNonNull(permissionNodeRegistry, "Permission node registry is not available");
+    }
+
+    /**
      * Exposes the active effective permission resolver for callers and tests.
      *
      * @return the active permission resolver for the current plugin enable
@@ -190,7 +238,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         PaperRuntimePermissionBridge bridge = Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available");
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file is not available")),
                 formatPath(Objects.requireNonNull(subjectsFile, "Subjects file is not available")), formatPath(Objects.requireNonNull(groupsFile, "Groups file is not available")),
-                bridge.status());
+                formatPath(Objects.requireNonNull(nodesFile, "Known nodes file is not available")), bridge.status());
     }
 
     /**
@@ -199,23 +247,32 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     void reloadStorage() {
         PermissionService reloadedStoragePermissionService = loadPermissionService();
         GroupService reloadedStorageGroupService = loadGroupService();
+        MutablePermissionNodeRegistry reloadedStoragePermissionNodeRegistry = loadPermissionNodeRegistry();
         SubjectMetadataService reloadedSubjectMetadataService = loadSubjectMetadataService();
         PermissionService reloadedPermissionService = observablePermissionService(reloadedStoragePermissionService);
         GroupService reloadedGroupService = observableGroupService(reloadedStorageGroupService);
+        MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = observablePermissionNodeRegistry(reloadedStoragePermissionNodeRegistry);
+        PermissionNodeRegistry reloadedPermissionNodeRegistry = createPermissionNodeRegistry(reloadedManualPermissionNodeRegistry);
         PermissionResolver reloadedPermissionResolver = new PermissionResolver(reloadedPermissionService, reloadedGroupService);
 
         PermissionService oldPermissionService = permissionService;
         SubjectMetadataService oldSubjectMetadataService = subjectMetadataService;
         GroupService oldGroupService = groupService;
+        MutablePermissionNodeRegistry oldManualPermissionNodeRegistry = manualPermissionNodeRegistry;
+        PermissionNodeRegistry oldPermissionNodeRegistry = permissionNodeRegistry;
         PermissionResolver oldPermissionResolver = permissionResolver;
         permissionService = reloadedPermissionService;
         groupService = reloadedGroupService;
+        manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
+        permissionNodeRegistry = reloadedPermissionNodeRegistry;
         permissionResolver = reloadedPermissionResolver;
         subjectMetadataService = reloadedSubjectMetadataService;
 
         getServer().getServicesManager().unregister(PermissionService.class, oldPermissionService);
         getServer().getServicesManager().unregister(SubjectMetadataService.class, oldSubjectMetadataService);
         getServer().getServicesManager().unregister(GroupService.class, oldGroupService);
+        getServer().getServicesManager().unregister(MutablePermissionNodeRegistry.class, oldManualPermissionNodeRegistry);
+        getServer().getServicesManager().unregister(PermissionNodeRegistry.class, oldPermissionNodeRegistry);
         getServer().getServicesManager().unregister(PermissionResolver.class, oldPermissionResolver);
         registerServices();
     }
@@ -248,7 +305,17 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         return GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file is not available"));
     }
 
+    private MutablePermissionNodeRegistry loadPermissionNodeRegistry() {
+        return PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file is not available"));
+    }
+
     private Set<String> getKnownPaperPermissionNodes() {
+        Set<String> nodes = new TreeSet<>();
+        Objects.requireNonNull(permissionNodeRegistry, "Permission node registry is not available").getKnownNodes().stream().map(KnownPermissionNode::node).forEach(nodes::add);
+        return Set.copyOf(nodes);
+    }
+
+    private Set<String> getKnownPaperPlatformPermissionNodes() {
         return Objects.requireNonNull(permissionManagerBridge, "Permission manager bridge is not available").knownPermissionNodes();
     }
 
@@ -277,10 +344,22 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         });
     }
 
+    private MutablePermissionNodeRegistry observablePermissionNodeRegistry(MutablePermissionNodeRegistry storagePermissionNodeRegistry) {
+        return PermissionNodeRegistries.observing(storagePermissionNodeRegistry,
+                Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available")::refreshOnlinePlayers);
+    }
+
+    private PermissionNodeRegistry createPermissionNodeRegistry(MutablePermissionNodeRegistry manualRegistry) {
+        return PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), manualRegistry,
+                PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, this::getKnownPaperPlatformPermissionNodes));
+    }
+
     private void registerServices() {
         getServer().getServicesManager().register(PermissionService.class, getPermissionService(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(SubjectMetadataService.class, getSubjectMetadataService(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(GroupService.class, getGroupService(), this, ServicePriority.Normal);
+        getServer().getServicesManager().register(MutablePermissionNodeRegistry.class, getManualPermissionNodeRegistry(), this, ServicePriority.Normal);
+        getServer().getServicesManager().register(PermissionNodeRegistry.class, getPermissionNodeRegistry(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(PermissionResolver.class, getPermissionResolver(), this, ServicePriority.Normal);
     }
 

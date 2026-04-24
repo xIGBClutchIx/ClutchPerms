@@ -11,6 +11,8 @@ import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
 import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
@@ -25,18 +27,21 @@ import net.minecraft.server.level.ServerPlayer;
 final class FabricClutchPermsCommand {
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
-            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionResolver> permissionResolver,
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
+            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
             Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable runtimePermissionRefresher) {
-        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionResolver, statusDiagnostics,
-                storageReloader, runtimePermissionRefresher));
+        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionNodeRegistry,
+                manualPermissionNodeRegistry, permissionResolver, statusDiagnostics, storageReloader, runtimePermissionRefresher));
     }
 
     private FabricClutchPermsCommand() {
     }
 
     private record FabricCommandEnvironment(Supplier<PermissionService> permissionServiceSupplier, Supplier<SubjectMetadataService> subjectMetadataServiceSupplier,
-            Supplier<GroupService> groupServiceSupplier, Supplier<PermissionResolver> permissionResolverSupplier, Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier,
-            Runnable storageReloader, Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
+            Supplier<GroupService> groupServiceSupplier, Supplier<PermissionNodeRegistry> permissionNodeRegistrySupplier,
+            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistrySupplier, Supplier<PermissionResolver> permissionResolverSupplier,
+            Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier, Runnable storageReloader,
+            Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
 
         @Override
         public PermissionService permissionService() {
@@ -46,6 +51,16 @@ final class FabricClutchPermsCommand {
         @Override
         public GroupService groupService() {
             return groupServiceSupplier.get();
+        }
+
+        @Override
+        public PermissionNodeRegistry permissionNodeRegistry() {
+            return permissionNodeRegistrySupplier.get();
+        }
+
+        @Override
+        public MutablePermissionNodeRegistry manualPermissionNodeRegistry() {
+            return manualPermissionNodeRegistrySupplier.get();
         }
 
         @Override

@@ -5,6 +5,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
@@ -31,6 +34,24 @@ public interface ClutchPermsCommandEnvironment<S> {
     GroupService groupService();
 
     /**
+     * Returns the merged known permission node registry inspected by command execution.
+     *
+     * @return active known permission node registry
+     */
+    default PermissionNodeRegistry permissionNodeRegistry() {
+        return PermissionNodeRegistries.builtIn();
+    }
+
+    /**
+     * Returns the manual known permission node registry mutated by node commands.
+     *
+     * @return active manual known permission node registry
+     */
+    default MutablePermissionNodeRegistry manualPermissionNodeRegistry() {
+        throw new UnsupportedOperationException("Manual permission node registry is not available for this command environment");
+    }
+
+    /**
      * Returns the effective permission resolver used by command authorization and check output.
      *
      * @return active permission resolver
@@ -54,7 +75,7 @@ public interface ClutchPermsCommandEnvironment<S> {
     CommandStatusDiagnostics statusDiagnostics();
 
     /**
-     * Reloads persisted permissions and subject metadata from platform storage.
+     * Reloads persisted permissions, subject metadata, groups, and known nodes from platform storage.
      */
     default void reloadStorage() {
         throw new UnsupportedOperationException("Reload is not available for this command environment");

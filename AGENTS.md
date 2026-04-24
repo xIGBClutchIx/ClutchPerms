@@ -17,7 +17,7 @@ ClutchPerms is an early cross-platform Minecraft permissions prototype for Paper
 - shared permission, group, subject metadata, storage, and command code in `common`
 - JSON-backed persisted state
 - shared Brigadier `/clutchperms` commands
-- Paper runtime attachments and registered-node wildcard expansion
+- Paper runtime attachments and known-node wildcard expansion
 - Fabric fabric-permissions-api integration
 - Forge and NeoForge native permission handlers
 
@@ -47,6 +47,7 @@ Shared package ownership:
 
 - `common.permission` - direct permissions, node normalization, wildcard matching, effective resolution, permission observers, and permission service factories
 - `common.group` - group definitions, group permissions, memberships, group storage, and group observers
+- `common.node` - known permission node registry, manual node storage, registry composition, and node observers
 - `common.subject` - last-known subject metadata
 - `common.storage` - storage exceptions
 - `common.command` - shared Brigadier command tree, command messages, and platform command environment contract
@@ -70,6 +71,9 @@ Shared package ownership:
 - Wildcard resolution happens inside each source tier/depth: exact node, closest `prefix.*`, broader parent wildcards, then `*`.
 - `prefix.*` matches descendant nodes such as `prefix.child` and `prefix.child.deep`, but not `prefix`.
 - Direct wildcard assignments still beat group/default exact assignments because source tier precedence comes first.
+- Known permission nodes are advisory exact-node descriptors used for discovery, suggestions, diagnostics, and Paper wildcard expansion.
+- `nodes.json` stores only manually registered exact nodes. Platform-discovered nodes are runtime-only and must not be written back to `nodes.json`.
+- Unknown permission nodes remain assignable; do not make assignment mutation depend on the known-node registry.
 - Subject metadata stores UUID, last-known name, and last-seen timestamp.
 - Command targets resolve exact online name first, exact stored last-known name second, and UUID third.
 - Ambiguous stored last-known names must fail clearly instead of mutating an arbitrary UUID.
@@ -83,6 +87,7 @@ Current persisted files:
 - `permissions.json` for direct user permission assignments
 - `groups.json` for group definitions, group permissions, parent links, and memberships
 - `subjects.json` for subject metadata
+- `nodes.json` for manually registered exact known permission nodes
 
 Locations:
 
@@ -98,14 +103,14 @@ Storage expectations:
 - Create parent directories as needed.
 - Use deterministic output.
 - Write through temporary files and replace the target file.
-- Fail startup or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, invalid wildcard placement, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- Fail startup or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
 
 ## Runtime Bridges
 
 - Paper applies effective permissions to online players with plugin-owned `PermissionAttachment`s.
 - Paper attempts Paper's experimental `PermissionManager` override for registry tracking. If Paper rejects it, the plugin falls back to registry snapshots and continues enabling.
-- Paper expands ClutchPerms wildcard assignments onto exact permission nodes registered with Paper's permission registry.
+- Paper expands ClutchPerms wildcard assignments onto exact known permission nodes from built-ins, manual `nodes.json`, and Paper's permission registry.
 - Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary unregistered wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without `Permissible` injection or another deeper Paper-specific bridge.
 - Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
 - Fabric exposes effective permissions through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
@@ -131,6 +136,9 @@ Current command surface:
 - `/clutchperms group <group> parent add|remove <parent>`
 - `/clutchperms users list`
 - `/clutchperms users search <name>`
+- `/clutchperms nodes list|search <query>`
+- `/clutchperms nodes add <node> [description]`
+- `/clutchperms nodes remove <node>`
 
 Authorization:
 
@@ -138,6 +146,7 @@ Authorization:
 - Players need effective `clutchperms.admin`.
 - Other source types should be denied where the platform can distinguish them.
 - `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.
+- Node registry commands mutate only the manual registry. Built-in and platform-discovered known nodes are visible but not removable.
 
 ## Build And Versions
 

@@ -29,6 +29,9 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
@@ -127,11 +130,17 @@ class ClutchPermsPaperPluginTest {
     void groupServicesAreRegistered() {
         RegisteredServiceProvider<GroupService> groupRegistration = server.getServicesManager().getRegistration(GroupService.class);
         RegisteredServiceProvider<PermissionResolver> resolverRegistration = server.getServicesManager().getRegistration(PermissionResolver.class);
+        RegisteredServiceProvider<PermissionNodeRegistry> nodeRegistryRegistration = server.getServicesManager().getRegistration(PermissionNodeRegistry.class);
+        RegisteredServiceProvider<MutablePermissionNodeRegistry> manualNodeRegistryRegistration = server.getServicesManager().getRegistration(MutablePermissionNodeRegistry.class);
 
         assertNotNull(groupRegistration);
         assertNotNull(resolverRegistration);
+        assertNotNull(nodeRegistryRegistration);
+        assertNotNull(manualNodeRegistryRegistration);
         assertSame(plugin.getGroupService(), groupRegistration.getProvider());
         assertSame(plugin.getPermissionResolver(), resolverRegistration.getProvider());
+        assertSame(plugin.getPermissionNodeRegistry(), nodeRegistryRegistration.getProvider());
+        assertSame(plugin.getManualPermissionNodeRegistry(), manualNodeRegistryRegistration.getProvider());
     }
 
     /**
@@ -166,8 +175,10 @@ class ClutchPermsPaperPluginTest {
                 player.nextComponentMessage());
         assertEquals(Component.text("Subjects file: " + plugin.getDataFolder().toPath().resolve("subjects.json").toAbsolutePath().normalize()), player.nextComponentMessage());
         assertEquals(Component.text("Groups file: " + plugin.getDataFolder().toPath().resolve("groups.json").toAbsolutePath().normalize()), player.nextComponentMessage());
+        assertEquals(Component.text("Known nodes file: " + plugin.getDataFolder().toPath().resolve("nodes.json").toAbsolutePath().normalize()), player.nextComponentMessage());
         assertEquals(Component.text("Known subjects: 1"), player.nextComponentMessage());
         assertEquals(Component.text("Known groups: 0"), player.nextComponentMessage());
+        assertEquals(Component.text("Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size()), player.nextComponentMessage());
         assertEquals(Component.text("Runtime bridge: " + plugin.getStatusDiagnostics().runtimeBridgeStatus()), player.nextComponentMessage());
     }
 
@@ -360,6 +371,22 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms manually known nodes participate in Paper wildcard expansion even when Paper has not registered the exact node.
+     */
+    @Test
+    void wildcardPermissionsExpandToManualKnownNodes() {
+        PlayerMock target = server.addPlayer("Target");
+
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "manual.*", PermissionValue.TRUE);
+        assertFalse(target.isPermissionSet("manual.registered"));
+
+        plugin.getManualPermissionNodeRegistry().addNode("manual.registered", "Manual node");
+
+        assertTrue(target.isPermissionSet("manual.registered"));
+        assertTrue(target.hasPermission("manual.registered"));
+    }
+
+    /**
      * Confirms fallback registry snapshots are refreshed after other plugins enable.
      */
     @Test
@@ -434,6 +461,7 @@ class ClutchPermsPaperPluginTest {
         TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
         Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
         Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
+        Path nodesFile = plugin.getDataFolder().toPath().resolve("nodes.json");
 
         assertEquals(1, dispatcher.execute("clutchperms user Target set example.smoke true", adminSource));
         assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
@@ -469,6 +497,11 @@ class ClutchPermsPaperPluginTest {
         assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "wildcard.*"));
         assertTrue(target.isPermissionSet("wildcard.*"));
         assertFalse(target.hasPermission("wildcard.*"));
+
+        assertEquals(1, dispatcher.execute("clutchperms nodes add wildcard.node Paper smoke node", adminSource));
+        assertTrue(PermissionNodeRegistries.jsonFile(nodesFile).getKnownNode("wildcard.node").isPresent());
+        assertTrue(target.isPermissionSet("wildcard.node"));
+        assertFalse(target.hasPermission("wildcard.node"));
     }
 
     /**
@@ -487,6 +520,7 @@ class ClutchPermsPaperPluginTest {
         Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
         Path subjectsFile = plugin.getDataFolder().toPath().resolve("subjects.json");
         Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
+        Path nodesFile = plugin.getDataFolder().toPath().resolve("nodes.json");
 
         PermissionServices.jsonFile(permissionsFile).setPermission(target.getUniqueId(), "Example.Reload", PermissionValue.TRUE);
         SubjectMetadataServices.jsonFile(subjectsFile).recordSubject(offlineId, "OfflineReload", Instant.parse("2026-04-24T12:00:00Z"));
@@ -494,6 +528,8 @@ class ClutchPermsPaperPluginTest {
         groupStorage.createGroup("staff");
         groupStorage.setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
         groupStorage.addSubjectGroup(target.getUniqueId(), "staff");
+        PermissionNodeRegistries.jsonFile(nodesFile).addNode("example.reloadknown", "Reloaded known node");
+        PermissionServices.jsonFile(permissionsFile).setPermission(target.getUniqueId(), "Example.*", PermissionValue.TRUE);
 
         assertEquals(PermissionValue.UNSET, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
         assertFalse(target.isPermissionSet("example.reload"));
@@ -501,16 +537,21 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
 
-        assertEquals(Component.text("Reloaded permissions, subjects, and groups from disk."), admin.nextComponentMessage());
+        assertEquals(Component.text("Reloaded permissions, subjects, groups, and known nodes from disk."), admin.nextComponentMessage());
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
         assertTrue(target.isPermissionSet("example.reload"));
         assertTrue(target.hasPermission("example.reload"));
+        assertTrue(plugin.getPermissionNodeRegistry().getKnownNode("example.reloadknown").isPresent());
+        assertTrue(target.isPermissionSet("example.reloadknown"));
+        assertTrue(target.hasPermission("example.reloadknown"));
         assertTrue(target.isPermissionSet("example.groupreload"));
         assertTrue(target.hasPermission("example.groupreload"));
         assertEquals("OfflineReload", plugin.getSubjectMetadataService().getSubject(offlineId).orElseThrow().lastKnownName());
         assertSame(plugin.getPermissionService(), server.getServicesManager().getRegistration(PermissionService.class).getProvider());
         assertSame(plugin.getSubjectMetadataService(), server.getServicesManager().getRegistration(SubjectMetadataService.class).getProvider());
         assertSame(plugin.getGroupService(), server.getServicesManager().getRegistration(GroupService.class).getProvider());
+        assertSame(plugin.getPermissionNodeRegistry(), server.getServicesManager().getRegistration(PermissionNodeRegistry.class).getProvider());
+        assertSame(plugin.getManualPermissionNodeRegistry(), server.getServicesManager().getRegistration(MutablePermissionNodeRegistry.class).getProvider());
         assertSame(plugin.getPermissionResolver(), server.getServicesManager().getRegistration(PermissionResolver.class).getProvider());
     }
 
@@ -597,6 +638,42 @@ class ClutchPermsPaperPluginTest {
         assertSame(activeGroupService, server.getServicesManager().getRegistration(GroupService.class).getProvider());
         assertTrue(target.isPermissionSet("example.groupreload"));
         assertTrue(target.hasPermission("example.groupreload"));
+    }
+
+    /**
+     * Confirms a malformed known nodes file fails reload without replacing active Paper runtime state.
+     *
+     * @throws Exception when file setup fails unexpectedly
+     */
+    @Test
+    void malformedNodesFileFailsReloadWithoutReplacingRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.*", PermissionValue.TRUE);
+        plugin.getManualPermissionNodeRegistry().addNode("example.active", "Active");
+        MutablePermissionNodeRegistry activeManualRegistry = plugin.getManualPermissionNodeRegistry();
+        PermissionNodeRegistry activeNodeRegistry = plugin.getPermissionNodeRegistry();
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        Path nodesFile = plugin.getDataFolder().toPath().resolve("nodes.json");
+
+        Files.writeString(nodesFile, """
+                {
+                  "version": 1,
+                  "nodes": {
+                    "example.*": {}
+                  }
+                }
+                """, StandardCharsets.UTF_8);
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
+
+        assertSame(activeManualRegistry, plugin.getManualPermissionNodeRegistry());
+        assertSame(activeNodeRegistry, plugin.getPermissionNodeRegistry());
+        assertSame(activeNodeRegistry, server.getServicesManager().getRegistration(PermissionNodeRegistry.class).getProvider());
+        assertTrue(target.isPermissionSet("example.active"));
+        assertTrue(target.hasPermission("example.active"));
     }
 
     /**

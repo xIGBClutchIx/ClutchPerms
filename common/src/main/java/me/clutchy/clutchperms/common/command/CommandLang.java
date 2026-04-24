@@ -24,13 +24,17 @@ final class CommandLang {
 
     private static final String STATUS_GROUPS_FILE = "Groups file: %s";
 
+    private static final String STATUS_NODES_FILE = "Known nodes file: %s";
+
     private static final String STATUS_KNOWN_SUBJECTS = "Known subjects: %s";
 
     private static final String STATUS_KNOWN_GROUPS = "Known groups: %s";
 
+    private static final String STATUS_KNOWN_NODES = "Known permission nodes: %s";
+
     private static final String STATUS_RUNTIME_BRIDGE = "Runtime bridge: %s";
 
-    private static final String RELOAD_SUCCESS = "Reloaded permissions, subjects, and groups from disk.";
+    private static final String RELOAD_SUCCESS = "Reloaded permissions, subjects, groups, and known nodes from disk.";
 
     private static final String ERROR_UNKNOWN_TARGET = "Unknown online player or invalid UUID: %s";
 
@@ -43,6 +47,8 @@ final class CommandLang {
     private static final String ERROR_RELOAD_FAILED = "Failed to reload ClutchPerms storage: %s";
 
     private static final String ERROR_GROUP_OPERATION_FAILED = "Group operation failed: %s";
+
+    private static final String ERROR_NODE_OPERATION_FAILED = "Known permission node operation failed: %s";
 
     private static final String PERMISSIONS_EMPTY = "No permissions set for %s.";
 
@@ -61,6 +67,18 @@ final class CommandLang {
     private static final String USERS_SEARCH_EMPTY = "No users matched %s.";
 
     private static final String USERS_SEARCH_MATCHES = "Matched users: %s";
+
+    private static final String NODES_EMPTY = "No known permission nodes.";
+
+    private static final String NODES_LIST = "Known permission nodes: %s";
+
+    private static final String NODES_SEARCH_EMPTY = "No known permission nodes matched %s.";
+
+    private static final String NODES_SEARCH_MATCHES = "Matched known permission nodes: %s";
+
+    private static final String NODE_ADDED = "Registered known permission node %s.";
+
+    private static final String NODE_REMOVED = "Removed known permission node %s.";
 
     private static final String GROUPS_EMPTY = "No groups defined.";
 
@@ -128,7 +146,9 @@ final class CommandLang {
                 command(rootLiteral, "group <group> create"), command(rootLiteral, "group <group> delete"), command(rootLiteral, "group <group> list"),
                 command(rootLiteral, "group <group> get <node>"), command(rootLiteral, "group <group> set <node> <true|false>"), command(rootLiteral, "group <group> clear <node>"),
                 command(rootLiteral, "group <group> parents"), command(rootLiteral, "group <group> parent add <parent>"),
-                command(rootLiteral, "group <group> parent remove <parent>"), command(rootLiteral, "users list"), command(rootLiteral, "users search <name>"));
+                command(rootLiteral, "group <group> parent remove <parent>"), command(rootLiteral, "users list"), command(rootLiteral, "users search <name>"),
+                command(rootLiteral, "nodes list"), command(rootLiteral, "nodes search <query>"), command(rootLiteral, "nodes add <node>"),
+                command(rootLiteral, "nodes add <node> <description>"), command(rootLiteral, "nodes remove <node>"));
     }
 
     static String statusPermissionsFile(String permissionsFile) {
@@ -143,12 +163,20 @@ final class CommandLang {
         return format(STATUS_GROUPS_FILE, groupsFile);
     }
 
+    static String statusNodesFile(String nodesFile) {
+        return format(STATUS_NODES_FILE, nodesFile);
+    }
+
     static String statusKnownSubjects(int knownSubjects) {
         return format(STATUS_KNOWN_SUBJECTS, knownSubjects);
     }
 
     static String statusKnownGroups(int knownGroups) {
         return format(STATUS_KNOWN_GROUPS, knownGroups);
+    }
+
+    static String statusKnownNodes(int knownNodes) {
+        return format(STATUS_KNOWN_NODES, knownNodes);
     }
 
     static String statusRuntimeBridge(String runtimeBridgeStatus) {
@@ -191,6 +219,14 @@ final class CommandLang {
         return format(ERROR_GROUP_OPERATION_FAILED, message);
     }
 
+    static String nodeOperationFailed(Throwable exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = exception.getClass().getSimpleName();
+        }
+        return format(ERROR_NODE_OPERATION_FAILED, message);
+    }
+
     static String permissionsEmpty(String subject) {
         return format(PERMISSIONS_EMPTY, subject);
     }
@@ -225,6 +261,30 @@ final class CommandLang {
 
     static String usersSearchMatches(String subjects) {
         return format(USERS_SEARCH_MATCHES, subjects);
+    }
+
+    static String nodesEmpty() {
+        return NODES_EMPTY;
+    }
+
+    static String nodesList(String nodes) {
+        return format(NODES_LIST, nodes);
+    }
+
+    static String nodesSearchEmpty(String query) {
+        return format(NODES_SEARCH_EMPTY, query);
+    }
+
+    static String nodesSearchMatches(String nodes) {
+        return format(NODES_SEARCH_MATCHES, nodes);
+    }
+
+    static String nodeAdded(String node) {
+        return format(NODE_ADDED, node);
+    }
+
+    static String nodeRemoved(String node) {
+        return format(NODE_REMOVED, node);
     }
 
     static String groupsEmpty() {

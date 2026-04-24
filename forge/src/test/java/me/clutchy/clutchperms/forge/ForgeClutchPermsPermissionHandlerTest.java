@@ -25,6 +25,9 @@ import me.clutchy.clutchperms.common.command.CommandSubject;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.group.InMemoryGroupService;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
@@ -128,6 +131,14 @@ final class ForgeClutchPermsPermissionHandlerTest {
     }
 
     @Test
+    void registeredBooleanNodeNamesExcludeNonBooleanNodes() {
+        PermissionNode<Boolean> booleanNode = new PermissionNode<>("example", "boolean", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
+        PermissionNode<String> stringNode = new PermissionNode<>("example", "string", PermissionTypes.STRING, (player, subjectId, context) -> "default");
+
+        assertEquals(List.of("example.boolean"), ForgeClutchPermsPermissionHandler.booleanNodeNames(List.of(stringNode, booleanNode)));
+    }
+
+    @Test
     void adminNodeMatchesSharedBooleanRegistration() {
         assertSame(PermissionTypes.BOOLEAN, ForgeClutchPermsPermissionHandler.ADMIN_NODE.getType());
         assertEquals("clutchperms.admin", ForgeClutchPermsPermissionHandler.ADMIN_NODE.getNodeName());
@@ -220,6 +231,50 @@ final class ForgeClutchPermsPermissionHandlerTest {
     }
 
     @Test
+    void commandMutationPersistsAndReloadsKnownNodes(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
+        Path nodesFile = temporaryDirectory.resolve("nodes.json");
+        TestEnvironment environment = new TestEnvironment(PermissionServices.jsonFile(temporaryDirectory.resolve("permissions.json")), temporaryDirectory);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        assertEquals(1, dispatcher.execute("clutchperms nodes add example.forge Forge node", console));
+        assertTrue(PermissionNodeRegistries.jsonFile(nodesFile).getKnownNode("example.forge").isPresent());
+        assertEquals(1, environment.runtimeRefreshes());
+
+        PermissionNodeRegistries.jsonFile(nodesFile).addNode("manual.reload", "Reloaded node");
+        assertTrue(environment.permissionNodeRegistry().getKnownNode("manual.reload").isEmpty());
+
+        assertEquals(1, dispatcher.execute("clutchperms reload", console));
+
+        assertTrue(environment.permissionNodeRegistry().getKnownNode("manual.reload").isPresent());
+    }
+
+    @Test
+    void malformedNodesFileFailsReloadWithoutReplacingPermissionHandlerState(@TempDir Path temporaryDirectory) throws Exception {
+        Path nodesFile = temporaryDirectory.resolve("nodes.json");
+        PermissionNodeRegistries.jsonFile(nodesFile).addNode("active.node", "Active");
+        TestEnvironment environment = new TestEnvironment(PermissionServices.jsonFile(temporaryDirectory.resolve("permissions.json")), temporaryDirectory);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        Files.writeString(nodesFile, """
+                {
+                  "version": 1,
+                  "nodes": {
+                    "bad.*": {}
+                  }
+                }
+                """, StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+
+        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
+        assertTrue(environment.permissionNodeRegistry().getKnownNode("active.node").isPresent());
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
+    }
+
+    @Test
     void malformedGroupsFileFailsReloadWithoutReplacingPermissionHandlerState(@TempDir Path temporaryDirectory) throws Exception {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
         Path groupsFile = temporaryDirectory.resolve("groups.json");
@@ -275,6 +330,10 @@ final class ForgeClutchPermsPermissionHandlerTest {
 
         private PermissionResolver permissionResolver;
 
+        private MutablePermissionNodeRegistry manualPermissionNodeRegistry;
+
+        private PermissionNodeRegistry permissionNodeRegistry;
+
         private SubjectMetadataService subjectMetadataService = new InMemorySubjectMetadataService();
 
         private final Path storageDirectory;
@@ -290,6 +349,9 @@ final class ForgeClutchPermsPermissionHandlerTest {
             this.groupService = groupService;
             this.permissionResolver = permissionResolver == null ? new PermissionResolver(permissionService, groupService) : permissionResolver;
             this.storageDirectory = storageDirectory;
+            this.manualPermissionNodeRegistry = PermissionNodeRegistries.observing(PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json")),
+                    this::refreshRuntimePermissions);
+            this.permissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), manualPermissionNodeRegistry);
         }
 
         @Override
@@ -300,6 +362,16 @@ final class ForgeClutchPermsPermissionHandlerTest {
         @Override
         public GroupService groupService() {
             return groupService;
+        }
+
+        @Override
+        public PermissionNodeRegistry permissionNodeRegistry() {
+            return permissionNodeRegistry;
+        }
+
+        @Override
+        public MutablePermissionNodeRegistry manualPermissionNodeRegistry() {
+            return manualPermissionNodeRegistry;
         }
 
         @Override
@@ -315,7 +387,7 @@ final class ForgeClutchPermsPermissionHandlerTest {
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
             return new CommandStatusDiagnostics(storageDirectory.resolve("permissions.json").toString(), storageDirectory.resolve("subjects.json").toString(),
-                    storageDirectory.resolve("groups.json").toString(), "test forge bridge");
+                    storageDirectory.resolve("groups.json").toString(), storageDirectory.resolve("nodes.json").toString(), "test forge bridge");
         }
 
         @Override
@@ -323,9 +395,14 @@ final class ForgeClutchPermsPermissionHandlerTest {
             PermissionService reloadedPermissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
             SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
             GroupService reloadedGroupService = GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
+            MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries
+                    .observing(PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json")), this::refreshRuntimePermissions);
+            PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry);
             permissionService = reloadedPermissionService;
             subjectMetadataService = reloadedSubjectMetadataService;
             groupService = reloadedGroupService;
+            manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
+            permissionNodeRegistry = reloadedPermissionNodeRegistry;
             permissionResolver = new PermissionResolver(permissionService, groupService);
         }
 

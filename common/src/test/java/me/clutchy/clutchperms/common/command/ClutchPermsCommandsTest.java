@@ -18,6 +18,10 @@ import com.mojang.brigadier.suggestion.Suggestion;
 
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.InMemoryGroupService;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
@@ -49,13 +53,15 @@ class ClutchPermsCommandsTest {
     private static final Instant SECOND_SEEN = Instant.parse("2026-04-24T13:00:00Z");
 
     private static final CommandStatusDiagnostics STATUS_DIAGNOSTICS = new CommandStatusDiagnostics("/tmp/clutchperms/permissions.json", "/tmp/clutchperms/subjects.json",
-            "/tmp/clutchperms/groups.json", "test bridge active");
+            "/tmp/clutchperms/groups.json", "/tmp/clutchperms/nodes.json", "test bridge active");
 
     private PermissionService permissionService;
 
     private SubjectMetadataService subjectMetadataService;
 
     private GroupService groupService;
+
+    private MutablePermissionNodeRegistry manualPermissionNodeRegistry;
 
     private PermissionResolver permissionResolver;
 
@@ -71,8 +77,9 @@ class ClutchPermsCommandsTest {
         permissionService = new InMemoryPermissionService();
         subjectMetadataService = new InMemorySubjectMetadataService();
         groupService = new InMemoryGroupService();
+        manualPermissionNodeRegistry = PermissionNodeRegistries.inMemory();
         permissionResolver = new PermissionResolver(permissionService, groupService);
-        environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, permissionResolver);
+        environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, manualPermissionNodeRegistry, permissionResolver);
         environment.addOnlineSubject("Target", TARGET_ID);
         dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
@@ -120,7 +127,7 @@ class ClutchPermsCommandsTest {
 
         assertEquals(1, environment.reloads());
         assertEquals(1, environment.runtimeRefreshes());
-        assertEquals(List.of("Reloaded permissions, subjects, and groups from disk."), console.messages());
+        assertEquals(List.of("Reloaded permissions, subjects, groups, and known nodes from disk."), console.messages());
     }
 
     /**
@@ -518,12 +525,13 @@ class ClutchPermsCommandsTest {
      */
     @Test
     void nodeSuggestionsIncludeBuiltInAndTargetAssignments() {
+        manualPermissionNodeRegistry.addNode("known.node");
         permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
         permissionService.setPermission(TARGET_ID, "example.*", PermissionValue.FALSE);
         permissionService.setPermission(TARGET_ID, "Zeta.Node", PermissionValue.FALSE);
         permissionService.setPermission(UUID_NAMED_PLAYER_ID, "other.node", PermissionValue.TRUE);
 
-        assertEquals(List.of("clutchperms.admin", "example.*", "example.node", "zeta.node"), suggestionTexts("clutchperms user Target get "));
+        assertEquals(List.of("clutchperms.admin", "example.*", "example.node", "known.node", "zeta.node"), suggestionTexts("clutchperms user Target get "));
     }
 
     /**
@@ -640,14 +648,69 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("No users matched Missing."), console.messages());
     }
 
+    /**
+     * Confirms node registry commands list, search, add, and remove manual known nodes.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void nodeRegistryCommandsListSearchAddAndRemoveKnownNodes() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms nodes add example.fly Allows flight", console);
+        dispatcher.execute("clutchperms nodes add example.build", console);
+        dispatcher.execute("clutchperms nodes list", console);
+        dispatcher.execute("clutchperms nodes search flight", console);
+        dispatcher.execute("clutchperms nodes remove example.fly", console);
+        dispatcher.execute("clutchperms nodes search flight", console);
+
+        assertEquals(List.of("Registered known permission node example.fly.", "Registered known permission node example.build.",
+                "Known permission nodes: clutchperms.admin [built-in] - Allows managing ClutchPerms permissions., example.build [manual], "
+                        + "example.fly [manual] - Allows flight",
+                "Matched known permission nodes: example.fly [manual] - Allows flight", "Removed known permission node example.fly.", "No known permission nodes matched flight."),
+                console.messages());
+        assertEquals(3, environment.runtimeRefreshes());
+    }
+
+    /**
+     * Confirms platform and built-in known nodes cannot be removed through the manual registry command.
+     */
+    @Test
+    void nodeRegistryRemoveFailsForNonManualNodes() {
+        environment.addPlatformNode("platform.node");
+        TestSource console = TestSource.console();
+
+        CommandSyntaxException builtInException = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms nodes remove clutchperms.admin", console));
+        CommandSyntaxException platformException = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms nodes remove platform.node", console));
+
+        assertTrue(builtInException.getMessage().contains("known permission node is not manually registered: clutchperms.admin"));
+        assertTrue(platformException.getMessage().contains("known permission node is not manually registered: platform.node"));
+        assertEquals(0, environment.runtimeRefreshes());
+    }
+
+    /**
+     * Confirms known-node registration rejects wildcard nodes while permission assignments still accept them.
+     *
+     * @throws CommandSyntaxException when wildcard permission assignment fails unexpectedly
+     */
+    @Test
+    void nodeRegistryRejectsWildcardsButAssignmentsAllowThem() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms nodes add example.*", console));
+        dispatcher.execute("clutchperms user Target set example.* true", console);
+
+        assertEquals(PermissionValue.TRUE, permissionService.getPermission(TARGET_ID, "example.*"));
+    }
+
     private List<String> suggestionTexts(String command) {
         return dispatcher.getCompletionSuggestions(dispatcher.parse(command, TestSource.console())).join().getList().stream().map(Suggestion::getText).toList();
     }
 
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
-                "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known subjects: " + knownSubjects, "Known groups: 0",
-                "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
+                "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Known subjects: " + knownSubjects, "Known groups: 0",
+                "Known permission nodes: 1", "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 
     private static List<String> commandListMessages() {
@@ -657,7 +720,8 @@ class ClutchPermsCommandsTest {
                 "/clutchperms user <target> explain <node>", "/clutchperms group list", "/clutchperms group <group> create", "/clutchperms group <group> delete",
                 "/clutchperms group <group> list", "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>",
                 "/clutchperms group <group> clear <node>", "/clutchperms group <group> parents", "/clutchperms group <group> parent add <parent>",
-                "/clutchperms group <group> parent remove <parent>", "/clutchperms users list", "/clutchperms users search <name>");
+                "/clutchperms group <group> parent remove <parent>", "/clutchperms users list", "/clutchperms users search <name>", "/clutchperms nodes list",
+                "/clutchperms nodes search <query>", "/clutchperms nodes add <node>", "/clutchperms nodes add <node> <description>", "/clutchperms nodes remove <node>");
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {
@@ -668,9 +732,13 @@ class ClutchPermsCommandsTest {
 
         private final GroupService groupService;
 
+        private final MutablePermissionNodeRegistry manualPermissionNodeRegistry;
+
         private final PermissionResolver permissionResolver;
 
         private final Map<String, CommandSubject> onlineSubjects = new LinkedHashMap<>();
+
+        private final List<String> platformNodes = new ArrayList<>();
 
         private int reloads;
 
@@ -679,15 +747,20 @@ class ClutchPermsCommandsTest {
         private RuntimeException reloadFailure;
 
         private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService,
-                PermissionResolver permissionResolver) {
+                MutablePermissionNodeRegistry manualPermissionNodeRegistry, PermissionResolver permissionResolver) {
             this.permissionService = permissionService;
             this.subjectMetadataService = subjectMetadataService;
             this.groupService = groupService;
+            this.manualPermissionNodeRegistry = PermissionNodeRegistries.observing(manualPermissionNodeRegistry, this::refreshRuntimePermissions);
             this.permissionResolver = permissionResolver;
         }
 
         private void addOnlineSubject(String name, UUID subjectId) {
             onlineSubjects.put(name, new CommandSubject(subjectId, name));
+        }
+
+        private void addPlatformNode(String node) {
+            platformNodes.add(node);
         }
 
         private void failReload(RuntimeException reloadFailure) {
@@ -710,6 +783,17 @@ class ClutchPermsCommandsTest {
         @Override
         public GroupService groupService() {
             return groupService;
+        }
+
+        @Override
+        public PermissionNodeRegistry permissionNodeRegistry() {
+            return PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), manualPermissionNodeRegistry,
+                    PermissionNodeRegistries.staticNodes(PermissionNodeSource.PLATFORM, platformNodes));
+        }
+
+        @Override
+        public MutablePermissionNodeRegistry manualPermissionNodeRegistry() {
+            return manualPermissionNodeRegistry;
         }
 
         @Override

@@ -11,6 +11,10 @@ import com.mojang.logging.LogUtils;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
@@ -58,6 +62,16 @@ public final class ClutchPermsNeoForgeMod {
     private static GroupService groupService;
 
     /**
+     * Active manual known node registry for the current NeoForge server lifecycle.
+     */
+    private static MutablePermissionNodeRegistry manualPermissionNodeRegistry;
+
+    /**
+     * Active merged known node registry for the current NeoForge server lifecycle.
+     */
+    private static PermissionNodeRegistry permissionNodeRegistry;
+
+    /**
      * Active effective permission resolver for the current NeoForge server lifecycle.
      */
     private static PermissionResolver permissionResolver;
@@ -78,12 +92,18 @@ public final class ClutchPermsNeoForgeMod {
     private static Path groupsFile;
 
     /**
+     * Manual known permission node registry storage path for diagnostics.
+     */
+    private static Path nodesFile;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the NeoForge lifecycle.
      */
     public ClutchPermsNeoForgeMod() {
         permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
         subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
         groupsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("groups.json");
+        nodesFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("nodes.json");
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -102,8 +122,9 @@ public final class ClutchPermsNeoForgeMod {
     private void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher()
                 .register(NeoForgeClutchPermsCommand.create(ClutchPermsNeoForgeMod::getPermissionService, ClutchPermsNeoForgeMod::getSubjectMetadataService,
-                        ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics,
-                        ClutchPermsNeoForgeMod::reloadStorage, ClutchPermsNeoForgeMod::refreshRuntimePermissions));
+                        ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getPermissionNodeRegistry, ClutchPermsNeoForgeMod::getManualPermissionNodeRegistry,
+                        ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage,
+                        ClutchPermsNeoForgeMod::refreshRuntimePermissions));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -137,6 +158,8 @@ public final class ClutchPermsNeoForgeMod {
         permissionService = null;
         subjectMetadataService = null;
         groupService = null;
+        manualPermissionNodeRegistry = null;
+        permissionNodeRegistry = null;
         permissionResolver = null;
     }
 
@@ -170,6 +193,24 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     /**
+     * Returns the active merged known node registry.
+     *
+     * @return the registry initialized during NeoForge bootstrap
+     */
+    public static PermissionNodeRegistry getPermissionNodeRegistry() {
+        return Objects.requireNonNull(permissionNodeRegistry, "Permission node registry has not been initialized");
+    }
+
+    /**
+     * Returns the active manual known node registry.
+     *
+     * @return the manual registry initialized during NeoForge bootstrap
+     */
+    public static MutablePermissionNodeRegistry getManualPermissionNodeRegistry() {
+        return Objects.requireNonNull(manualPermissionNodeRegistry, "Manual permission node registry has not been initialized");
+    }
+
+    /**
      * Returns the active effective permission resolver.
      *
      * @return the resolver initialized during NeoForge bootstrap
@@ -186,7 +227,8 @@ public final class ClutchPermsNeoForgeMod {
     public static CommandStatusDiagnostics getStatusDiagnostics() {
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
                 formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")),
-                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")), runtimeBridgeStatus());
+                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")),
+                formatPath(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")), runtimeBridgeStatus());
     }
 
     /**
@@ -196,9 +238,16 @@ public final class ClutchPermsNeoForgeMod {
         PermissionService reloadedPermissionService = PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
         SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
         GroupService reloadedGroupService = GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
+        MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries.observing(
+                PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")),
+                ClutchPermsNeoForgeMod::refreshRuntimePermissions);
+        PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry,
+                PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsNeoForgeMod::registeredBooleanPermissionNodes));
         permissionService = reloadedPermissionService;
         subjectMetadataService = reloadedSubjectMetadataService;
         groupService = reloadedGroupService;
+        manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
+        permissionNodeRegistry = reloadedPermissionNodeRegistry;
         permissionResolver = new PermissionResolver(permissionService, groupService);
     }
 
@@ -214,6 +263,10 @@ public final class ClutchPermsNeoForgeMod {
             return "NeoForge permission handler active as " + NeoForgeClutchPermsPermissionHandler.IDENTIFIER;
         }
         return "NeoForge permission handler registered but inactive; set server permissionHandler to " + NeoForgeClutchPermsPermissionHandler.IDENTIFIER;
+    }
+
+    private static java.util.List<String> registeredBooleanPermissionNodes() {
+        return NeoForgeClutchPermsPermissionHandler.booleanNodeNames(PermissionAPI.getRegisteredNodes());
     }
 
     private static String formatPath(Path path) {

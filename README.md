@@ -1,13 +1,13 @@
 # ClutchPerms
 
-ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, reload support, and platform runtime bridges.
+ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, a known permission node registry, reload support, and platform runtime bridges.
 
 This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, recursive multi-parent groups, an implicit `default` group, terminal wildcards, and effective permission resolution shared across platforms.
 
 ## What Works
 
 - Shared `/clutchperms` command behavior on Paper, Fabric, NeoForge, and Forge
-- JSON-backed storage for direct permissions, groups, and subject metadata
+- JSON-backed storage for direct permissions, groups, subject metadata, and manually known permission nodes
 - Direct user permission `TRUE` / `FALSE` / `UNSET`
 - Basic named groups with direct user membership and recursive multi-parent inheritance
 - Implicit `default` group when a group named `default` exists
@@ -16,7 +16,8 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 - Terminal wildcard assignments: `*` and trailing `prefix.*`
 - Reload command for manual JSON edits
 - Last-known player name recording and offline name targeting
-- Paper runtime bridge using plugin-owned `PermissionAttachment`s and registered-node wildcard expansion
+- Advisory known permission node registry for command discovery and Paper wildcard expansion
+- Paper runtime bridge using plugin-owned `PermissionAttachment`s and known-node wildcard expansion
 - Fabric runtime bridge through fabric-permissions-api
 - Forge and NeoForge runtime handlers through their native permission APIs
 
@@ -31,7 +32,7 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 
 Paper is a Paper target. Spigot compatibility is not maintained.
 
-Paper note: ClutchPerms attaches stored wildcard nodes such as `example.*` and expands wildcard results onto exact permission nodes registered with Paper's permission registry. Bukkit permission attachments still do not expand arbitrary unregistered wildcard checks by themselves. Paper command authorization uses ClutchPerms wildcard resolution directly.
+Paper note: ClutchPerms attaches stored wildcard nodes such as `example.*` and expands wildcard results onto exact known permission nodes. Known nodes come from `nodes.json`, ClutchPerms built-ins, and Paper's permission registry. Bukkit permission attachments still do not expand arbitrary unknown wildcard checks by themselves. Paper command authorization uses ClutchPerms wildcard resolution directly.
 
 ## Commands
 
@@ -62,19 +63,26 @@ All platforms expose the same shared command tree:
 /clutchperms group <group> parent remove <parent>
 /clutchperms users list
 /clutchperms users search <name>
+/clutchperms nodes list
+/clutchperms nodes search <query>
+/clutchperms nodes add <node>
+/clutchperms nodes add <node> <description>
+/clutchperms nodes remove <node>
 ```
 
 Command notes:
 
 - `/clutchperms` lists available commands.
-- `/clutchperms status` shows storage paths, known subject count, group count, and runtime bridge status. On Paper, the runtime line also includes permission manager override mode and known permission node count.
-- `/clutchperms reload` reloads `permissions.json`, `subjects.json`, and `groups.json`. If any file is invalid, active runtime state is kept unchanged.
+- `/clutchperms status` shows storage paths, known subject count, group count, known node count, and runtime bridge status. On Paper, the runtime line also includes permission manager override mode.
+- `/clutchperms reload` reloads `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json`. If any file is invalid, active runtime state is kept unchanged.
+- `/clutchperms nodes ...` manages manually known exact permission nodes in `nodes.json`. This is for discovery, suggestions, diagnostics, and Paper wildcard expansion; it does not grant permissions by itself.
 - `<target>` resolves exact online player name first, then exact stored last-known name, then UUID.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
 - Console and remote console can run commands for bootstrap.
 - Players need effective `clutchperms.admin`, either directly or through a group.
 - Non-player/non-console sources are denied where the platform can distinguish them.
 - Permission nodes may be exact nodes, `*`, or terminal wildcard nodes like `example.*`. Mid-node wildcards such as `example.*.edit` are rejected.
+- Known permission node registry entries must be exact nodes. Wildcards are valid assignments but are not valid known-node registry entries.
 - `check` reports the effective value. `explain` also lists matching direct/group/default assignments in resolver order and marks the winner.
 
 Wildcard resolution:
@@ -85,13 +93,14 @@ Wildcard resolution:
 
 ## Data Files
 
-ClutchPerms writes three versioned JSON files:
+ClutchPerms writes four versioned JSON files:
 
 | File | Purpose |
 | --- | --- |
 | `permissions.json` | Direct user permission assignments |
 | `groups.json` | Group definitions, group permissions, parent links, and direct user memberships |
 | `subjects.json` | Last-known subject names and last-seen timestamps |
+| `nodes.json` | Manually registered exact permission nodes for discovery and wildcard expansion |
 
 Direct permission example:
 
@@ -135,8 +144,23 @@ Group example:
 }
 ```
 
+Known node example:
+
+```json
+{
+  "version": 1,
+  "nodes": {
+    "example.fly": {
+      "description": "Allows example flight."
+    },
+    "example.build": {}
+  }
+}
+```
+
 Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup or reload.
 Wildcard keys must be `*` or terminal `prefix.*`; invalid wildcard placement fails startup or reload.
+Known node keys must be exact permission nodes; wildcard known-node entries fail startup or reload.
 
 ## Forge And NeoForge Activation
 
@@ -208,6 +232,7 @@ Important shared packages:
 
 - `common.permission` - direct permissions, wildcard utilities, effective resolution, and permission service factories
 - `common.group` - groups, memberships, parent links, group storage, and group observers
+- `common.node` - known permission node registry, manual node storage, and node registry observers
 - `common.subject` - last-known subject metadata
 - `common.storage` - storage exceptions
 - `common.command` - shared Brigadier command tree and command messages

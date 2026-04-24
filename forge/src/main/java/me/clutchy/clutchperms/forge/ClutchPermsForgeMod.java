@@ -11,6 +11,10 @@ import com.mojang.logging.LogUtils;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
@@ -57,6 +61,16 @@ public final class ClutchPermsForgeMod {
     private static GroupService groupService;
 
     /**
+     * Active manual known node registry for the current Forge server lifecycle.
+     */
+    private static MutablePermissionNodeRegistry manualPermissionNodeRegistry;
+
+    /**
+     * Active merged known node registry for the current Forge server lifecycle.
+     */
+    private static PermissionNodeRegistry permissionNodeRegistry;
+
+    /**
      * Active effective permission resolver for the current Forge server lifecycle.
      */
     private static PermissionResolver permissionResolver;
@@ -77,12 +91,18 @@ public final class ClutchPermsForgeMod {
     private static Path groupsFile;
 
     /**
+     * Manual known permission node registry storage path for diagnostics.
+     */
+    private static Path nodesFile;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the Forge lifecycle.
      */
     public ClutchPermsForgeMod() {
         permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
         subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
         groupsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("groups.json");
+        nodesFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("nodes.json");
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -101,8 +121,9 @@ public final class ClutchPermsForgeMod {
     private void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher()
                 .register(ForgeClutchPermsCommand.create(ClutchPermsForgeMod::getPermissionService, ClutchPermsForgeMod::getSubjectMetadataService,
-                        ClutchPermsForgeMod::getGroupService, ClutchPermsForgeMod::getPermissionResolver, ClutchPermsForgeMod::getStatusDiagnostics,
-                        ClutchPermsForgeMod::reloadStorage, ClutchPermsForgeMod::refreshRuntimePermissions));
+                        ClutchPermsForgeMod::getGroupService, ClutchPermsForgeMod::getPermissionNodeRegistry, ClutchPermsForgeMod::getManualPermissionNodeRegistry,
+                        ClutchPermsForgeMod::getPermissionResolver, ClutchPermsForgeMod::getStatusDiagnostics, ClutchPermsForgeMod::reloadStorage,
+                        ClutchPermsForgeMod::refreshRuntimePermissions));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -136,6 +157,8 @@ public final class ClutchPermsForgeMod {
         permissionService = null;
         subjectMetadataService = null;
         groupService = null;
+        manualPermissionNodeRegistry = null;
+        permissionNodeRegistry = null;
         permissionResolver = null;
     }
 
@@ -169,6 +192,24 @@ public final class ClutchPermsForgeMod {
     }
 
     /**
+     * Returns the active merged known node registry.
+     *
+     * @return the registry initialized during Forge bootstrap
+     */
+    public static PermissionNodeRegistry getPermissionNodeRegistry() {
+        return Objects.requireNonNull(permissionNodeRegistry, "Permission node registry has not been initialized");
+    }
+
+    /**
+     * Returns the active manual known node registry.
+     *
+     * @return the manual registry initialized during Forge bootstrap
+     */
+    public static MutablePermissionNodeRegistry getManualPermissionNodeRegistry() {
+        return Objects.requireNonNull(manualPermissionNodeRegistry, "Manual permission node registry has not been initialized");
+    }
+
+    /**
      * Returns the active effective permission resolver.
      *
      * @return the resolver initialized during Forge bootstrap
@@ -185,7 +226,8 @@ public final class ClutchPermsForgeMod {
     public static CommandStatusDiagnostics getStatusDiagnostics() {
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
                 formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")),
-                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")), runtimeBridgeStatus());
+                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")),
+                formatPath(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")), runtimeBridgeStatus());
     }
 
     /**
@@ -195,9 +237,15 @@ public final class ClutchPermsForgeMod {
         PermissionService reloadedPermissionService = PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
         SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
         GroupService reloadedGroupService = GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
+        MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries.observing(
+                PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")), ClutchPermsForgeMod::refreshRuntimePermissions);
+        PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry,
+                PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsForgeMod::registeredBooleanPermissionNodes));
         permissionService = reloadedPermissionService;
         subjectMetadataService = reloadedSubjectMetadataService;
         groupService = reloadedGroupService;
+        manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
+        permissionNodeRegistry = reloadedPermissionNodeRegistry;
         permissionResolver = new PermissionResolver(permissionService, groupService);
     }
 
@@ -213,6 +261,10 @@ public final class ClutchPermsForgeMod {
             return "Forge permission handler active as " + ForgeClutchPermsPermissionHandler.IDENTIFIER;
         }
         return "Forge permission handler registered but inactive; set server permissionHandler to " + ForgeClutchPermsPermissionHandler.IDENTIFIER;
+    }
+
+    private static java.util.List<String> registeredBooleanPermissionNodes() {
+        return ForgeClutchPermsPermissionHandler.booleanNodeNames(PermissionAPI.getRegisteredNodes());
     }
 
     private static String formatPath(Path path) {

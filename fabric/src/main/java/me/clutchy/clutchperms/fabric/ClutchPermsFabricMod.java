@@ -10,6 +10,9 @@ import org.slf4j.LoggerFactory;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
+import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
+import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
@@ -52,6 +55,16 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     private static GroupService groupService;
 
     /**
+     * Active manual known node registry for the current Fabric server lifecycle.
+     */
+    private static MutablePermissionNodeRegistry manualPermissionNodeRegistry;
+
+    /**
+     * Active merged known node registry for the current Fabric server lifecycle.
+     */
+    private static PermissionNodeRegistry permissionNodeRegistry;
+
+    /**
      * Active effective permission resolver for the current Fabric server lifecycle.
      */
     private static PermissionResolver permissionResolver;
@@ -72,6 +85,11 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     private static Path groupsFile;
 
     /**
+     * Manual known permission node registry storage path for diagnostics.
+     */
+    private static Path nodesFile;
+
+    /**
      * Tracks whether the Fabric permissions API bridge was registered during bootstrap.
      */
     private static boolean runtimeBridgeRegistered;
@@ -84,6 +102,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         permissionsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("permissions.json");
         subjectsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("subjects.json");
         groupsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("groups.json");
+        nodesFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("nodes.json");
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -93,8 +112,9 @@ public final class ClutchPermsFabricMod implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess,
                 environment) -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService,
-                        ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics,
-                        ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::refreshRuntimePermissions)));
+                        ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionNodeRegistry, ClutchPermsFabricMod::getManualPermissionNodeRegistry,
+                        ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics, ClutchPermsFabricMod::reloadStorage,
+                        ClutchPermsFabricMod::refreshRuntimePermissions)));
         FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionResolver);
         runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
@@ -105,6 +125,8 @@ public final class ClutchPermsFabricMod implements ModInitializer {
             permissionService = null;
             subjectMetadataService = null;
             groupService = null;
+            manualPermissionNodeRegistry = null;
+            permissionNodeRegistry = null;
             permissionResolver = null;
         });
     }
@@ -139,6 +161,24 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     }
 
     /**
+     * Returns the active merged known node registry.
+     *
+     * @return the registry initialized during Fabric bootstrap
+     */
+    public static PermissionNodeRegistry getPermissionNodeRegistry() {
+        return Objects.requireNonNull(permissionNodeRegistry, "Permission node registry has not been initialized");
+    }
+
+    /**
+     * Returns the active manual known node registry.
+     *
+     * @return the manual registry initialized during Fabric bootstrap
+     */
+    public static MutablePermissionNodeRegistry getManualPermissionNodeRegistry() {
+        return Objects.requireNonNull(manualPermissionNodeRegistry, "Manual permission node registry has not been initialized");
+    }
+
+    /**
      * Returns the active effective permission resolver.
      *
      * @return the resolver initialized during Fabric bootstrap
@@ -156,7 +196,8 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         String bridgeStatus = runtimeBridgeRegistered ? "Fabric permissions API bridge registered" : "Fabric permissions API bridge not registered";
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
                 formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")),
-                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")), bridgeStatus);
+                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")),
+                formatPath(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")), bridgeStatus);
     }
 
     /**
@@ -166,9 +207,14 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         PermissionService reloadedPermissionService = PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
         SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
         GroupService reloadedGroupService = GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
+        MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries.observing(
+                PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")), ClutchPermsFabricMod::refreshRuntimePermissions);
+        PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry);
         permissionService = reloadedPermissionService;
         subjectMetadataService = reloadedSubjectMetadataService;
         groupService = reloadedGroupService;
+        manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
+        permissionNodeRegistry = reloadedPermissionNodeRegistry;
         permissionResolver = new PermissionResolver(permissionService, groupService);
     }
 
