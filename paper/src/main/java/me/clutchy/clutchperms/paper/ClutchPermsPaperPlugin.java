@@ -32,20 +32,31 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private PermissionService permissionService;
 
     /**
+     * Applies persisted direct assignments to online Paper players.
+     */
+    private PaperRuntimePermissionBridge runtimePermissionBridge;
+
+    /**
      * Boots the persisted permission service and registers the shared Brigadier command tree.
      */
     @Override
     public void onEnable() {
         Path permissionsFile = getDataFolder().toPath().resolve(PERMISSIONS_FILE_NAME);
+        PermissionService storagePermissionService;
         try {
-            permissionService = PermissionServices.jsonFile(permissionsFile);
+            storagePermissionService = PermissionServices.jsonFile(permissionsFile);
         } catch (PermissionStorageException exception) {
             getLogger().log(Level.SEVERE, "Failed to load ClutchPerms permissions from " + permissionsFile, exception);
             throw new IllegalStateException("Failed to load ClutchPerms permissions", exception);
         }
 
+        runtimePermissionBridge = new PaperRuntimePermissionBridge(this, storagePermissionService);
+        permissionService = PermissionServices.observing(storagePermissionService, runtimePermissionBridge::refreshSubject);
+
         // Register the shared service so other plugins on Paper can discover it.
         getServer().getServicesManager().register(PermissionService.class, permissionService, this, ServicePriority.Normal);
+        getServer().getPluginManager().registerEvents(runtimePermissionBridge, this);
+        runtimePermissionBridge.refreshOnlinePlayers();
 
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS,
                 event -> event.registrar().register(PaperClutchPermsCommand.create(this), "Manages ClutchPerms direct permissions"));
@@ -57,6 +68,10 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         getServer().getServicesManager().unregisterAll(this);
+        if (runtimePermissionBridge != null) {
+            runtimePermissionBridge.close();
+            runtimePermissionBridge = null;
+        }
         permissionService = null;
     }
 

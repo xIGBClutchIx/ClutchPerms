@@ -4,8 +4,8 @@
 - `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper, Fabric, NeoForge, and Forge.
 - The current state is an early persisted prototype, not a finished permission platform.
 - The repo currently provides:
-  - a shared `common` module with a minimal permission API, in-memory implementation, JSON-backed persistence factory, and shared Brigadier command tree
-  - a `paper` plugin module with Paper service registration and a Paper lifecycle Brigadier adapter
+  - a shared `common` module with a minimal permission API, in-memory implementation, JSON-backed persistence factory, observable service wrapper, and shared Brigadier command tree
+  - a `paper` plugin module with Paper service registration, a Paper lifecycle Brigadier adapter, and runtime permission attachment bridge
   - a `fabric` mod module with the same shared service and shared Brigadier command behavior
   - a `neoforge` mod module with the same shared service and shared Brigadier command behavior
   - a `forge` mod module with the same shared service and shared Brigadier command behavior
@@ -39,6 +39,7 @@
   - `PermissionService`
   - `PermissionValue`
   - `PermissionNodes`
+  - `PermissionChangeListener`
 - Shared command API:
   - `ClutchPermsCommands`
   - `ClutchPermsCommandEnvironment`
@@ -47,6 +48,7 @@
 - Current backends:
   - `InMemoryPermissionService`
   - `PermissionServices.jsonFile(Path)` for JSON-backed persisted direct assignments
+  - `PermissionServices.observing(PermissionService, PermissionChangeListener)` for subject-level mutation notifications
 - Current behavior:
   - stores permissions by `UUID` and normalized permission node
   - normalizes nodes with `trim().toLowerCase(Locale.ROOT)`
@@ -60,12 +62,13 @@
   - resolves command targets by exact online player name first, then UUID
   - allows console and remote console bootstrap command execution
   - requires persisted `clutchperms.admin` for player command execution
+  - Paper applies persisted direct assignments to online players through plugin-owned `PermissionAttachment`s
 - Not implemented yet:
   - groups
   - inheritance
   - contexts
   - offline storage
-  - permission attachment bridges
+  - Fabric, NeoForge, and Forge runtime permission bridges
   - cross-platform synchronization
 
 ## Build And Tooling Rules
@@ -154,9 +157,10 @@
   - `common`
     - unit tests for unset, true, false, and clear behavior
     - unit tests for permission enumeration and JSON persistence
+    - unit tests for observing service delegation and mutation notifications
     - unit tests for shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
   - `paper`
-    - MockBukkit tests for plugin boot, service registration, and the Paper command adapter executing the shared Brigadier tree
+    - MockBukkit tests for plugin boot, service registration, the Paper command adapter, and runtime permission attachment refresh behavior
   - `fabric`
     - no runtime tests yet
   - `neoforge`
@@ -171,6 +175,7 @@
 - Prefer small additive changes over premature abstractions.
 - The Paper module is Paper-only; do not preserve Spigot compatibility unless explicitly requested.
 - Keep Paper-only behavior isolated in thin platform adapters where practical so shared behavior remains testable in `common`.
+- Keep Paper runtime permission state in plugin-owned attachments; do not mix direct ClutchPerms state into unrelated plugin attachments.
 - For Fabric, keep the initial scope server-side unless client behavior is intentionally introduced.
 - For NeoForge, keep the initial scope server-side unless client behavior is intentionally introduced.
 - For Forge, keep the initial scope server-side unless client behavior is intentionally introduced.

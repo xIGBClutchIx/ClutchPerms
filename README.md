@@ -7,13 +7,13 @@ The current repository is intentionally small. It establishes the build, module 
 ## Current Status
 - Multi-project Gradle build using Kotlin DSL
 - Shared `common` module for platform-agnostic permission logic
-- `paper` plugin module with Paper service registration and shared Brigadier commands
+- `paper` plugin module with Paper service registration, shared Brigadier commands, and runtime permission attachments
 - `fabric` mod module with the same persisted service and shared Brigadier commands
 - `neoforge` mod module with the same persisted service and shared Brigadier commands
 - `forge` mod module with the same persisted service and shared Brigadier commands
 - JUnit coverage for the shared service
 - JUnit coverage for the shared command tree
-- MockBukkit coverage for the Paper bootstrap and command adapter path
+- MockBukkit coverage for the Paper bootstrap, command adapter, and runtime permission bridge path
 
 This is not a production-ready permissions plugin yet. It is the bootstrap layer for one.
 
@@ -35,6 +35,8 @@ Current public types:
   - `void clearPermission(UUID subjectId, String node)`
 - `PermissionNodes`
   - currently exposes `clutchperms.admin`
+- `PermissionChangeListener`
+  - receives subject-level mutation notifications from observing permission services
 - `common.command`
   - builds the shared Brigadier `/clutchperms` command tree
   - keeps command authorization and direct user permission behavior platform-neutral
@@ -50,6 +52,8 @@ Current implementation:
   - treats a missing file as empty state
   - saves after every mutation
   - fails startup on malformed or unsupported permission data
+- `PermissionServices.observing(PermissionService, PermissionChangeListener)`
+  - wraps a service and reports successful direct permission mutations
 
 ### `paper`
 Paper plugin module.
@@ -61,6 +65,7 @@ Current behavior:
 - registers the shared service through Paper's Bukkit-derived `ServicesManager`
 - registers `/clutchperms` through Paper lifecycle Brigadier command registration
 - exposes status plus direct online-player-or-UUID permission get/list/set/clear commands
+- bridges direct persisted assignments into Bukkit `PermissionAttachment`s for online players
 - stores direct permission assignments in the plugin data folder at `permissions.json`
 
 Current metadata:
@@ -256,6 +261,7 @@ Example:
 - listing explicit normalized permission assignments
 - clearing permissions back to `UNSET`
 - JSON persistence loading, saving, invalid data handling, and deterministic output
+- observing service delegation and mutation notifications
 - shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
 
 ### Paper
@@ -263,6 +269,7 @@ Example:
 - plugin enable
 - Paper service registration through the Bukkit-derived service API
 - the Paper command adapter executing the shared Brigadier tree
+- join-time and live runtime permission attachment refresh behavior
 
 ### Fabric
 There are currently no Fabric runtime tests. The module is verified through compile/build checks only.
@@ -277,6 +284,7 @@ There are currently no Forge runtime tests. The module is verified through compi
 - `common` is the source of truth for permission abstractions.
 - Platform modules should adapt to `common`, not redefine their own permission models.
 - Shared behavior should move into `common` unless it depends on platform-specific APIs.
+- Paper direct user assignments are applied to online players with plugin-owned `PermissionAttachment`s.
 - Paper is a Paper-only target; Spigot compatibility is not maintained.
 - Fabric is server-side only for now.
 - NeoForge is server-side only for now.
@@ -288,13 +296,14 @@ There are currently no Forge runtime tests. The module is verified through compi
 - No contexts
 - Command targets are limited to exact online player names or UUIDs
 - Command permission changes only affect direct user assignments
+- Runtime permission enforcement currently exists only in the Paper module
 - No LuckPerms bridge or migration path yet
 - No cross-platform transport or synchronization
 - No Fabric gameplay/runtime test suite yet
 
 ## Near-Term Extension Points
 Good next steps from this base:
-- add permission attachment/runtime enforcement bridges for each platform
+- add permission attachment/runtime enforcement bridges for Fabric, NeoForge, and Forge
 - add safer command ergonomics such as tab-completed permission nodes and clearer error messages
 - define a cross-platform data model for users, groups, and inheritance
 - add Fabric integration tests or a lighter server-level verification strategy

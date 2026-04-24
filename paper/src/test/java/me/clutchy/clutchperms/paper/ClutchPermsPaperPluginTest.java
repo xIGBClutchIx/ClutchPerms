@@ -6,6 +6,8 @@ import java.util.UUID;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerQuitEvent.QuitReason;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +25,7 @@ import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionValue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -95,6 +98,79 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
         assertEquals(Component.text(ClutchPermsPaperPlugin.STATUS_MESSAGE), player.nextComponentMessage());
+    }
+
+    /**
+     * Confirms persisted permissions are applied when a matching player joins.
+     */
+    @Test
+    void storedPermissionsApplyWhenMatchingPlayerJoins() {
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        plugin.getPermissionService().setPermission(targetId, "Example.Join", PermissionValue.TRUE);
+        PlayerMock player = new PlayerMock(server, "Target", targetId);
+
+        server.addPlayer(player);
+
+        assertTrue(player.isPermissionSet("example.join"));
+        assertTrue(player.hasPermission("example.join"));
+    }
+
+    /**
+     * Confirms online players are refreshed immediately after direct service mutations.
+     */
+    @Test
+    void onlinePlayerPermissionUpdatesAfterServiceMutation() {
+        PlayerMock player = server.addPlayer("Target");
+
+        plugin.getPermissionService().setPermission(player.getUniqueId(), "Example.Runtime", PermissionValue.TRUE);
+        assertTrue(player.isPermissionSet("example.runtime"));
+        assertTrue(player.hasPermission("example.runtime"));
+
+        plugin.getPermissionService().setPermission(player.getUniqueId(), "Example.Runtime", PermissionValue.FALSE);
+        assertTrue(player.isPermissionSet("example.runtime"));
+        assertFalse(player.hasPermission("example.runtime"));
+
+        plugin.getPermissionService().clearPermission(player.getUniqueId(), "Example.Runtime");
+        assertFalse(player.isPermissionSet("example.runtime"));
+        assertFalse(player.hasPermission("example.runtime"));
+    }
+
+    /**
+     * Confirms command mutations refresh the target player's Paper permissions.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void clutchPermsCommandMutationRefreshesTargetPermissions() throws Exception {
+        PlayerMock target = server.addPlayer("Target");
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+
+        assertEquals(1, dispatcher.execute("clutchperms user Target set example.command true", new TestCommandSourceStack(server.getConsoleSender())));
+
+        assertTrue(target.isPermissionSet("example.command"));
+        assertTrue(target.hasPermission("example.command"));
+    }
+
+    /**
+     * Confirms runtime attachments are removed when players quit or the plugin disables.
+     */
+    @Test
+    void runtimeAttachmentsAreRemovedOnQuitAndDisable() {
+        PlayerMock player = server.addPlayer("Target");
+
+        plugin.getPermissionService().setPermission(player.getUniqueId(), "Example.Cleanup", PermissionValue.TRUE);
+        assertTrue(player.isPermissionSet("example.cleanup"));
+
+        server.getPluginManager().callEvent(new PlayerQuitEvent(player, Component.text("Target left"), QuitReason.DISCONNECTED));
+        assertFalse(player.isPermissionSet("example.cleanup"));
+
+        plugin.getPermissionService().setPermission(player.getUniqueId(), "Example.Cleanup", PermissionValue.TRUE);
+        assertTrue(player.isPermissionSet("example.cleanup"));
+
+        plugin.onDisable();
+
+        assertFalse(player.isPermissionSet("example.cleanup"));
     }
 
     private static UUID playerId() {

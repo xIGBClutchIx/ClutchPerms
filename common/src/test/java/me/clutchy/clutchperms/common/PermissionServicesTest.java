@@ -3,6 +3,8 @@ package me.clutchy.clutchperms.common;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -154,6 +156,38 @@ class PermissionServicesTest {
                   }
                 }
                 """, persistedJson);
+    }
+
+    /**
+     * Confirms observing services preserve delegate reads and report successful mutations.
+     */
+    @Test
+    void observingServiceDelegatesReadsAndReportsSuccessfulMutations() {
+        PermissionService delegate = new InMemoryPermissionService();
+        List<UUID> changedSubjects = new ArrayList<>();
+        PermissionService permissionService = PermissionServices.observing(delegate, changedSubjects::add);
+
+        permissionService.setPermission(FIRST_SUBJECT, "Example.Node", PermissionValue.TRUE);
+        permissionService.setPermission(FIRST_SUBJECT, "Example.Node", PermissionValue.UNSET);
+        permissionService.clearPermission(SECOND_SUBJECT, "Other.Node");
+
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(FIRST_SUBJECT, "example.node"));
+        assertEquals(Map.of(), permissionService.getPermissions(FIRST_SUBJECT));
+        assertEquals(List.of(FIRST_SUBJECT, FIRST_SUBJECT, SECOND_SUBJECT), changedSubjects);
+    }
+
+    /**
+     * Confirms observing services do not report failed delegate mutations.
+     */
+    @Test
+    void observingServiceDoesNotReportFailedMutations() {
+        List<UUID> changedSubjects = new ArrayList<>();
+        PermissionService permissionService = PermissionServices.observing(new InMemoryPermissionService(), changedSubjects::add);
+
+        assertThrows(IllegalArgumentException.class, () -> permissionService.setPermission(FIRST_SUBJECT, "   ", PermissionValue.TRUE));
+        assertThrows(NullPointerException.class, () -> permissionService.clearPermission(null, "example.node"));
+
+        assertEquals(List.of(), changedSubjects);
     }
 
     private void assertFailsToLoad(String json) throws IOException {
