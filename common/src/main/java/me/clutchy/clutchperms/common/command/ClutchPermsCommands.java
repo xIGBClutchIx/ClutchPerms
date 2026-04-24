@@ -1,9 +1,12 @@
 package me.clutchy.clutchperms.common.command;
 
 import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -97,22 +100,23 @@ public final class ClutchPermsCommands {
 
     private static <S> LiteralArgumentBuilder<S> getCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("get")
-                .then(ClutchPermsCommands.<S>nodeArgument().executes(context -> executeAuthorized(environment, context, source -> getPermission(environment, context))));
+                .then(ClutchPermsCommands.nodeArgument(environment).executes(context -> executeAuthorized(environment, context, source -> getPermission(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> setCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("set")
-                .then(ClutchPermsCommands.<S>nodeArgument().then(RequiredArgumentBuilder.<S, Boolean>argument(VALUE_ARGUMENT, BoolArgumentType.bool())
+                .then(ClutchPermsCommands.nodeArgument(environment).then(RequiredArgumentBuilder.<S, Boolean>argument(VALUE_ARGUMENT, BoolArgumentType.bool())
                         .executes(context -> executeAuthorized(environment, context, source -> setPermission(environment, context)))));
     }
 
     private static <S> LiteralArgumentBuilder<S> clearCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("clear")
-                .then(ClutchPermsCommands.<S>nodeArgument().executes(context -> executeAuthorized(environment, context, source -> clearPermission(environment, context))));
+                .then(ClutchPermsCommands.nodeArgument(environment).executes(context -> executeAuthorized(environment, context, source -> clearPermission(environment, context))));
     }
 
-    private static <S> RequiredArgumentBuilder<S, String> nodeArgument() {
-        return RequiredArgumentBuilder.argument(NODE_ARGUMENT, StringArgumentType.word());
+    private static <S> RequiredArgumentBuilder<S, String> nodeArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(NODE_ARGUMENT, StringArgumentType.word())
+                .suggests((context, builder) -> suggestPermissionNodes(environment, context, builder));
     }
 
     private static <S> int executeAuthorized(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, CommandAction<S> action) throws CommandSyntaxException {
@@ -207,6 +211,22 @@ public final class ClutchPermsCommands {
 
     private static <S> CompletableFuture<Suggestions> suggestOnlineSubjects(ClutchPermsCommandEnvironment<S> environment, S source, SuggestionsBuilder builder) {
         environment.onlineSubjectNames(source).stream().sorted(Comparator.naturalOrder()).forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestPermissionNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {
+        Set<String> nodes = new LinkedHashSet<>();
+        nodes.add(PermissionNodes.ADMIN);
+
+        try {
+            CommandSubject subject = resolveSubject(environment, context);
+            nodes.addAll(environment.permissionService().getPermissions(subject.id()).keySet());
+        } catch (CommandSyntaxException exception) {
+            // Target-specific node suggestions are best-effort; keep built-in nodes available when the target is incomplete or invalid.
+        }
+
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        nodes.stream().sorted(Comparator.naturalOrder()).filter(node -> node.toLowerCase(Locale.ROOT).startsWith(remaining)).forEach(builder::suggest);
         return builder.buildFuture();
     }
 

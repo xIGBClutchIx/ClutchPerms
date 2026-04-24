@@ -61,6 +61,7 @@
   - fails startup on malformed persisted permission data
   - registers shared `/clutchperms` status and direct user permission get/list/set/clear commands on every platform
   - resolves command targets by exact online player name first, then UUID
+  - suggests `clutchperms.admin` and explicit target assignments for command permission node arguments
   - allows console and remote console bootstrap command execution
   - requires persisted `clutchperms.admin` for player command execution
   - Paper applies persisted direct assignments to online players through plugin-owned `PermissionAttachment`s
@@ -162,6 +163,7 @@
     - unit tests for permission enumeration and JSON persistence
     - unit tests for observing service delegation and mutation notifications
     - unit tests for shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
+    - unit tests for shared permission node suggestions
   - `paper`
     - MockBukkit tests for plugin boot, service registration, the Paper command adapter, and runtime permission attachment refresh behavior
   - `fabric`

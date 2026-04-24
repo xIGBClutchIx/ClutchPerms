@@ -234,6 +234,7 @@ Behavior:
 - `/clutchperms` returns `ClutchPerms is running with a persisted permission service.`
 - `<target>` resolves an exact online player name first, then a UUID string
 - `<node>` is a single Brigadier word and is normalized by the shared permission service
+- `<node>` suggestions include `clutchperms.admin` and explicit nodes already assigned to the selected target
 - `set` writes explicit `TRUE` or `FALSE`; `clear` removes the explicit assignment
 - console and remote console sources may run commands for bootstrap
 - players must have the persisted `clutchperms.admin` node set to `TRUE`
@@ -305,6 +306,7 @@ Example:
 - JSON persistence loading, saving, invalid data handling, and deterministic output
 - observing service delegation and mutation notifications
 - shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
+- shared permission node suggestions for built-in and target-assigned nodes
 
 ### Paper
 `paper` has MockBukkit tests for:

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.Suggestion;
 
 import me.clutchy.clutchperms.common.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.PermissionNodes;
@@ -139,6 +140,33 @@ class ClutchPermsCommandsTest {
 
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Missing list", console));
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user " + TARGET_ID + " get bad node", console));
+    }
+
+    /**
+     * Confirms node suggestions include built-in nodes and explicit assignments for the selected target.
+     */
+    @Test
+    void nodeSuggestionsIncludeBuiltInAndTargetAssignments() {
+        permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "Zeta.Node", PermissionValue.FALSE);
+        permissionService.setPermission(UUID_NAMED_PLAYER_ID, "other.node", PermissionValue.TRUE);
+
+        assertEquals(List.of("clutchperms.admin", "example.node", "zeta.node"), suggestionTexts("clutchperms user Target get "));
+    }
+
+    /**
+     * Confirms node suggestions are filtered by the partial node text already typed by the command source.
+     */
+    @Test
+    void nodeSuggestionsFilterByPartialInput() {
+        permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "other.node", PermissionValue.TRUE);
+
+        assertEquals(List.of("example.node"), suggestionTexts("clutchperms user Target clear ex"));
+    }
+
+    private List<String> suggestionTexts(String command) {
+        return dispatcher.getCompletionSuggestions(dispatcher.parse(command, TestSource.console())).join().getList().stream().map(Suggestion::getText).toList();
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {
