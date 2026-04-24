@@ -61,7 +61,7 @@ jobs:
         run: ./gradlew :common:check --no-daemon -PverboseTests=false
 
   platform:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.label }}
     needs: common
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -69,11 +69,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - paper
-          - fabric
-          - neoforge
-          - forge
+        include:
+          - platform: paper
+            label: Paper
+          - platform: fabric
+            label: Fabric
+          - platform: neoforge
+            label: NeoForge
+          - platform: forge
+            label: Forge
 
     steps:
       - name: Check out repository
@@ -91,18 +95,23 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Build and test ${{ matrix.platform }}
+      - name: Build and test ${{ matrix.label }}
         run: ./gradlew :${{ matrix.platform }}:build --no-daemon -PverboseTests=false
 
-      - name: List runtime artifacts
-        run: ls -lh ${{ matrix.platform }}/build/libs/clutchperms-${{ matrix.platform }}-*.jar
+      - name: Resolve runtime artifact
+        id: runtime-artifact
+        shell: bash
+        run: |
+          jar="$(find "${{ matrix.platform }}/build/libs" -maxdepth 1 -type f -name "clutchperms-${{ matrix.platform }}-*.jar" ! -name "*-sources.jar" | sort | head -n 1)"
+          test -n "$jar"
+          echo "path=$jar" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$jar" .jar)" >> "$GITHUB_OUTPUT"
+          ls -lh "$jar"
 
-      - name: Upload runtime artifacts
+      - name: Upload runtime artifact
         uses: actions/upload-artifact@v7
         with:
-          name: clutchperms-${{ matrix.platform }}-runtime-jar
-          path: |
-            ${{ matrix.platform }}/build/libs/clutchperms-${{ matrix.platform }}-*.jar
-            !${{ matrix.platform }}/build/libs/*-sources.jar
+          name: ${{ steps.runtime-artifact.outputs.name }}
+          path: ${{ steps.runtime-artifact.outputs.path }}
           if-no-files-found: error
           retention-days: 14
