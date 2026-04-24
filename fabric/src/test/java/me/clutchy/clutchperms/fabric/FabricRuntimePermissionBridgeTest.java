@@ -1,5 +1,7 @@
 package me.clutchy.clutchperms.fabric;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -28,6 +30,8 @@ import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.fabricmc.fabric.api.util.TriState;
 
@@ -101,6 +105,25 @@ final class FabricRuntimePermissionBridgeTest {
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionService(), SUBJECT_ID, "example.reload"));
         assertEquals(1, environment.runtimeRefreshes());
         assertEquals(List.of("Reloaded permissions and subjects from disk."), console.messages());
+    }
+
+    @Test
+    void malformedPermissionsFileFailsReloadWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws Exception {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
+        activePermissionService.setPermission(SUBJECT_ID, "Example.Reload", PermissionValue.TRUE);
+        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        Files.writeString(permissionsFile, "{ malformed permissions json", StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+
+        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionService(), SUBJECT_ID, "example.reload"));
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
     }
 
     private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, Path storageDirectory) {

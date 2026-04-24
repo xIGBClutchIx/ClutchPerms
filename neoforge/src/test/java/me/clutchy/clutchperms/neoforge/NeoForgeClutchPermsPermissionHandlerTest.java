@@ -1,5 +1,7 @@
 package me.clutchy.clutchperms.neoforge;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -21,6 +23,7 @@ import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionValue;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
+import me.clutchy.clutchperms.common.SubjectMetadataServices;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
@@ -29,6 +32,7 @@ import me.clutchy.clutchperms.common.command.CommandSubject;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.neoforged.neoforge.server.permission.nodes.PermissionNode;
@@ -125,19 +129,45 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         assertEquals(Boolean.TRUE, persistedHandler.getOfflinePermission(SUBJECT_ID, trueDefaultNode));
     }
 
+    @Test
+    void malformedPermissionsFileFailsReloadWithoutReplacingPermissionHandlerState(@TempDir Path temporaryDirectory) throws Exception {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
+        activePermissionService.setPermission(SUBJECT_ID, "example.node", PermissionValue.FALSE);
+        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        NeoForgeClutchPermsPermissionHandler suppliedHandler = new NeoForgeClutchPermsPermissionHandler(environment::permissionService, List.of(booleanNode));
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        Files.writeString(permissionsFile, "{ malformed permissions json", StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+
+        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
+        assertEquals(Boolean.FALSE, suppliedHandler.getOfflinePermission(SUBJECT_ID, booleanNode));
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
+    }
+
     private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, Path storageDirectory) {
+        return dispatcher(new TestEnvironment(permissionService, storageDirectory));
+    }
+
+    private static CommandDispatcher<TestSource> dispatcher(TestEnvironment environment) {
         CommandDispatcher<TestSource> dispatcher = new CommandDispatcher<>();
-        dispatcher.getRoot().addChild(ClutchPermsCommands.create(new TestEnvironment(permissionService, storageDirectory)));
+        dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
         return dispatcher;
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {
 
-        private final PermissionService permissionService;
+        private PermissionService permissionService;
 
-        private final SubjectMetadataService subjectMetadataService = new InMemorySubjectMetadataService();
+        private SubjectMetadataService subjectMetadataService = new InMemorySubjectMetadataService();
 
         private final Path storageDirectory;
+
+        private int runtimeRefreshes;
 
         private TestEnvironment(PermissionService permissionService, Path storageDirectory) {
             this.permissionService = permissionService;
@@ -158,6 +188,23 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         public CommandStatusDiagnostics statusDiagnostics() {
             return new CommandStatusDiagnostics(storageDirectory.resolve("permissions.json").toString(), storageDirectory.resolve("subjects.json").toString(),
                     "test neoforge bridge");
+        }
+
+        @Override
+        public void reloadStorage() {
+            PermissionService reloadedPermissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
+            SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
+            permissionService = reloadedPermissionService;
+            subjectMetadataService = reloadedSubjectMetadataService;
+        }
+
+        @Override
+        public void refreshRuntimePermissions() {
+            runtimeRefreshes++;
+        }
+
+        private int runtimeRefreshes() {
+            return runtimeRefreshes;
         }
 
         @Override

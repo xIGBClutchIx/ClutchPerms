@@ -1,5 +1,7 @@
 package me.clutchy.clutchperms.paper;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
@@ -19,6 +21,7 @@ import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
@@ -34,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.kyori.adventure.text.Component;
@@ -251,6 +255,35 @@ class ClutchPermsPaperPluginTest {
         assertEquals("OfflineReload", plugin.getSubjectMetadataService().getSubject(offlineId).orElseThrow().lastKnownName());
         assertSame(plugin.getPermissionService(), server.getServicesManager().getRegistration(PermissionService.class).getProvider());
         assertSame(plugin.getSubjectMetadataService(), server.getServicesManager().getRegistration(SubjectMetadataService.class).getProvider());
+    }
+
+    /**
+     * Confirms a malformed permissions file fails reload without replacing active Paper runtime state.
+     *
+     * @throws Exception when file setup fails unexpectedly
+     */
+    @Test
+    void malformedPermissionsFileFailsReloadWithoutReplacingRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Reload", PermissionValue.TRUE);
+        PermissionService activePermissionService = plugin.getPermissionService();
+        SubjectMetadataService activeSubjectMetadataService = plugin.getSubjectMetadataService();
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
+
+        Files.writeString(permissionsFile, "{ malformed permissions json", StandardCharsets.UTF_8);
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
+
+        assertSame(activePermissionService, plugin.getPermissionService());
+        assertSame(activeSubjectMetadataService, plugin.getSubjectMetadataService());
+        assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
+        assertTrue(target.isPermissionSet("example.reload"));
+        assertTrue(target.hasPermission("example.reload"));
+        assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
     }
 
     /**
