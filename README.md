@@ -4,6 +4,8 @@ ClutchPerms is an early cross-platform Minecraft permissions project for Paper, 
 
 This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, recursive multi-parent groups, an implicit `default` group, terminal wildcards, and effective permission resolution shared across platforms.
 
+For first install and admin bootstrap, see [SETUP.md](SETUP.md).
+
 ## What Works
 
 - Shared `/clutchperms` command behavior on Paper, Fabric, NeoForge, and Forge
