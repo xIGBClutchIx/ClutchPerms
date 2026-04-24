@@ -2,6 +2,7 @@ package me.clutchy.clutchperms.common.command;
 
 import java.util.Comparator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -59,6 +60,8 @@ public final class ClutchPermsCommands {
 
     private static final DynamicCommandExceptionType UNKNOWN_TARGET = new DynamicCommandExceptionType(
             target -> new LiteralMessage("Unknown online player or invalid UUID: " + target));
+
+    private static final DynamicCommandExceptionType AMBIGUOUS_TARGET = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage("Invalid permission node: " + node));
 
@@ -263,6 +266,11 @@ public final class ClutchPermsCommands {
             return onlineSubject.get();
         }
 
+        Optional<CommandSubject> knownSubject = resolveKnownSubject(environment, target);
+        if (knownSubject.isPresent()) {
+            return knownSubject.get();
+        }
+
         try {
             UUID subjectId = UUID.fromString(target);
             String displayName = environment.subjectMetadataService().getSubject(subjectId).map(SubjectMetadata::lastKnownName).orElse(subjectId.toString());
@@ -270,6 +278,23 @@ public final class ClutchPermsCommands {
         } catch (IllegalArgumentException exception) {
             throw UNKNOWN_TARGET.create(target);
         }
+    }
+
+    private static <S> Optional<CommandSubject> resolveKnownSubject(ClutchPermsCommandEnvironment<S> environment, String target) throws CommandSyntaxException {
+        String normalizedTarget = target.toLowerCase(Locale.ROOT);
+        List<SubjectMetadata> matches = environment.subjectMetadataService().getSubjects().values().stream()
+                .filter(subject -> subject.lastKnownName().toLowerCase(Locale.ROOT).equals(normalizedTarget))
+                .sorted(Comparator.comparing(SubjectMetadata::lastKnownName, String.CASE_INSENSITIVE_ORDER).thenComparing(SubjectMetadata::subjectId)).toList();
+        if (matches.isEmpty()) {
+            return Optional.empty();
+        }
+        if (matches.size() > 1) {
+            String matchedSubjects = matches.stream().map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
+            throw AMBIGUOUS_TARGET.create("Ambiguous known user " + target + ": " + matchedSubjects);
+        }
+
+        SubjectMetadata subject = matches.getFirst();
+        return Optional.of(new CommandSubject(subject.subjectId(), subject.lastKnownName()));
     }
 
     private static <S> String getNode(CommandContext<S> context) throws CommandSyntaxException {

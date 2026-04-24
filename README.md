@@ -254,7 +254,8 @@ All platforms register the same shared Brigadier command behavior:
 Behavior:
 - `/clutchperms` lists the available ClutchPerms commands
 - `/clutchperms status` shows the permissions file, subjects file, known-subject count, and runtime bridge status
-- `<target>` resolves an exact online player name first, then a UUID string
+- `<target>` resolves an exact online player name first, then an exact stored last-known name, then a UUID string
+- ambiguous stored last-known names fail with matching UUIDs instead of choosing one
 - UUID targets with recorded subject metadata are displayed as `Name (uuid)` in command feedback
 - `<node>` is a single Brigadier word and is normalized by the shared permission service
 - `<node>` suggestions include `clutchperms.admin` and explicit nodes already assigned to the selected target

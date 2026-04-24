@@ -65,7 +65,8 @@
   - registers shared `/clutchperms` command listing, status diagnostics, and direct user permission get/list/set/clear commands on every platform
   - reports storage paths, known-subject count, and runtime bridge status from `/clutchperms status`
   - registers shared known-user list/search commands backed by subject metadata
-  - resolves command targets by exact online player name first, then UUID
+  - resolves command targets by exact online player name first, then exact stored last-known name, then UUID
+  - fails ambiguous stored last-known name targets with matching UUIDs
   - displays last-known names for UUID command targets when subject metadata exists
   - suggests `clutchperms.admin` and explicit target assignments for command permission node arguments
   - allows console and remote console bootstrap command execution

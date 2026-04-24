@@ -25,6 +25,7 @@ import me.clutchy.clutchperms.common.SubjectMetadataService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies shared Brigadier command behavior independent of a server platform.
@@ -162,6 +163,38 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms an exact online name wins before stored subject metadata.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void onlinePlayerTargetResolvesBeforeStoredMetadata() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "Target", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target set example.node true", console);
+
+        assertEquals(PermissionValue.TRUE, permissionService.getPermission(TARGET_ID, "example.node"));
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(SECOND_TARGET_ID, "example.node"));
+    }
+
+    /**
+     * Confirms stored subject metadata names can be used as offline command targets.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void offlineLastKnownNameTargetResolvesBeforeUuidParsing() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "OfflineTarget", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user offlinetarget set example.node true", console);
+
+        assertEquals(PermissionValue.TRUE, permissionService.getPermission(SECOND_TARGET_ID, "example.node"));
+        assertEquals(List.of("Set example.node for OfflineTarget (00000000-0000-0000-0000-000000000004) to TRUE."), console.messages());
+    }
+
+    /**
      * Confirms UUID targets use stored metadata names in command feedback when available.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -176,6 +209,22 @@ class ClutchPermsCommandsTest {
 
         assertEquals(List.of("Set example.node for OfflineTarget (00000000-0000-0000-0000-000000000004) to TRUE.",
                 "OfflineTarget (00000000-0000-0000-0000-000000000004) has example.node = TRUE."), console.messages());
+    }
+
+    /**
+     * Confirms ambiguous stored subject names fail instead of choosing an arbitrary UUID.
+     */
+    @Test
+    void ambiguousLastKnownNameTargetFails() {
+        subjectMetadataService.recordSubject(TARGET_ID, "Duplicate", FIRST_SEEN);
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "duplicate", SECOND_SEEN);
+        TestSource console = TestSource.console();
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Duplicate list", console));
+
+        assertTrue(exception.getMessage().contains("Ambiguous known user Duplicate:"));
+        assertTrue(exception.getMessage().contains("Duplicate (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T12:00:00Z)"));
+        assertTrue(exception.getMessage().contains("duplicate (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T13:00:00Z)"));
     }
 
     /**
