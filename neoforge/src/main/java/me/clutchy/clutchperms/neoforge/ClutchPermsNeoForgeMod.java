@@ -66,8 +66,7 @@ public final class ClutchPermsNeoForgeMod {
         permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
         subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
         try {
-            permissionService = PermissionServices.jsonFile(permissionsFile);
-            subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
+            reloadStorage();
         } catch (PermissionStorageException exception) {
             LOGGER.error("Failed to load ClutchPerms storage from {}", FMLPaths.CONFIGDIR.get().resolve(MOD_ID), exception);
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
@@ -82,12 +81,13 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private void registerCommands(RegisterCommandsEvent event) {
-        event.getDispatcher().register(NeoForgeClutchPermsCommand.create(permissionService, subjectMetadataService, ClutchPermsNeoForgeMod::getStatusDiagnostics));
+        event.getDispatcher().register(NeoForgeClutchPermsCommand.create(ClutchPermsNeoForgeMod::getPermissionService, ClutchPermsNeoForgeMod::getSubjectMetadataService,
+                ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage, ClutchPermsNeoForgeMod::refreshRuntimePermissions));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
         event.addPermissionHandler(NeoForgeClutchPermsPermissionHandler.IDENTIFIER,
-                registeredNodes -> new NeoForgeClutchPermsPermissionHandler(permissionService, registeredNodes));
+                registeredNodes -> new NeoForgeClutchPermsPermissionHandler(ClutchPermsNeoForgeMod::getPermissionService, registeredNodes));
     }
 
     private void registerPermissionNodes(PermissionGatherEvent.Nodes event) {
@@ -145,6 +145,23 @@ public final class ClutchPermsNeoForgeMod {
     public static CommandStatusDiagnostics getStatusDiagnostics() {
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
                 formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")), runtimeBridgeStatus());
+    }
+
+    /**
+     * Reloads persisted storage from disk for the shared reload command.
+     */
+    public static void reloadStorage() {
+        PermissionService reloadedPermissionService = PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
+        SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
+        permissionService = reloadedPermissionService;
+        subjectMetadataService = reloadedSubjectMetadataService;
+    }
+
+    /**
+     * Refreshes NeoForge runtime permission state after reload.
+     */
+    public static void refreshRuntimePermissions() {
+        // NeoForge asks the active permission handler on demand, and the handler reads the current storage supplier.
     }
 
     private static String runtimeBridgeStatus() {

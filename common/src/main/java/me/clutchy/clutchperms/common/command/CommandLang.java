@@ -26,11 +26,15 @@ final class CommandLang {
 
     private static final String STATUS_RUNTIME_BRIDGE = "Runtime bridge: %s";
 
+    private static final String RELOAD_SUCCESS = "Reloaded permissions and subjects from disk.";
+
     private static final String ERROR_UNKNOWN_TARGET = "Unknown online player or invalid UUID: %s";
 
     private static final String ERROR_AMBIGUOUS_KNOWN_USER = "Ambiguous known user %s: %s";
 
     private static final String ERROR_INVALID_NODE = "Invalid permission node: %s";
+
+    private static final String ERROR_RELOAD_FAILED = "Failed to reload ClutchPerms storage: %s";
 
     private static final String PERMISSIONS_EMPTY = "No permissions set for %s.";
 
@@ -51,9 +55,9 @@ final class CommandLang {
     private static final String USERS_SEARCH_MATCHES = "Matched users: %s";
 
     static List<String> commandList(String rootLiteral) {
-        return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "user <target> list"), command(rootLiteral, "user <target> get <node>"),
-                command(rootLiteral, "user <target> set <node> <true|false>"), command(rootLiteral, "user <target> clear <node>"), command(rootLiteral, "users list"),
-                command(rootLiteral, "users search <name>"));
+        return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "reload"), command(rootLiteral, "user <target> list"),
+                command(rootLiteral, "user <target> get <node>"), command(rootLiteral, "user <target> set <node> <true|false>"), command(rootLiteral, "user <target> clear <node>"),
+                command(rootLiteral, "users list"), command(rootLiteral, "users search <name>"));
     }
 
     static String statusPermissionsFile(String permissionsFile) {
@@ -72,6 +76,10 @@ final class CommandLang {
         return format(STATUS_RUNTIME_BRIDGE, runtimeBridgeStatus);
     }
 
+    static String reloadSuccess() {
+        return RELOAD_SUCCESS;
+    }
+
     static String unknownTarget(Object target) {
         return format(ERROR_UNKNOWN_TARGET, target);
     }
@@ -82,6 +90,14 @@ final class CommandLang {
 
     static String invalidNode(Object node) {
         return format(ERROR_INVALID_NODE, node);
+    }
+
+    static String reloadFailed(Throwable exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = exception.getClass().getSimpleName();
+        }
+        return format(ERROR_RELOAD_FAILED, message);
     }
 
     static String permissionsEmpty(String subject) {

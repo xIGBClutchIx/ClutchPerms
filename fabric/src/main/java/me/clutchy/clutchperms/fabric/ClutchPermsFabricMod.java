@@ -66,16 +66,16 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         permissionsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("permissions.json");
         subjectsFile = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID).resolve("subjects.json");
         try {
-            permissionService = PermissionServices.jsonFile(permissionsFile);
-            subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
+            reloadStorage();
         } catch (PermissionStorageException exception) {
             LOGGER.error("Failed to load ClutchPerms storage from {}", FabricLoader.getInstance().getConfigDir().resolve(MOD_ID), exception);
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher
-                .register(FabricClutchPermsCommand.create(permissionService, subjectMetadataService, ClutchPermsFabricMod::getStatusDiagnostics)));
-        FabricRuntimePermissionBridge.register(permissionService);
+                .register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService,
+                        ClutchPermsFabricMod::getStatusDiagnostics, ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::refreshRuntimePermissions)));
+        FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionService);
         runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
         ServerLifecycleEvents.SERVER_STARTED.register(server -> server.getPlayerList().getPlayers().forEach(ClutchPermsFabricMod::recordSubject));
@@ -116,6 +116,23 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         String bridgeStatus = runtimeBridgeRegistered ? "Fabric permissions API bridge registered" : "Fabric permissions API bridge not registered";
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
                 formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")), bridgeStatus);
+    }
+
+    /**
+     * Reloads persisted storage from disk for the shared reload command.
+     */
+    public static void reloadStorage() {
+        PermissionService reloadedPermissionService = PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
+        SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
+        permissionService = reloadedPermissionService;
+        subjectMetadataService = reloadedSubjectMetadataService;
+    }
+
+    /**
+     * Refreshes Fabric runtime permission state after reload.
+     */
+    public static void refreshRuntimePermissions() {
+        // The Fabric permissions API bridge queries the active supplier on every check, so there is no cached runtime state to refresh.
     }
 
     private static String formatPath(Path path) {

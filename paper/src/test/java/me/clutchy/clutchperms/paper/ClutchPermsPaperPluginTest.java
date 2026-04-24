@@ -1,6 +1,7 @@
 package me.clutchy.clutchperms.paper;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -27,6 +28,7 @@ import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionValue;
 import me.clutchy.clutchperms.common.SubjectMetadata;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
+import me.clutchy.clutchperms.common.SubjectMetadataServices;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -216,6 +218,39 @@ class ClutchPermsPaperPluginTest {
         assertEquals(PermissionValue.UNSET, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
         assertFalse(target.isPermissionSet("example.smoke"));
         assertFalse(target.hasPermission("example.smoke"));
+    }
+
+    /**
+     * Confirms reload picks up manual file edits and refreshes online Paper permissions.
+     *
+     * @throws Exception when Brigadier command execution or storage reload fails unexpectedly
+     */
+    @Test
+    void reloadCommandReloadsStorageAndRefreshesRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        UUID offlineId = UUID.fromString("00000000-0000-0000-0000-000000000404");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
+        Path subjectsFile = plugin.getDataFolder().toPath().resolve("subjects.json");
+
+        PermissionServices.jsonFile(permissionsFile).setPermission(target.getUniqueId(), "Example.Reload", PermissionValue.TRUE);
+        SubjectMetadataServices.jsonFile(subjectsFile).recordSubject(offlineId, "OfflineReload", Instant.parse("2026-04-24T12:00:00Z"));
+
+        assertEquals(PermissionValue.UNSET, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
+        assertFalse(target.isPermissionSet("example.reload"));
+
+        assertEquals(1, dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
+
+        assertEquals(Component.text("Reloaded permissions and subjects from disk."), admin.nextComponentMessage());
+        assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
+        assertTrue(target.isPermissionSet("example.reload"));
+        assertTrue(target.hasPermission("example.reload"));
+        assertEquals("OfflineReload", plugin.getSubjectMetadataService().getSubject(offlineId).orElseThrow().lastKnownName());
+        assertSame(plugin.getPermissionService(), server.getServicesManager().getRegistration(PermissionService.class).getProvider());
+        assertSame(plugin.getSubjectMetadataService(), server.getServicesManager().getRegistration(SubjectMetadataService.class).getProvider());
     }
 
     /**

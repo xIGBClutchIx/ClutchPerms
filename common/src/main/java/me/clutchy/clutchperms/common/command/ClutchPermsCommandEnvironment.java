@@ -36,6 +36,19 @@ public interface ClutchPermsCommandEnvironment<S> {
     CommandStatusDiagnostics statusDiagnostics();
 
     /**
+     * Reloads persisted permissions and subject metadata from platform storage.
+     */
+    default void reloadStorage() {
+        throw new UnsupportedOperationException("Reload is not available for this command environment");
+    }
+
+    /**
+     * Refreshes every online runtime permission subject after storage reload.
+     */
+    default void refreshRuntimePermissions() {
+    }
+
+    /**
      * Classifies a platform source for command authorization.
      *
      * @param source platform command source

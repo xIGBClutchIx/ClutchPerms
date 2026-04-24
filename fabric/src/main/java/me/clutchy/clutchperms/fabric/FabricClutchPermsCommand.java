@@ -22,20 +22,42 @@ import net.minecraft.server.level.ServerPlayer;
  */
 final class FabricClutchPermsCommand {
 
-    static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(PermissionService permissionService, SubjectMetadataService subjectMetadataService,
-            Supplier<CommandStatusDiagnostics> statusDiagnostics) {
-        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, statusDiagnostics));
+    static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader,
+            Runnable runtimePermissionRefresher) {
+        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, statusDiagnostics, storageReloader, runtimePermissionRefresher));
     }
 
     private FabricClutchPermsCommand() {
     }
 
-    private record FabricCommandEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService,
-            Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
+    private record FabricCommandEnvironment(Supplier<PermissionService> permissionServiceSupplier, Supplier<SubjectMetadataService> subjectMetadataServiceSupplier,
+            Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier, Runnable storageReloader,
+            Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
+
+        @Override
+        public PermissionService permissionService() {
+            return permissionServiceSupplier.get();
+        }
+
+        @Override
+        public SubjectMetadataService subjectMetadataService() {
+            return subjectMetadataServiceSupplier.get();
+        }
 
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
             return statusDiagnosticsSupplier.get();
+        }
+
+        @Override
+        public void reloadStorage() {
+            storageReloader.run();
+        }
+
+        @Override
+        public void refreshRuntimePermissions() {
+            runtimePermissionRefresher.run();
         }
 
         @Override

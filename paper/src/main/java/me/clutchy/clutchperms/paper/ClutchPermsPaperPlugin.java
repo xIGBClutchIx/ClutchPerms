@@ -63,22 +63,20 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     public void onEnable() {
         permissionsFile = getDataFolder().toPath().resolve(PERMISSIONS_FILE_NAME);
         subjectsFile = getDataFolder().toPath().resolve(SUBJECTS_FILE_NAME);
-        PermissionService storagePermissionService;
         try {
-            storagePermissionService = PermissionServices.jsonFile(permissionsFile);
-            subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
+            PermissionService storagePermissionService = loadPermissionService();
+            subjectMetadataService = loadSubjectMetadataService();
+            runtimePermissionBridge = new PaperRuntimePermissionBridge(this, this::getPermissionService);
+            permissionService = observablePermissionService(storagePermissionService);
         } catch (PermissionStorageException exception) {
             getLogger().log(Level.SEVERE, "Failed to load ClutchPerms storage from " + getDataFolder(), exception);
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
-        runtimePermissionBridge = new PaperRuntimePermissionBridge(this, storagePermissionService);
-        permissionService = PermissionServices.observing(storagePermissionService, runtimePermissionBridge::refreshSubject);
-        PaperSubjectMetadataListener subjectMetadataListener = new PaperSubjectMetadataListener(subjectMetadataService);
+        PaperSubjectMetadataListener subjectMetadataListener = new PaperSubjectMetadataListener(this::getSubjectMetadataService);
 
         // Register the shared service so other plugins on Paper can discover it.
-        getServer().getServicesManager().register(PermissionService.class, permissionService, this, ServicePriority.Normal);
-        getServer().getServicesManager().register(SubjectMetadataService.class, subjectMetadataService, this, ServicePriority.Normal);
+        registerServices();
         getServer().getPluginManager().registerEvents(runtimePermissionBridge, this);
         getServer().getPluginManager().registerEvents(subjectMetadataListener, this);
         runtimePermissionBridge.refreshOnlinePlayers();
@@ -133,6 +131,49 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         PaperRuntimePermissionBridge bridge = Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available");
         return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file is not available")),
                 formatPath(Objects.requireNonNull(subjectsFile, "Subjects file is not available")), bridge.status());
+    }
+
+    /**
+     * Reloads persisted storage from disk for the shared reload command.
+     */
+    void reloadStorage() {
+        PermissionService reloadedStoragePermissionService = loadPermissionService();
+        SubjectMetadataService reloadedSubjectMetadataService = loadSubjectMetadataService();
+        PermissionService reloadedPermissionService = observablePermissionService(reloadedStoragePermissionService);
+
+        PermissionService oldPermissionService = permissionService;
+        SubjectMetadataService oldSubjectMetadataService = subjectMetadataService;
+        permissionService = reloadedPermissionService;
+        subjectMetadataService = reloadedSubjectMetadataService;
+
+        getServer().getServicesManager().unregister(PermissionService.class, oldPermissionService);
+        getServer().getServicesManager().unregister(SubjectMetadataService.class, oldSubjectMetadataService);
+        registerServices();
+    }
+
+    /**
+     * Refreshes every online player after a reload command replaces storage state.
+     */
+    void refreshRuntimePermissions() {
+        Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available").refreshOnlinePlayers();
+    }
+
+    private PermissionService loadPermissionService() {
+        return PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file is not available"));
+    }
+
+    private SubjectMetadataService loadSubjectMetadataService() {
+        return SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file is not available"));
+    }
+
+    private PermissionService observablePermissionService(PermissionService storagePermissionService) {
+        return PermissionServices.observing(storagePermissionService,
+                Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available")::refreshSubject);
+    }
+
+    private void registerServices() {
+        getServer().getServicesManager().register(PermissionService.class, getPermissionService(), this, ServicePriority.Normal);
+        getServer().getServicesManager().register(SubjectMetadataService.class, getSubjectMetadataService(), this, ServicePriority.Normal);
     }
 
     private static String formatPath(Path path) {

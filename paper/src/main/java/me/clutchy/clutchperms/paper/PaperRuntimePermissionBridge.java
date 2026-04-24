@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -22,13 +23,13 @@ final class PaperRuntimePermissionBridge implements Listener, AutoCloseable {
 
     private final ClutchPermsPaperPlugin plugin;
 
-    private final PermissionService permissionService;
+    private final Supplier<PermissionService> permissionServiceSupplier;
 
     private final Map<UUID, PermissionAttachment> attachments = new HashMap<>();
 
-    PaperRuntimePermissionBridge(ClutchPermsPaperPlugin plugin, PermissionService permissionService) {
+    PaperRuntimePermissionBridge(ClutchPermsPaperPlugin plugin, Supplier<PermissionService> permissionServiceSupplier) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
-        this.permissionService = Objects.requireNonNull(permissionService, "permissionService");
+        this.permissionServiceSupplier = Objects.requireNonNull(permissionServiceSupplier, "permissionServiceSupplier");
     }
 
     /**
@@ -111,7 +112,7 @@ final class PaperRuntimePermissionBridge implements Listener, AutoCloseable {
         UUID subjectId = player.getUniqueId();
         detachPlayer(player);
 
-        Map<String, PermissionValue> permissions = permissionService.getPermissions(subjectId);
+        Map<String, PermissionValue> permissions = permissionServiceSupplier.get().getPermissions(subjectId);
         if (!permissions.isEmpty()) {
             PermissionAttachment attachment = player.addAttachment(plugin);
             permissions.forEach((node, value) -> {

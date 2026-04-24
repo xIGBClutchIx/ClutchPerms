@@ -20,6 +20,7 @@ import me.clutchy.clutchperms.common.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.PermissionNodes;
 import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.PermissionStorageException;
 import me.clutchy.clutchperms.common.PermissionValue;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
 
@@ -95,6 +96,38 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms status", console);
 
         assertEquals(statusMessages(1), console.messages());
+    }
+
+    /**
+     * Confirms reload refreshes storage and runtime bridges in order.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void reloadSubcommandReloadsStorageAndRefreshesRuntimePermissions() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms reload", console);
+
+        assertEquals(1, environment.reloads());
+        assertEquals(1, environment.runtimeRefreshes());
+        assertEquals(List.of("Reloaded permissions and subjects from disk."), console.messages());
+    }
+
+    /**
+     * Confirms a failed reload reports a command failure and does not refresh runtime state.
+     */
+    @Test
+    void reloadSubcommandFailsWithoutRuntimeRefreshWhenStorageReloadFails() {
+        TestSource console = TestSource.console();
+        environment.failReload(new PermissionStorageException("bad permissions file"));
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+
+        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage: bad permissions file"));
+        assertEquals(0, environment.reloads());
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
     }
 
     /**
@@ -333,7 +366,7 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListMessages() {
-        return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms user <target> list", "/clutchperms user <target> get <node>",
+        return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms reload", "/clutchperms user <target> list", "/clutchperms user <target> get <node>",
                 "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>", "/clutchperms users list", "/clutchperms users search <name>");
     }
 
@@ -345,6 +378,12 @@ class ClutchPermsCommandsTest {
 
         private final Map<String, CommandSubject> onlineSubjects = new LinkedHashMap<>();
 
+        private int reloads;
+
+        private int runtimeRefreshes;
+
+        private RuntimeException reloadFailure;
+
         private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService) {
             this.permissionService = permissionService;
             this.subjectMetadataService = subjectMetadataService;
@@ -352,6 +391,18 @@ class ClutchPermsCommandsTest {
 
         private void addOnlineSubject(String name, UUID subjectId) {
             onlineSubjects.put(name, new CommandSubject(subjectId, name));
+        }
+
+        private void failReload(RuntimeException reloadFailure) {
+            this.reloadFailure = reloadFailure;
+        }
+
+        private int reloads() {
+            return reloads;
+        }
+
+        private int runtimeRefreshes() {
+            return runtimeRefreshes;
         }
 
         @Override
@@ -367,6 +418,19 @@ class ClutchPermsCommandsTest {
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
             return STATUS_DIAGNOSTICS;
+        }
+
+        @Override
+        public void reloadStorage() {
+            if (reloadFailure != null) {
+                throw reloadFailure;
+            }
+            reloads++;
+        }
+
+        @Override
+        public void refreshRuntimePermissions() {
+            runtimeRefreshes++;
         }
 
         @Override

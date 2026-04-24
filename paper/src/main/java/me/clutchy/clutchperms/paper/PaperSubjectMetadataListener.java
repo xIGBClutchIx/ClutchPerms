@@ -2,6 +2,8 @@ package me.clutchy.clutchperms.paper;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Objects;
+import java.util.function.Supplier;
 
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -15,10 +17,10 @@ import me.clutchy.clutchperms.common.SubjectMetadataService;
  */
 final class PaperSubjectMetadataListener implements Listener {
 
-    private final SubjectMetadataService subjectMetadataService;
+    private final Supplier<SubjectMetadataService> subjectMetadataServiceSupplier;
 
-    PaperSubjectMetadataListener(SubjectMetadataService subjectMetadataService) {
-        this.subjectMetadataService = subjectMetadataService;
+    PaperSubjectMetadataListener(Supplier<SubjectMetadataService> subjectMetadataServiceSupplier) {
+        this.subjectMetadataServiceSupplier = Objects.requireNonNull(subjectMetadataServiceSupplier, "subjectMetadataServiceSupplier");
     }
 
     @EventHandler
@@ -31,6 +33,6 @@ final class PaperSubjectMetadataListener implements Listener {
     }
 
     private void recordPlayer(Player player) {
-        subjectMetadataService.recordSubject(player.getUniqueId(), player.getName(), Instant.now());
+        subjectMetadataServiceSupplier.get().recordSubject(player.getUniqueId(), player.getName(), Instant.now());
     }
 }

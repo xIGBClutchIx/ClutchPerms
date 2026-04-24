@@ -49,6 +49,16 @@ final class PaperClutchPermsCommand {
         }
 
         @Override
+        public void reloadStorage() {
+            plugin.reloadStorage();
+        }
+
+        @Override
+        public void refreshRuntimePermissions() {
+            plugin.refreshRuntimePermissions();
+        }
+
+        @Override
         public CommandSourceKind sourceKind(CommandSourceStack source) {
             CommandSender sender = source.getSender();
             if (sender instanceof Player) {

@@ -20,6 +20,7 @@ import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionValue;
 import me.clutchy.clutchperms.common.SubjectMetadataService;
+import me.clutchy.clutchperms.common.SubjectMetadataServices;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
@@ -85,19 +86,42 @@ final class FabricRuntimePermissionBridgeTest {
         assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(persistedPermissionService, SUBJECT_ID, "example.smoke"));
     }
 
+    @Test
+    void reloadCommandReloadsStorageForBridgeResolution(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        TestEnvironment environment = new TestEnvironment(PermissionServices.jsonFile(permissionsFile), temporaryDirectory);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        PermissionServices.jsonFile(permissionsFile).setPermission(SUBJECT_ID, "Example.Reload", PermissionValue.TRUE);
+        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(environment.permissionService(), SUBJECT_ID, "example.reload"));
+
+        assertEquals(1, dispatcher.execute("clutchperms reload", console));
+
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionService(), SUBJECT_ID, "example.reload"));
+        assertEquals(1, environment.runtimeRefreshes());
+        assertEquals(List.of("Reloaded permissions and subjects from disk."), console.messages());
+    }
+
     private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, Path storageDirectory) {
+        return dispatcher(new TestEnvironment(permissionService, storageDirectory));
+    }
+
+    private static CommandDispatcher<TestSource> dispatcher(TestEnvironment environment) {
         CommandDispatcher<TestSource> dispatcher = new CommandDispatcher<>();
-        dispatcher.getRoot().addChild(ClutchPermsCommands.create(new TestEnvironment(permissionService, storageDirectory)));
+        dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
         return dispatcher;
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {
 
-        private final PermissionService permissionService;
+        private PermissionService permissionService;
 
-        private final SubjectMetadataService subjectMetadataService = new InMemorySubjectMetadataService();
+        private SubjectMetadataService subjectMetadataService = new InMemorySubjectMetadataService();
 
         private final Path storageDirectory;
+
+        private int runtimeRefreshes;
 
         private TestEnvironment(PermissionService permissionService, Path storageDirectory) {
             this.permissionService = permissionService;
@@ -118,6 +142,21 @@ final class FabricRuntimePermissionBridgeTest {
         public CommandStatusDiagnostics statusDiagnostics() {
             return new CommandStatusDiagnostics(storageDirectory.resolve("permissions.json").toString(), storageDirectory.resolve("subjects.json").toString(),
                     "test fabric bridge");
+        }
+
+        @Override
+        public void reloadStorage() {
+            permissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
+            subjectMetadataService = SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
+        }
+
+        @Override
+        public void refreshRuntimePermissions() {
+            runtimeRefreshes++;
+        }
+
+        private int runtimeRefreshes() {
+            return runtimeRefreshes;
         }
 
         @Override

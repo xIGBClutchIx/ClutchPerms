@@ -63,6 +63,8 @@ public final class ClutchPermsCommands {
 
     private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage(CommandLang.invalidNode(node)));
 
+    private static final DynamicCommandExceptionType RELOAD_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
     /**
      * Creates the root ClutchPerms command node for a platform source type.
      *
@@ -85,11 +87,15 @@ public final class ClutchPermsCommands {
         Objects.requireNonNull(environment, "environment");
 
         return LiteralArgumentBuilder.<S>literal(ROOT_LITERAL).executes(context -> executeAuthorized(environment, context, source -> sendCommandList(environment, context)))
-                .then(statusCommand(environment)).then(userCommand(environment)).then(usersCommand(environment));
+                .then(statusCommand(environment)).then(reloadCommand(environment)).then(userCommand(environment)).then(usersCommand(environment));
     }
 
     private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("status").executes(context -> executeAuthorized(environment, context, source -> sendStatus(environment, context)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> reloadCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("reload").executes(context -> executeAuthorized(environment, context, source -> reloadStorage(environment, context)));
     }
 
     private static <S> LiteralArgumentBuilder<S> userCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -156,6 +162,18 @@ public final class ClutchPermsCommands {
         environment.sendMessage(context.getSource(), CommandLang.statusSubjectsFile(diagnostics.subjectsFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownSubjects(environment.subjectMetadataService().getSubjects().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusRuntimeBridge(diagnostics.runtimeBridgeStatus()));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int reloadStorage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        try {
+            environment.reloadStorage();
+            environment.refreshRuntimePermissions();
+        } catch (RuntimeException exception) {
+            throw RELOAD_FAILED.create(CommandLang.reloadFailed(exception));
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.reloadSuccess());
         return Command.SINGLE_SUCCESS;
     }
 

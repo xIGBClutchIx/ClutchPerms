@@ -2,6 +2,7 @@ package me.clutchy.clutchperms.fabric;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionValue;
@@ -18,9 +19,9 @@ import net.minecraft.server.level.ServerPlayer;
  */
 final class FabricRuntimePermissionBridge {
 
-    static void register(PermissionService permissionService) {
-        PermissionCheckEvent.EVENT.register((source, permission) -> resolve(permissionService, source, permission));
-        OfflinePermissionCheckEvent.EVENT.register((subjectId, permission) -> CompletableFuture.completedFuture(resolve(permissionService, subjectId, permission)));
+    static void register(Supplier<PermissionService> permissionServiceSupplier) {
+        PermissionCheckEvent.EVENT.register((source, permission) -> resolve(permissionServiceSupplier.get(), source, permission));
+        OfflinePermissionCheckEvent.EVENT.register((subjectId, permission) -> CompletableFuture.completedFuture(resolve(permissionServiceSupplier.get(), subjectId, permission)));
     }
 
     private FabricRuntimePermissionBridge() {

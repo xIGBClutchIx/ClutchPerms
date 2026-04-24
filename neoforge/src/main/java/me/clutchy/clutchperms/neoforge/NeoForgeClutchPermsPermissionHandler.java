@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import me.clutchy.clutchperms.common.PermissionNodes;
 import me.clutchy.clutchperms.common.PermissionService;
@@ -27,12 +28,16 @@ final class NeoForgeClutchPermsPermissionHandler implements IPermissionHandler {
 
     static final PermissionNode<Boolean> ADMIN_NODE = createAdminNode();
 
-    private final PermissionService permissionService;
+    private final Supplier<PermissionService> permissionServiceSupplier;
 
     private final Set<PermissionNode<?>> registeredNodes;
 
     NeoForgeClutchPermsPermissionHandler(PermissionService permissionService, Collection<PermissionNode<?>> registeredNodes) {
-        this.permissionService = permissionService;
+        this(() -> permissionService, registeredNodes);
+    }
+
+    NeoForgeClutchPermsPermissionHandler(Supplier<PermissionService> permissionServiceSupplier, Collection<PermissionNode<?>> registeredNodes) {
+        this.permissionServiceSupplier = permissionServiceSupplier;
         this.registeredNodes = Collections.unmodifiableSet(new HashSet<>(registeredNodes));
     }
 
@@ -62,7 +67,7 @@ final class NeoForgeClutchPermsPermissionHandler implements IPermissionHandler {
             return defaultValue;
         }
 
-        PermissionValue value = permissionService.getPermission(subjectId, node.getNodeName());
+        PermissionValue value = permissionServiceSupplier.get().getPermission(subjectId, node.getNodeName());
         return switch (value) {
             case TRUE -> (T) Boolean.TRUE;
             case FALSE -> (T) Boolean.FALSE;

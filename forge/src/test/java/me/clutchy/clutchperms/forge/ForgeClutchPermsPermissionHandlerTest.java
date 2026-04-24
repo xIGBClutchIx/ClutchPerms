@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -87,6 +88,18 @@ final class ForgeClutchPermsPermissionHandlerTest {
     void adminNodeMatchesSharedBooleanRegistration() {
         assertSame(PermissionTypes.BOOLEAN, ForgeClutchPermsPermissionHandler.ADMIN_NODE.getType());
         assertEquals("clutchperms.admin", ForgeClutchPermsPermissionHandler.ADMIN_NODE.getNodeName());
+    }
+
+    @Test
+    void suppliedPermissionServiceCanBeReplacedAfterReload() {
+        AtomicReference<PermissionService> permissionServiceReference = new AtomicReference<>(permissionService);
+        ForgeClutchPermsPermissionHandler suppliedHandler = new ForgeClutchPermsPermissionHandler(permissionServiceReference::get, List.of(booleanNode));
+        PermissionService reloadedPermissionService = new InMemoryPermissionService();
+
+        reloadedPermissionService.setPermission(SUBJECT_ID, "example.node", PermissionValue.FALSE);
+        permissionServiceReference.set(reloadedPermissionService);
+
+        assertEquals(Boolean.FALSE, suppliedHandler.getOfflinePermission(SUBJECT_ID, booleanNode));
     }
 
     @Test

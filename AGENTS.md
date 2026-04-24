@@ -62,8 +62,9 @@
   - persists direct `UUID -> node -> TRUE/FALSE` assignments to `permissions.json`
   - treats `UNSET` as entry removal
   - fails startup on malformed persisted permission data
-  - registers shared `/clutchperms` command listing, status diagnostics, and direct user permission get/list/set/clear commands on every platform
+  - registers shared `/clutchperms` command listing, reload, status diagnostics, and direct user permission get/list/set/clear commands on every platform
   - reports storage paths, known-subject count, and runtime bridge status from `/clutchperms status`
+  - reloads `permissions.json` and `subjects.json` from `/clutchperms reload`, then refreshes runtime permission bridges for online subjects where needed
   - centralizes shared command feedback text in `common.command.CommandLang`
   - registers shared known-user list/search commands backed by subject metadata
   - resolves command targets by exact online player name first, then exact stored last-known name, then UUID

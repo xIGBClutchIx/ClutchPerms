@@ -243,6 +243,7 @@ All platforms register the same shared Brigadier command behavior:
 ```text
 /clutchperms
 /clutchperms status
+/clutchperms reload
 /clutchperms user <target> list
 /clutchperms user <target> get <node>
 /clutchperms user <target> set <node> <true|false>
@@ -254,6 +255,7 @@ All platforms register the same shared Brigadier command behavior:
 Behavior:
 - `/clutchperms` lists the available ClutchPerms commands
 - `/clutchperms status` shows the permissions file, subjects file, known-subject count, and runtime bridge status
+- `/clutchperms reload` reloads `permissions.json` and `subjects.json` from disk, then refreshes runtime permission bridges for online subjects where the platform keeps runtime state
 - `<target>` resolves an exact online player name first, then an exact stored last-known name, then a UUID string
 - ambiguous stored last-known names fail with matching UUIDs instead of choosing one
 - UUID targets with recorded subject metadata are displayed as `Name (uuid)` in command feedback
