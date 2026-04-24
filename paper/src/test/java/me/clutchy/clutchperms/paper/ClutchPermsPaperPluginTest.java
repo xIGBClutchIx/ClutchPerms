@@ -556,6 +556,75 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms validate checks manual file edits without replacing active Paper runtime state.
+     *
+     * @throws Exception when Brigadier command execution or storage validation fails unexpectedly
+     */
+    @Test
+    void validateCommandChecksStorageWithoutReplacingRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Validate", PermissionValue.FALSE);
+        PermissionService activePermissionService = plugin.getPermissionService();
+        PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
+
+        PermissionServices.jsonFile(permissionsFile).setPermission(target.getUniqueId(), "Example.Validate", PermissionValue.TRUE);
+
+        assertEquals(1, dispatcher.execute("clutchperms validate", new TestCommandSourceStack(admin)));
+
+        assertEquals(Component.text("Validated permissions, subjects, groups, and known nodes from disk."), admin.nextComponentMessage());
+        assertSame(activePermissionService, plugin.getPermissionService());
+        assertSame(activePermissionResolver, plugin.getPermissionResolver());
+        assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
+        assertEquals(PermissionValue.FALSE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.validate"));
+        assertTrue(target.isPermissionSet("example.validate"));
+        assertFalse(target.hasPermission("example.validate"));
+    }
+
+    /**
+     * Confirms a malformed permissions file fails validate without replacing active Paper runtime state.
+     *
+     * @throws Exception when file setup fails unexpectedly
+     */
+    @Test
+    void malformedPermissionsFileFailsValidateWithoutReplacingRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Validate", PermissionValue.TRUE);
+        PermissionService activePermissionService = plugin.getPermissionService();
+        PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
+
+        Files.writeString(permissionsFile, """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "example.*.bad": "TRUE"
+                    }
+                  }
+                }
+                """, StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms validate", new TestCommandSourceStack(admin)));
+
+        assertTrue(exception.getMessage().contains("Failed to validate ClutchPerms storage:"));
+        assertSame(activePermissionService, plugin.getPermissionService());
+        assertSame(activePermissionResolver, plugin.getPermissionResolver());
+        assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
+        assertTrue(target.isPermissionSet("example.validate"));
+        assertTrue(target.hasPermission("example.validate"));
+        assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.validate"));
+    }
+
+    /**
      * Confirms a malformed permissions file fails reload without replacing active Paper runtime state.
      *
      * @throws Exception when file setup fails unexpectedly

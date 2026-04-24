@@ -82,6 +82,13 @@ public interface ClutchPermsCommandEnvironment<S> {
     }
 
     /**
+     * Validates persisted permissions, subject metadata, groups, and known nodes from platform storage without applying them.
+     */
+    default void validateStorage() {
+        throw new UnsupportedOperationException("Storage validation is not available for this command environment");
+    }
+
+    /**
      * Refreshes every online runtime permission subject after storage reload.
      */
     default void refreshRuntimePermissions() {

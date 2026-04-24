@@ -278,6 +278,16 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     }
 
     /**
+     * Validates persisted storage from disk without replacing active services or runtime state.
+     */
+    void validateStorage() {
+        loadPermissionService();
+        loadSubjectMetadataService();
+        loadGroupService();
+        loadPermissionNodeRegistry();
+    }
+
+    /**
      * Refreshes every online player after a reload command replaces storage state.
      */
     void refreshRuntimePermissions() {

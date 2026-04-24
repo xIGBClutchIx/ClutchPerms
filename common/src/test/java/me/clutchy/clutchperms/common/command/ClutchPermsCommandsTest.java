@@ -147,6 +147,40 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms validation checks storage without reloading active services or refreshing runtime state.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void validateSubcommandValidatesStorageWithoutReloadingOrRefreshingRuntimePermissions() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms validate", console);
+
+        assertEquals(1, environment.validations());
+        assertEquals(0, environment.reloads());
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of("Validated permissions, subjects, groups, and known nodes from disk."), console.messages());
+    }
+
+    /**
+     * Confirms validation failures report a command failure and do not reload or refresh runtime state.
+     */
+    @Test
+    void validateSubcommandFailsWithoutReloadingOrRefreshingRuntimePermissions() {
+        TestSource console = TestSource.console();
+        environment.failValidation(new PermissionStorageException("bad groups file"));
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms validate", console));
+
+        assertTrue(exception.getMessage().contains("Failed to validate ClutchPerms storage: bad groups file"));
+        assertEquals(0, environment.validations());
+        assertEquals(0, environment.reloads());
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
+    }
+
+    /**
      * Confirms a console source can bootstrap direct permission assignments.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -714,14 +748,15 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListMessages() {
-        return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms reload", "/clutchperms user <target> list", "/clutchperms user <target> get <node>",
-                "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>", "/clutchperms user <target> groups",
-                "/clutchperms user <target> group add <group>", "/clutchperms user <target> group remove <group>", "/clutchperms user <target> check <node>",
-                "/clutchperms user <target> explain <node>", "/clutchperms group list", "/clutchperms group <group> create", "/clutchperms group <group> delete",
-                "/clutchperms group <group> list", "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>",
-                "/clutchperms group <group> clear <node>", "/clutchperms group <group> parents", "/clutchperms group <group> parent add <parent>",
-                "/clutchperms group <group> parent remove <parent>", "/clutchperms users list", "/clutchperms users search <name>", "/clutchperms nodes list",
-                "/clutchperms nodes search <query>", "/clutchperms nodes add <node>", "/clutchperms nodes add <node> <description>", "/clutchperms nodes remove <node>");
+        return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms reload", "/clutchperms validate", "/clutchperms user <target> list",
+                "/clutchperms user <target> get <node>", "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>",
+                "/clutchperms user <target> groups", "/clutchperms user <target> group add <group>", "/clutchperms user <target> group remove <group>",
+                "/clutchperms user <target> check <node>", "/clutchperms user <target> explain <node>", "/clutchperms group list", "/clutchperms group <group> create",
+                "/clutchperms group <group> delete", "/clutchperms group <group> list", "/clutchperms group <group> get <node>",
+                "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>", "/clutchperms group <group> parents",
+                "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>", "/clutchperms users list",
+                "/clutchperms users search <name>", "/clutchperms nodes list", "/clutchperms nodes search <query>", "/clutchperms nodes add <node>",
+                "/clutchperms nodes add <node> <description>", "/clutchperms nodes remove <node>");
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {
@@ -742,9 +777,13 @@ class ClutchPermsCommandsTest {
 
         private int reloads;
 
+        private int validations;
+
         private int runtimeRefreshes;
 
         private RuntimeException reloadFailure;
+
+        private RuntimeException validationFailure;
 
         private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService,
                 MutablePermissionNodeRegistry manualPermissionNodeRegistry, PermissionResolver permissionResolver) {
@@ -767,8 +806,16 @@ class ClutchPermsCommandsTest {
             this.reloadFailure = reloadFailure;
         }
 
+        private void failValidation(RuntimeException validationFailure) {
+            this.validationFailure = validationFailure;
+        }
+
         private int reloads() {
             return reloads;
+        }
+
+        private int validations() {
+            return validations;
         }
 
         private int runtimeRefreshes() {
@@ -817,6 +864,14 @@ class ClutchPermsCommandsTest {
                 throw reloadFailure;
             }
             reloads++;
+        }
+
+        @Override
+        public void validateStorage() {
+            if (validationFailure != null) {
+                throw validationFailure;
+            }
+            validations++;
         }
 
         @Override

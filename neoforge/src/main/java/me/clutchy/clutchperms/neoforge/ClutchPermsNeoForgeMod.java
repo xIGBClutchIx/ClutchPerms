@@ -124,7 +124,7 @@ public final class ClutchPermsNeoForgeMod {
                 .register(NeoForgeClutchPermsCommand.create(ClutchPermsNeoForgeMod::getPermissionService, ClutchPermsNeoForgeMod::getSubjectMetadataService,
                         ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getPermissionNodeRegistry, ClutchPermsNeoForgeMod::getManualPermissionNodeRegistry,
                         ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage,
-                        ClutchPermsNeoForgeMod::refreshRuntimePermissions));
+                        ClutchPermsNeoForgeMod::validateStorage, ClutchPermsNeoForgeMod::refreshRuntimePermissions));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -249,6 +249,16 @@ public final class ClutchPermsNeoForgeMod {
         manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
         permissionNodeRegistry = reloadedPermissionNodeRegistry;
         permissionResolver = new PermissionResolver(permissionService, groupService);
+    }
+
+    /**
+     * Validates persisted storage from disk without replacing active services or runtime state.
+     */
+    public static void validateStorage() {
+        PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
+        SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
+        GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
+        PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized"));
     }
 
     /**

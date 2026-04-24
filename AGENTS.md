@@ -103,7 +103,8 @@ Storage expectations:
 - Create parent directories as needed.
 - Use deterministic output.
 - Write through temporary files and replace the target file.
-- Fail startup or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- Fail startup, validate, or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- `/clutchperms validate` should parse all persisted files without replacing active services, refreshing runtime bridges, or mutating storage.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
 
 ## Runtime Bridges
@@ -127,6 +128,7 @@ Current command surface:
 - `/clutchperms`
 - `/clutchperms status`
 - `/clutchperms reload`
+- `/clutchperms validate`
 - `/clutchperms user <target> list|get|set|clear|check|explain`
 - `/clutchperms user <target> groups`
 - `/clutchperms user <target> group add|remove <group>`

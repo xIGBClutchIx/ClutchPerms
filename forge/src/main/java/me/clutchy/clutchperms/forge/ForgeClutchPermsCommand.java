@@ -31,9 +31,9 @@ final class ForgeClutchPermsCommand {
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
             Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
             Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
-            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable runtimePermissionRefresher) {
+            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Runnable runtimePermissionRefresher) {
         return ClutchPermsCommands.builder(new ForgeCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionNodeRegistry,
-                manualPermissionNodeRegistry, permissionResolver, statusDiagnostics, storageReloader, runtimePermissionRefresher));
+                manualPermissionNodeRegistry, permissionResolver, statusDiagnostics, storageReloader, storageValidator, runtimePermissionRefresher));
     }
 
     private ForgeClutchPermsCommand() {
@@ -42,7 +42,7 @@ final class ForgeClutchPermsCommand {
     private record ForgeCommandEnvironment(Supplier<PermissionService> permissionServiceSupplier, Supplier<SubjectMetadataService> subjectMetadataServiceSupplier,
             Supplier<GroupService> groupServiceSupplier, Supplier<PermissionNodeRegistry> permissionNodeRegistrySupplier,
             Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistrySupplier, Supplier<PermissionResolver> permissionResolverSupplier,
-            Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier, Runnable storageReloader,
+            Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier, Runnable storageReloader, Runnable storageValidator,
             Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
 
         @Override
@@ -83,6 +83,11 @@ final class ForgeClutchPermsCommand {
         @Override
         public void reloadStorage() {
             storageReloader.run();
+        }
+
+        @Override
+        public void validateStorage() {
+            storageValidator.run();
         }
 
         @Override

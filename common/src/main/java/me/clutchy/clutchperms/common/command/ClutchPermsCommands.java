@@ -76,6 +76,8 @@ public final class ClutchPermsCommands {
 
     private static final DynamicCommandExceptionType RELOAD_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
+    private static final DynamicCommandExceptionType VALIDATE_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
     private static final DynamicCommandExceptionType GROUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType NODE_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
@@ -102,8 +104,8 @@ public final class ClutchPermsCommands {
         Objects.requireNonNull(environment, "environment");
 
         return LiteralArgumentBuilder.<S>literal(ROOT_LITERAL).executes(context -> executeAuthorized(environment, context, source -> sendCommandList(environment, context)))
-                .then(statusCommand(environment)).then(reloadCommand(environment)).then(userCommand(environment)).then(groupRootCommand(environment))
-                .then(usersCommand(environment)).then(nodesCommand(environment));
+                .then(statusCommand(environment)).then(reloadCommand(environment)).then(validateCommand(environment)).then(userCommand(environment))
+                .then(groupRootCommand(environment)).then(usersCommand(environment)).then(nodesCommand(environment));
     }
 
     private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -112,6 +114,10 @@ public final class ClutchPermsCommands {
 
     private static <S> LiteralArgumentBuilder<S> reloadCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("reload").executes(context -> executeAuthorized(environment, context, source -> reloadStorage(environment, context)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> validateCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("validate").executes(context -> executeAuthorized(environment, context, source -> validateStorage(environment, context)));
     }
 
     private static <S> LiteralArgumentBuilder<S> userCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -273,6 +279,17 @@ public final class ClutchPermsCommands {
         }
 
         environment.sendMessage(context.getSource(), CommandLang.reloadSuccess());
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int validateStorage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        try {
+            environment.validateStorage();
+        } catch (RuntimeException exception) {
+            throw VALIDATE_FAILED.create(CommandLang.validateFailed(exception));
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.validateSuccess());
         return Command.SINGLE_SUCCESS;
     }
 

@@ -78,6 +78,11 @@ final class PaperClutchPermsCommand {
         }
 
         @Override
+        public void validateStorage() {
+            plugin.validateStorage();
+        }
+
+        @Override
         public void refreshRuntimePermissions() {
             plugin.refreshRuntimePermissions();
         }

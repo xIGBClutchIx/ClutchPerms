@@ -36,6 +36,8 @@ final class CommandLang {
 
     private static final String RELOAD_SUCCESS = "Reloaded permissions, subjects, groups, and known nodes from disk.";
 
+    private static final String VALIDATE_SUCCESS = "Validated permissions, subjects, groups, and known nodes from disk.";
+
     private static final String ERROR_UNKNOWN_TARGET = "Unknown online player or invalid UUID: %s";
 
     private static final String ERROR_AMBIGUOUS_KNOWN_USER = "Ambiguous known user %s: %s";
@@ -45,6 +47,8 @@ final class CommandLang {
     private static final String ERROR_INVALID_VALUE = "Invalid permission value: %s";
 
     private static final String ERROR_RELOAD_FAILED = "Failed to reload ClutchPerms storage: %s";
+
+    private static final String ERROR_VALIDATE_FAILED = "Failed to validate ClutchPerms storage: %s";
 
     private static final String ERROR_GROUP_OPERATION_FAILED = "Group operation failed: %s";
 
@@ -139,16 +143,16 @@ final class CommandLang {
     private static final String PERMISSION_EXPLAIN_NO_MATCHES = "Matches: none.";
 
     static List<String> commandList(String rootLiteral) {
-        return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "reload"), command(rootLiteral, "user <target> list"),
-                command(rootLiteral, "user <target> get <node>"), command(rootLiteral, "user <target> set <node> <true|false>"), command(rootLiteral, "user <target> clear <node>"),
-                command(rootLiteral, "user <target> groups"), command(rootLiteral, "user <target> group add <group>"), command(rootLiteral, "user <target> group remove <group>"),
-                command(rootLiteral, "user <target> check <node>"), command(rootLiteral, "user <target> explain <node>"), command(rootLiteral, "group list"),
-                command(rootLiteral, "group <group> create"), command(rootLiteral, "group <group> delete"), command(rootLiteral, "group <group> list"),
-                command(rootLiteral, "group <group> get <node>"), command(rootLiteral, "group <group> set <node> <true|false>"), command(rootLiteral, "group <group> clear <node>"),
-                command(rootLiteral, "group <group> parents"), command(rootLiteral, "group <group> parent add <parent>"),
-                command(rootLiteral, "group <group> parent remove <parent>"), command(rootLiteral, "users list"), command(rootLiteral, "users search <name>"),
-                command(rootLiteral, "nodes list"), command(rootLiteral, "nodes search <query>"), command(rootLiteral, "nodes add <node>"),
-                command(rootLiteral, "nodes add <node> <description>"), command(rootLiteral, "nodes remove <node>"));
+        return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "reload"), command(rootLiteral, "validate"),
+                command(rootLiteral, "user <target> list"), command(rootLiteral, "user <target> get <node>"), command(rootLiteral, "user <target> set <node> <true|false>"),
+                command(rootLiteral, "user <target> clear <node>"), command(rootLiteral, "user <target> groups"), command(rootLiteral, "user <target> group add <group>"),
+                command(rootLiteral, "user <target> group remove <group>"), command(rootLiteral, "user <target> check <node>"),
+                command(rootLiteral, "user <target> explain <node>"), command(rootLiteral, "group list"), command(rootLiteral, "group <group> create"),
+                command(rootLiteral, "group <group> delete"), command(rootLiteral, "group <group> list"), command(rootLiteral, "group <group> get <node>"),
+                command(rootLiteral, "group <group> set <node> <true|false>"), command(rootLiteral, "group <group> clear <node>"), command(rootLiteral, "group <group> parents"),
+                command(rootLiteral, "group <group> parent add <parent>"), command(rootLiteral, "group <group> parent remove <parent>"), command(rootLiteral, "users list"),
+                command(rootLiteral, "users search <name>"), command(rootLiteral, "nodes list"), command(rootLiteral, "nodes search <query>"),
+                command(rootLiteral, "nodes add <node>"), command(rootLiteral, "nodes add <node> <description>"), command(rootLiteral, "nodes remove <node>"));
     }
 
     static String statusPermissionsFile(String permissionsFile) {
@@ -187,6 +191,10 @@ final class CommandLang {
         return RELOAD_SUCCESS;
     }
 
+    static String validateSuccess() {
+        return VALIDATE_SUCCESS;
+    }
+
     static String unknownTarget(Object target) {
         return format(ERROR_UNKNOWN_TARGET, target);
     }
@@ -209,6 +217,14 @@ final class CommandLang {
             message = exception.getClass().getSimpleName();
         }
         return format(ERROR_RELOAD_FAILED, message);
+    }
+
+    static String validateFailed(Throwable exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = exception.getClass().getSimpleName();
+        }
+        return format(ERROR_VALIDATE_FAILED, message);
     }
 
     static String groupOperationFailed(Throwable exception) {

@@ -114,7 +114,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
                 environment) -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService,
                         ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionNodeRegistry, ClutchPermsFabricMod::getManualPermissionNodeRegistry,
                         ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics, ClutchPermsFabricMod::reloadStorage,
-                        ClutchPermsFabricMod::refreshRuntimePermissions)));
+                        ClutchPermsFabricMod::validateStorage, ClutchPermsFabricMod::refreshRuntimePermissions)));
         FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionResolver);
         runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
@@ -216,6 +216,16 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
         permissionNodeRegistry = reloadedPermissionNodeRegistry;
         permissionResolver = new PermissionResolver(permissionService, groupService);
+    }
+
+    /**
+     * Validates persisted storage from disk without replacing active services or runtime state.
+     */
+    public static void validateStorage() {
+        PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
+        SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
+        GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
+        PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized"));
     }
 
     /**

@@ -169,6 +169,52 @@ final class FabricRuntimePermissionBridgeTest {
     }
 
     @Test
+    void validateCommandChecksStorageWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
+        activePermissionService.setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.FALSE);
+        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        PermissionServices.jsonFile(permissionsFile).setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.TRUE);
+
+        assertEquals(1, dispatcher.execute("clutchperms validate", console));
+
+        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.validate"));
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of("Validated permissions, subjects, groups, and known nodes from disk."), console.messages());
+    }
+
+    @Test
+    void malformedPermissionsFileFailsValidateWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws Exception {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
+        activePermissionService.setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.FALSE);
+        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        Files.writeString(permissionsFile, """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "example.*.bad": "TRUE"
+                    }
+                  }
+                }
+                """, StandardCharsets.UTF_8);
+
+        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms validate", console));
+
+        assertTrue(exception.getMessage().contains("Failed to validate ClutchPerms storage:"));
+        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.validate"));
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of(), console.messages());
+    }
+
+    @Test
     void malformedPermissionsFileFailsReloadWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws Exception {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
         PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
@@ -368,6 +414,14 @@ final class FabricRuntimePermissionBridgeTest {
             manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
             permissionNodeRegistry = reloadedPermissionNodeRegistry;
             permissionResolver = new PermissionResolver(permissionService, groupService);
+        }
+
+        @Override
+        public void validateStorage() {
+            PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
+            SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
+            GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
+            PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json"));
         }
 
         @Override

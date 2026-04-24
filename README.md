@@ -1,6 +1,6 @@
 # ClutchPerms
 
-ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, a known permission node registry, reload support, and platform runtime bridges.
+ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, terminal wildcard permissions, subject metadata, a known permission node registry, validation/reload support, and platform runtime bridges.
 
 This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, recursive multi-parent groups, an implicit `default` group, terminal wildcards, and effective permission resolution shared across platforms.
 
@@ -14,7 +14,7 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 - Effective resolution order: direct user assignment, explicit user group hierarchy, then `default` hierarchy
 - Closer child group permissions beat parent permissions; `FALSE` wins over `TRUE` at the same inheritance depth
 - Terminal wildcard assignments: `*` and trailing `prefix.*`
-- Reload command for manual JSON edits
+- Validation and reload commands for manual JSON edits
 - Last-known player name recording and offline name targeting
 - Advisory known permission node registry for command discovery and Paper wildcard expansion
 - Paper runtime bridge using plugin-owned `PermissionAttachment`s and known-node wildcard expansion
@@ -42,6 +42,7 @@ All platforms expose the same shared command tree:
 /clutchperms
 /clutchperms status
 /clutchperms reload
+/clutchperms validate
 /clutchperms user <target> list
 /clutchperms user <target> get <node>
 /clutchperms user <target> set <node> <true|false>
@@ -74,6 +75,7 @@ Command notes:
 
 - `/clutchperms` lists available commands.
 - `/clutchperms status` shows storage paths, known subject count, group count, known node count, and runtime bridge status. On Paper, the runtime line also includes permission manager override mode.
+- `/clutchperms validate` parses `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json` without applying them or refreshing runtime permissions.
 - `/clutchperms reload` reloads `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json`. If any file is invalid, active runtime state is kept unchanged.
 - `/clutchperms nodes ...` manages manually known exact permission nodes in `nodes.json`. This is for discovery, suggestions, diagnostics, and Paper wildcard expansion; it does not grant permissions by itself.
 - `<target>` resolves exact online player name first, then exact stored last-known name, then UUID.
@@ -158,9 +160,9 @@ Known node example:
 }
 ```
 
-Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup or reload.
-Wildcard keys must be `*` or terminal `prefix.*`; invalid wildcard placement fails startup or reload.
-Known node keys must be exact permission nodes; wildcard known-node entries fail startup or reload.
+Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
+Wildcard keys must be `*` or terminal `prefix.*`; invalid wildcard placement fails startup, validate, or reload.
+Known node keys must be exact permission nodes; wildcard known-node entries fail startup, validate, or reload.
 
 ## Forge And NeoForge Activation
 
