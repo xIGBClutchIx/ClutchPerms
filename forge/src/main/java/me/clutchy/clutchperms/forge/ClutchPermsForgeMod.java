@@ -5,22 +5,19 @@ import java.util.Objects;
 
 import org.slf4j.Logger;
 
-import com.mojang.brigadier.Command;
 import com.mojang.logging.LogUtils;
 
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
 
-import net.minecraft.commands.Commands;
-import net.minecraft.network.chat.Component;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 /**
- * Forge mod entrypoint that boots the shared persisted permission service and registers a diagnostic server command.
+ * Forge mod entrypoint that boots the shared persisted permission service and registers shared Brigadier commands.
  */
 @Mod(ClutchPermsForgeMod.MOD_ID)
 public final class ClutchPermsForgeMod {
@@ -31,11 +28,6 @@ public final class ClutchPermsForgeMod {
     public static final String MOD_ID = "clutchperms";
 
     private static final Logger LOGGER = LogUtils.getLogger();
-
-    /**
-     * Diagnostic message returned by the bootstrap command while the project is still in its early scaffold phase.
-     */
-    public static final String STATUS_MESSAGE = "ClutchPerms is running with a persisted permission service.";
 
     /**
      * Active permission service instance for the current Forge server lifecycle.
@@ -59,10 +51,7 @@ public final class ClutchPermsForgeMod {
     }
 
     private void registerCommands(RegisterCommandsEvent event) {
-        event.getDispatcher().register(Commands.literal("clutchperms").executes(context -> {
-            context.getSource().sendSuccess(() -> Component.literal(STATUS_MESSAGE), false);
-            return Command.SINGLE_SUCCESS;
-        }));
+        event.getDispatcher().register(ForgeClutchPermsCommand.create(permissionService));
     }
 
     private void onServerStopped(ServerStoppedEvent event) {

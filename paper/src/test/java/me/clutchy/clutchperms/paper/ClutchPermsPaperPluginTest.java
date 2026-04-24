@@ -3,6 +3,9 @@ package me.clutchy.clutchperms.paper;
 import java.util.Map;
 import java.util.UUID;
 
+import org.bukkit.Location;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Entity;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,7 +14,13 @@ import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
+import com.mojang.brigadier.CommandDispatcher;
+
+import io.papermc.paper.command.brigadier.CommandSourceStack;
+
+import me.clutchy.clutchperms.common.PermissionNodes;
 import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.PermissionValue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -73,18 +82,56 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
-     * Confirms that the bootstrap command is registered and sends the expected diagnostic message.
+     * Confirms that the Paper adapter executes the shared Brigadier command tree.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
      */
     @Test
-    void clutchPermsCommandRespondsWithDiagnosticMessage() {
-        PlayerMock player = server.addPlayer();
-        player.setOp(true);
+    void clutchPermsCommandRespondsWithStatusMessage() throws Exception {
+        PlayerMock player = server.addPlayer("Admin");
+        plugin.getPermissionService().setPermission(player.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
 
-        assertTrue(server.dispatchCommand(player, "clutchperms"));
+        assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
         assertEquals(Component.text(ClutchPermsPaperPlugin.STATUS_MESSAGE), player.nextComponentMessage());
     }
 
     private static UUID playerId() {
         return UUID.fromString("00000000-0000-0000-0000-000000000001");
+    }
+
+    private record TestCommandSourceStack(CommandSender sender) implements CommandSourceStack {
+
+        @Override
+        public Location getLocation() {
+            if (sender instanceof Entity entity) {
+                return entity.getLocation();
+            }
+            return new Location(null, 0, 0, 0);
+        }
+
+        @Override
+        public CommandSender getSender() {
+            return sender;
+        }
+
+        @Override
+        public Entity getExecutor() {
+            if (sender instanceof Entity entity) {
+                return entity;
+            }
+            return null;
+        }
+
+        @Override
+        public CommandSourceStack withLocation(Location location) {
+            return this;
+        }
+
+        @Override
+        public CommandSourceStack withExecutor(Entity executor) {
+            return this;
+        }
     }
 }

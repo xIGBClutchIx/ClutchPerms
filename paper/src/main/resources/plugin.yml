@@ -3,12 +3,7 @@ version: ${version}
 main: me.clutchy.clutchperms.paper.ClutchPermsPaperPlugin
 description: Shared permission scaffolding for Paper.
 api-version: "26.1.2"
-commands:
-  clutchperms:
-    description: Displays the active ClutchPerms backend.
-    usage: "/clutchperms"
-    permission: clutchperms.admin
 permissions:
   clutchperms.admin:
-    description: Allows access to ClutchPerms diagnostics.
+    description: Allows access to ClutchPerms commands.
     default: op

@@ -4,28 +4,27 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.logging.Level;
 
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 
 import me.clutchy.clutchperms.common.PermissionService;
 import me.clutchy.clutchperms.common.PermissionServices;
 import me.clutchy.clutchperms.common.PermissionStorageException;
+import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 
 /**
- * Paper plugin entrypoint that exposes the shared persisted permission service and a simple diagnostic command.
+ * Paper plugin entrypoint that exposes the shared persisted permission service and Brigadier command adapter.
  */
-public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecutor {
+public class ClutchPermsPaperPlugin extends JavaPlugin {
 
     private static final String PERMISSIONS_FILE_NAME = "permissions.json";
 
     /**
-     * Diagnostic message returned by the bootstrap command while the project is still in its early scaffold phase.
+     * Status message returned by the root command while the project is still in its early scaffold phase.
      */
-    public static final String STATUS_MESSAGE = "ClutchPerms is running with a persisted permission service.";
+    public static final String STATUS_MESSAGE = ClutchPermsCommands.STATUS_MESSAGE;
 
     /**
      * Active permission service instance for the lifecycle of this plugin enable.
@@ -33,7 +32,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecuto
     private PermissionService permissionService;
 
     /**
-     * Boots the persisted permission service and registers the diagnostic command.
+     * Boots the persisted permission service and registers the shared Brigadier command tree.
      */
     @Override
     public void onEnable() {
@@ -48,9 +47,8 @@ public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecuto
         // Register the shared service so other plugins on Paper can discover it.
         getServer().getServicesManager().register(PermissionService.class, permissionService, this, ServicePriority.Normal);
 
-        // Fail fast if plugin.yml and the bootstrap code drift out of sync.
-        PluginCommand clutchPermsCommand = Objects.requireNonNull(getCommand("clutchperms"), "Missing clutchperms command definition");
-        clutchPermsCommand.setExecutor(this);
+        getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS,
+                event -> event.registrar().register(PaperClutchPermsCommand.create(this), "Manages ClutchPerms direct permissions"));
     }
 
     /**
@@ -72,18 +70,4 @@ public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecuto
         return Objects.requireNonNull(permissionService, "Permission service is not available");
     }
 
-    /**
-     * Handles the diagnostic bootstrap command.
-     *
-     * @param sender command sender receiving the response
-     * @param command command being executed
-     * @param label alias used to execute the command
-     * @param args raw command arguments
-     * @return always {@code true} because the command is fully handled here
-     */
-    @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        sender.sendMessage(STATUS_MESSAGE);
-        return true;
-    }
 }

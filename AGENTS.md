@@ -4,11 +4,11 @@
 - `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper, Fabric, NeoForge, and Forge.
 - The current state is an early persisted prototype, not a finished permission platform.
 - The repo currently provides:
-  - a shared `common` module with a minimal permission API, in-memory implementation, and JSON-backed persistence factory
-  - a `paper` plugin module with a diagnostic `/clutchperms` command and Paper service registration
-  - a `fabric` mod module with a diagnostic `/clutchperms` command and the same shared service
-  - a `neoforge` mod module with a diagnostic `/clutchperms` command and the same shared service
-  - a `forge` mod module with a diagnostic `/clutchperms` command and the same shared service
+  - a shared `common` module with a minimal permission API, in-memory implementation, JSON-backed persistence factory, and shared Brigadier command tree
+  - a `paper` plugin module with Paper service registration and a Paper lifecycle Brigadier adapter
+  - a `fabric` mod module with the same shared service and shared Brigadier command behavior
+  - a `neoforge` mod module with the same shared service and shared Brigadier command behavior
+  - a `forge` mod module with the same shared service and shared Brigadier command behavior
 
 ## Repository Layout
 - `common`
@@ -39,6 +39,11 @@
   - `PermissionService`
   - `PermissionValue`
   - `PermissionNodes`
+- Shared command API:
+  - `ClutchPermsCommands`
+  - `ClutchPermsCommandEnvironment`
+  - `CommandSourceKind`
+  - `CommandSubject`
 - Current backends:
   - `InMemoryPermissionService`
   - `PermissionServices.jsonFile(Path)` for JSON-backed persisted direct assignments
@@ -51,11 +56,14 @@
   - persists direct `UUID -> node -> TRUE/FALSE` assignments to `permissions.json`
   - treats `UNSET` as entry removal
   - fails startup on malformed persisted permission data
+  - registers shared `/clutchperms` status and direct user permission get/list/set/clear commands on every platform
+  - resolves command targets by exact online player name first, then UUID
+  - allows console and remote console bootstrap command execution
+  - requires persisted `clutchperms.admin` for player command execution
 - Not implemented yet:
   - groups
   - inheritance
   - contexts
-  - permission mutation commands
   - offline storage
   - permission attachment bridges
   - cross-platform synchronization
@@ -95,6 +103,8 @@
   - ForgeGradle `7.0.25`
 - Gson:
   - `2.13.2`
+- Brigadier:
+  - `1.3.10`
 - MockBukkit tests:
   - `org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.108.0`
   - test runtime Paper API pinned to `1.21.11-R0.1-SNAPSHOT`
@@ -144,8 +154,9 @@
   - `common`
     - unit tests for unset, true, false, and clear behavior
     - unit tests for permission enumeration and JSON persistence
+    - unit tests for shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
   - `paper`
-    - MockBukkit tests for plugin boot, service registration, and command response
+    - MockBukkit tests for plugin boot, service registration, and the Paper command adapter executing the shared Brigadier tree
   - `fabric`
     - no runtime tests yet
   - `neoforge`
@@ -188,7 +199,8 @@
 ## Packaging Rules
 - `paper`
   - must continue to ship with `common` classes inside the final plugin jar
-  - must keep `plugin.yml` accurate when commands, permissions, or main class names change
+  - must register commands through Paper lifecycle Brigadier registration, not a `plugin.yml` commands block
+  - must keep `plugin.yml` permission metadata accurate when permissions or main class names change
 - `fabric`
   - must continue to package `common` as a nested included jar
   - must keep `fabric.mod.json` version expansion wired through `processResources`
@@ -210,9 +222,7 @@
   - Forge or ForgeGradle bumps may require metadata, Java toolchain, or Gradle wrapper changes.
 - If tests fail in `paper` during MockBukkit bootstrap, check the Paper API line used in test scope before changing production code.
 - If a Paper-only API is not covered by MockBukkit yet, prefer a small adapter plus shared tests over moving platform types into `common`.
-- If you add commands or permissions on Paper, update both:
-  - `plugin.yml`
-  - MockBukkit tests
+- If you add commands or permissions on Paper, update the shared command tests, the Paper adapter tests, and `plugin.yml` permission metadata where needed.
 - If you add new shared services or stateful behavior, prefer constructor-driven code in `common` and thin platform adapters in `paper`, `fabric`, `neoforge`, and `forge`.
 - If you change persisted permission behavior or file locations, update both `README.md` and this file.
 - If you change NeoForge entrypoints or dependencies, update `neoforge.mods.toml`.

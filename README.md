@@ -7,12 +7,13 @@ The current repository is intentionally small. It establishes the build, module 
 ## Current Status
 - Multi-project Gradle build using Kotlin DSL
 - Shared `common` module for platform-agnostic permission logic
-- `paper` plugin module with Paper service registration and a diagnostic command
-- `fabric` mod module with the same persisted service and a diagnostic command
-- `neoforge` mod module with the same persisted service and a diagnostic command
-- `forge` mod module with the same persisted service and a diagnostic command
+- `paper` plugin module with Paper service registration and shared Brigadier commands
+- `fabric` mod module with the same persisted service and shared Brigadier commands
+- `neoforge` mod module with the same persisted service and shared Brigadier commands
+- `forge` mod module with the same persisted service and shared Brigadier commands
 - JUnit coverage for the shared service
-- MockBukkit coverage for the Paper bootstrap path
+- JUnit coverage for the shared command tree
+- MockBukkit coverage for the Paper bootstrap and command adapter path
 
 This is not a production-ready permissions plugin yet. It is the bootstrap layer for one.
 
@@ -34,6 +35,10 @@ Current public types:
   - `void clearPermission(UUID subjectId, String node)`
 - `PermissionNodes`
   - currently exposes `clutchperms.admin`
+- `common.command`
+  - builds the shared Brigadier `/clutchperms` command tree
+  - keeps command authorization and direct user permission behavior platform-neutral
+  - uses thin platform adapters for source classification, online player lookup, and message delivery
 
 Current implementation:
 - `InMemoryPermissionService`
@@ -54,14 +59,13 @@ Current behavior:
 - may use Paper-only APIs; Spigot compatibility is not a project goal
 - creates a JSON-backed permission service on plugin enable
 - registers the shared service through Paper's Bukkit-derived `ServicesManager`
-- registers `/clutchperms`
-- replies with a simple diagnostic message
+- registers `/clutchperms` through Paper lifecycle Brigadier command registration
+- exposes status plus direct online-player-or-UUID permission get/list/set/clear commands
 - stores direct permission assignments in the plugin data folder at `permissions.json`
 
 Current metadata:
 - plugin name: `ClutchPerms`
 - permission node: `clutchperms.admin`
-- command: `/clutchperms`
 
 Packaging behavior:
 - the final Paper jar includes the compiled classes from `common`
@@ -71,7 +75,7 @@ Fabric mod module built with Fabric Loom.
 
 Current behavior:
 - creates the same JSON-backed permission service during mod initialization
-- registers `/clutchperms` with Brigadier through Fabric API
+- registers the shared `/clutchperms` command tree with Brigadier through Fabric API
 - resets the static service reference when the server stops
 - stores direct permission assignments in the Fabric config directory at `clutchperms/permissions.json`
 
@@ -83,7 +87,7 @@ NeoForge mod module built with ModDevGradle.
 
 Current behavior:
 - creates the same JSON-backed permission service during mod construction
-- registers `/clutchperms` with Brigadier through the NeoForge event bus
+- registers the shared `/clutchperms` command tree with Brigadier through the NeoForge event bus
 - resets the static service reference when the server stops
 - stores direct permission assignments in the NeoForge config directory at `clutchperms/permissions.json`
 
@@ -95,7 +99,7 @@ Forge mod module built with ForgeGradle.
 
 Current behavior:
 - creates the same JSON-backed permission service during mod construction
-- registers `/clutchperms` with Brigadier through the Forge event buses
+- registers the shared `/clutchperms` command tree with Brigadier through the Forge event buses
 - resets the static service reference when the server stops
 - stores direct permission assignments in the Forge config directory at `clutchperms/permissions.json`
 
@@ -117,6 +121,7 @@ Packaging behavior:
 - Forge: `64.0.5`
 - ForgeGradle: `7.0.25`
 - Gson: `2.13.2`
+- Brigadier: `1.3.10`
 
 ### Test-specific compatibility note
 Paper tests use MockBukkit:
@@ -200,24 +205,24 @@ The Forge jar includes the shared `common` classes directly.
 
 ## Commands And Behavior
 
-### Paper
-`/clutchperms`
-- requires `clutchperms.admin`
-- currently returns a diagnostic message indicating that the persisted permission service is active
+All platforms register the same shared Brigadier command behavior:
 
-### Fabric
-`/clutchperms`
-- currently returns the same diagnostic message
+```text
+/clutchperms
+/clutchperms user <target> list
+/clutchperms user <target> get <node>
+/clutchperms user <target> set <node> <true|false>
+/clutchperms user <target> clear <node>
+```
 
-### NeoForge
-`/clutchperms`
-- currently returns the same diagnostic message
-
-### Forge
-`/clutchperms`
-- currently returns the same diagnostic message
-
-At this stage, the platform commands are meant to prove bootstrapping and shared behavior, not to provide end-user permission management.
+Behavior:
+- `/clutchperms` returns `ClutchPerms is running with a persisted permission service.`
+- `<target>` resolves an exact online player name first, then a UUID string
+- `<node>` is a single Brigadier word and is normalized by the shared permission service
+- `set` writes explicit `TRUE` or `FALSE`; `clear` removes the explicit assignment
+- console and remote console sources may run commands for bootstrap
+- players must have the persisted `clutchperms.admin` node set to `TRUE`
+- non-player/non-console sources are denied where the platform adapter can distinguish them
 
 ## Permission Data
 
@@ -251,12 +256,13 @@ Example:
 - listing explicit normalized permission assignments
 - clearing permissions back to `UNSET`
 - JSON persistence loading, saving, invalid data handling, and deterministic output
+- shared Brigadier command status, authorization, target resolution, mutation, and failure behavior
 
 ### Paper
 `paper` has MockBukkit tests for:
 - plugin enable
 - Paper service registration through the Bukkit-derived service API
-- command registration and command response
+- the Paper command adapter executing the shared Brigadier tree
 
 ### Fabric
 There are currently no Fabric runtime tests. The module is verified through compile/build checks only.
@@ -280,15 +286,16 @@ There are currently no Forge runtime tests. The module is verified through compi
 - No groups or inheritance
 - No wildcard permissions
 - No contexts
-- No permission mutation commands yet
+- Command targets are limited to exact online player names or UUIDs
+- Command permission changes only affect direct user assignments
 - No LuckPerms bridge or migration path yet
 - No cross-platform transport or synchronization
 - No Fabric gameplay/runtime test suite yet
 
 ## Near-Term Extension Points
 Good next steps from this base:
-- add platform adapters for player lookup and permission resolution
-- expose permission inspection and mutation commands
+- add permission attachment/runtime enforcement bridges for each platform
+- add safer command ergonomics such as tab-completed permission nodes and clearer error messages
 - define a cross-platform data model for users, groups, and inheritance
 - add Fabric integration tests or a lighter server-level verification strategy
 
@@ -301,10 +308,7 @@ Good next steps from this base:
 - The Eclipse formatter profile also joins comment lines where possible, so short manually wrapped comments may be condensed on format.
 - If a Paper-related test starts failing during MockBukkit bootstrap, inspect the test Paper API version before assuming the plugin code is wrong.
 - If a Paper-only API is not covered by MockBukkit yet, keep the platform adapter small and cover shared behavior in `common`.
-- If you change commands, plugin metadata, or permission nodes, update:
-  - `paper/src/main/resources/plugin.yml`
-  - Paper tests
-  - this README if the user-facing behavior changed
+- If you change commands, plugin metadata, or permission nodes, update shared command tests, Paper adapter tests, Paper permission metadata when relevant, and this README if the user-facing behavior changed.
 - If you change Fabric entrypoints or dependency metadata, update:
   - `fabric/src/main/resources/fabric.mod.json`
 - If you change NeoForge entrypoints or dependency metadata, update:
