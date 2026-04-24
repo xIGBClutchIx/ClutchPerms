@@ -12,6 +12,8 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerQuitEvent.QuitReason;
+import org.bukkit.event.server.PluginEnableEvent;
+import org.bukkit.permissions.Permission;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,6 +88,15 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms MockBukkit uses the intentional permission manager fallback path.
+     */
+    @Test
+    void permissionManagerOverrideFallsBackWhenUnsupported() {
+        assertFalse(plugin.isPaperPermissionManagerOverrideActive());
+        assertTrue(plugin.getStatusDiagnostics().runtimeBridgeStatus().contains("permission manager override fallback"));
+    }
+
+    /**
      * Confirms that the shared permission service is exposed through Paper's Bukkit-derived service registry.
      */
     @Test
@@ -157,7 +168,7 @@ class ClutchPermsPaperPluginTest {
         assertEquals(Component.text("Groups file: " + plugin.getDataFolder().toPath().resolve("groups.json").toAbsolutePath().normalize()), player.nextComponentMessage());
         assertEquals(Component.text("Known subjects: 1"), player.nextComponentMessage());
         assertEquals(Component.text("Known groups: 0"), player.nextComponentMessage());
-        assertEquals(Component.text("Runtime bridge: Paper permission attachment bridge active with 1 attached players"), player.nextComponentMessage());
+        assertEquals(Component.text("Runtime bridge: " + plugin.getStatusDiagnostics().runtimeBridgeStatus()), player.nextComponentMessage());
     }
 
     /**
@@ -329,6 +340,83 @@ class ClutchPermsPaperPluginTest {
 
         assertTrue(target.isPermissionSet("example.wildcardauth"));
         assertTrue(target.hasPermission("example.wildcardauth"));
+    }
+
+    /**
+     * Confirms Paper expands ClutchPerms wildcards onto exact registered Paper permission nodes.
+     */
+    @Test
+    void wildcardPermissionsExpandToRegisteredPaperNodes() {
+        PlayerMock target = server.addPlayer("Target");
+        server.getPluginManager().addPermission(new Permission("example.registered"));
+
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "example.*", PermissionValue.TRUE);
+
+        assertTrue(target.isPermissionSet("example.*"));
+        assertTrue(target.isPermissionSet("example.registered"));
+        assertTrue(target.hasPermission("example.registered"));
+        assertFalse(target.isPermissionSet("example.dynamic"));
+        assertFalse(target.hasPermission("example.dynamic"));
+    }
+
+    /**
+     * Confirms fallback registry snapshots are refreshed after other plugins enable.
+     */
+    @Test
+    void pluginEnableRefreshesRegisteredPaperWildcardExpansions() {
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "late.*", PermissionValue.TRUE);
+
+        assertFalse(target.isPermissionSet("late.registered"));
+
+        server.getPluginManager().addPermission(new Permission("late.registered"));
+        server.getPluginManager().callEvent(new PluginEnableEvent(plugin));
+
+        assertTrue(target.isPermissionSet("late.registered"));
+        assertTrue(target.hasPermission("late.registered"));
+    }
+
+    /**
+     * Confirms exact assignments still beat wildcard assignments after Paper node expansion.
+     */
+    @Test
+    void exactPermissionBeatsWildcardDuringPaperNodeExpansion() {
+        PlayerMock target = server.addPlayer("Target");
+        server.getPluginManager().addPermission(new Permission("example.registered"));
+
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "example.*", PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "example.registered", PermissionValue.FALSE);
+
+        assertTrue(target.isPermissionSet("example.registered"));
+        assertFalse(target.hasPermission("example.registered"));
+    }
+
+    /**
+     * Confirms group, default, and inherited wildcard assignments expand to registered Paper nodes.
+     */
+    @Test
+    void groupWildcardPermissionsExpandToRegisteredPaperNodes() {
+        PlayerMock target = server.addPlayer("Target");
+        server.getPluginManager().addPermission(new Permission("group.wild.node"));
+        server.getPluginManager().addPermission(new Permission("default.wild.node"));
+        server.getPluginManager().addPermission(new Permission("inherited.wild.node"));
+
+        plugin.getGroupService().createGroup("staff");
+        plugin.getGroupService().setGroupPermission("staff", "group.wild.*", PermissionValue.TRUE);
+        plugin.getGroupService().addSubjectGroup(target.getUniqueId(), "staff");
+        assertTrue(target.isPermissionSet("group.wild.node"));
+        assertTrue(target.hasPermission("group.wild.node"));
+
+        plugin.getGroupService().createGroup("default");
+        plugin.getGroupService().setGroupPermission("default", "default.wild.*", PermissionValue.TRUE);
+        assertTrue(target.isPermissionSet("default.wild.node"));
+        assertTrue(target.hasPermission("default.wild.node"));
+
+        plugin.getGroupService().createGroup("base");
+        plugin.getGroupService().setGroupPermission("base", "inherited.wild.*", PermissionValue.TRUE);
+        plugin.getGroupService().addGroupParent("staff", "base");
+        assertTrue(target.isPermissionSet("inherited.wild.node"));
+        assertTrue(target.hasPermission("inherited.wild.node"));
     }
 
     /**

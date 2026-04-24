@@ -17,7 +17,7 @@ ClutchPerms is an early cross-platform Minecraft permissions prototype for Paper
 - shared permission, group, subject metadata, storage, and command code in `common`
 - JSON-backed persisted state
 - shared Brigadier `/clutchperms` commands
-- Paper runtime attachments
+- Paper runtime attachments and registered-node wildcard expansion
 - Fabric fabric-permissions-api integration
 - Forge and NeoForge native permission handlers
 
@@ -104,7 +104,9 @@ Storage expectations:
 ## Runtime Bridges
 
 - Paper applies effective permissions to online players with plugin-owned `PermissionAttachment`s.
-- Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without a deeper Paper-specific bridge.
+- Paper attempts Paper's experimental `PermissionManager` override for registry tracking. If Paper rejects it, the plugin falls back to registry snapshots and continues enabling.
+- Paper expands ClutchPerms wildcard assignments onto exact permission nodes registered with Paper's permission registry.
+- Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary unregistered wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without `Permissible` injection or another deeper Paper-specific bridge.
 - Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
 - Fabric exposes effective permissions through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
 - Forge and NeoForge expose effective permissions through native Boolean permission handlers registered as `clutchperms:direct`.

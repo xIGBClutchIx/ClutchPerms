@@ -2,6 +2,7 @@ package me.clutchy.clutchperms.paper;
 
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.Set;
 import java.util.logging.Level;
 
 import org.bukkit.plugin.ServicePriority;
@@ -78,6 +79,11 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private PaperRuntimePermissionBridge runtimePermissionBridge;
 
     /**
+     * Owns Paper's experimental permission manager override when Paper accepts it.
+     */
+    private PaperPermissionManagerBridge permissionManagerBridge;
+
+    /**
      * Boots the persisted permission service and registers the shared Brigadier command tree.
      */
     @Override
@@ -89,7 +95,10 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
             PermissionService storagePermissionService = loadPermissionService();
             GroupService storageGroupService = loadGroupService();
             subjectMetadataService = loadSubjectMetadataService();
-            runtimePermissionBridge = new PaperRuntimePermissionBridge(this, this::getPermissionResolver);
+            permissionManagerBridge = PaperPermissionManagerBridge.install(this);
+            runtimePermissionBridge = new PaperRuntimePermissionBridge(this, this::getPermissionResolver, this::getKnownPaperPermissionNodes,
+                    this::getPaperPermissionManagerStatus);
+            permissionManagerBridge.setRegistryChangeListener(runtimePermissionBridge::refreshOnlinePlayers);
             permissionService = observablePermissionService(storagePermissionService);
             groupService = observableGroupService(storageGroupService);
             permissionResolver = new PermissionResolver(permissionService, groupService);
@@ -120,6 +129,10 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         if (runtimePermissionBridge != null) {
             runtimePermissionBridge.close();
             runtimePermissionBridge = null;
+        }
+        if (permissionManagerBridge != null) {
+            permissionManagerBridge.close();
+            permissionManagerBridge = null;
         }
         permissionService = null;
         subjectMetadataService = null;
@@ -214,6 +227,15 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         Objects.requireNonNull(runtimePermissionBridge, "Runtime permission bridge is not available").refreshOnlinePlayers();
     }
 
+    /**
+     * Returns whether Paper accepted the experimental permission manager override.
+     *
+     * @return {@code true} when the override is active
+     */
+    boolean isPaperPermissionManagerOverrideActive() {
+        return Objects.requireNonNull(permissionManagerBridge, "Permission manager bridge is not available").isOverrideActive();
+    }
+
     private PermissionService loadPermissionService() {
         return PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file is not available"));
     }
@@ -224,6 +246,14 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
 
     private GroupService loadGroupService() {
         return GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file is not available"));
+    }
+
+    private Set<String> getKnownPaperPermissionNodes() {
+        return Objects.requireNonNull(permissionManagerBridge, "Permission manager bridge is not available").knownPermissionNodes();
+    }
+
+    private String getPaperPermissionManagerStatus() {
+        return Objects.requireNonNull(permissionManagerBridge, "Permission manager bridge is not available").status();
     }
 
     private PermissionService observablePermissionService(PermissionService storagePermissionService) {

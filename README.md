@@ -16,7 +16,7 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 - Terminal wildcard assignments: `*` and trailing `prefix.*`
 - Reload command for manual JSON edits
 - Last-known player name recording and offline name targeting
-- Paper runtime bridge using plugin-owned `PermissionAttachment`s
+- Paper runtime bridge using plugin-owned `PermissionAttachment`s and registered-node wildcard expansion
 - Fabric runtime bridge through fabric-permissions-api
 - Forge and NeoForge runtime handlers through their native permission APIs
 
@@ -24,14 +24,14 @@ This is a usable prototype, not a mature permissions suite. The project intentio
 
 | Platform | Runtime integration | Storage location |
 | --- | --- | --- |
-| Paper | Applies effective permissions to online players through Bukkit `PermissionAttachment`s | plugin data folder |
+| Paper | Applies effective permissions to online players through Bukkit `PermissionAttachment`s; attempts Paper's experimental permission manager override for registry tracking | plugin data folder |
 | Fabric | Serves effective permissions through fabric-permissions-api | Fabric config dir, `clutchperms/` |
 | NeoForge | Registers native handler `clutchperms:direct` | NeoForge config dir, `clutchperms/` |
 | Forge | Registers native handler `clutchperms:direct` | Forge config dir, `clutchperms/` |
 
 Paper is a Paper target. Spigot compatibility is not maintained.
 
-Paper note: ClutchPerms attaches stored wildcard nodes such as `example.*`, but Bukkit permission attachments do not expand arbitrary wildcard checks by themselves. Paper command authorization still uses ClutchPerms wildcard resolution, and concrete stored permissions still attach normally.
+Paper note: ClutchPerms attaches stored wildcard nodes such as `example.*` and expands wildcard results onto exact permission nodes registered with Paper's permission registry. Bukkit permission attachments still do not expand arbitrary unregistered wildcard checks by themselves. Paper command authorization uses ClutchPerms wildcard resolution directly.
 
 ## Commands
 
@@ -66,7 +66,7 @@ All platforms expose the same shared command tree:
 Command notes:
 
 - `/clutchperms` lists available commands.
-- `/clutchperms status` shows storage paths, known subject count, group count, and runtime bridge status.
+- `/clutchperms status` shows storage paths, known subject count, group count, and runtime bridge status. On Paper, the runtime line also includes permission manager override mode and known permission node count.
 - `/clutchperms reload` reloads `permissions.json`, `subjects.json`, and `groups.json`. If any file is invalid, active runtime state is kept unchanged.
 - `<target>` resolves exact online player name first, then exact stored last-known name, then UUID.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
