@@ -1,6 +1,8 @@
 package me.clutchy.clutchperms.paper;
 
+import java.nio.file.Path;
 import java.util.Objects;
+import java.util.logging.Level;
 
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -9,18 +11,21 @@ import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import me.clutchy.clutchperms.common.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.PermissionService;
+import me.clutchy.clutchperms.common.PermissionServices;
+import me.clutchy.clutchperms.common.PermissionStorageException;
 
 /**
- * Bukkit-safe Paper plugin entrypoint that exposes the shared permission service and a simple diagnostic command.
+ * Bukkit-safe Paper plugin entrypoint that exposes the shared persisted permission service and a simple diagnostic command.
  */
 public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecutor {
+
+    private static final String PERMISSIONS_FILE_NAME = "permissions.json";
 
     /**
      * Diagnostic message returned by the bootstrap command while the project is still in its early scaffold phase.
      */
-    public static final String STATUS_MESSAGE = "ClutchPerms is running with an in-memory permission service.";
+    public static final String STATUS_MESSAGE = "ClutchPerms is running with a persisted permission service.";
 
     /**
      * Active permission service instance for the lifecycle of this plugin enable.
@@ -28,11 +33,17 @@ public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecuto
     private PermissionService permissionService;
 
     /**
-     * Boots the in-memory permission service and registers the diagnostic command.
+     * Boots the persisted permission service and registers the diagnostic command.
      */
     @Override
     public void onEnable() {
-        permissionService = new InMemoryPermissionService();
+        Path permissionsFile = getDataFolder().toPath().resolve(PERMISSIONS_FILE_NAME);
+        try {
+            permissionService = PermissionServices.jsonFile(permissionsFile);
+        } catch (PermissionStorageException exception) {
+            getLogger().log(Level.SEVERE, "Failed to load ClutchPerms permissions from " + permissionsFile, exception);
+            throw new IllegalStateException("Failed to load ClutchPerms permissions", exception);
+        }
 
         // Register the shared service so other Bukkit/Paper plugins can discover it.
         getServer().getServicesManager().register(PermissionService.class, permissionService, this, ServicePriority.Normal);
@@ -48,6 +59,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin implements CommandExecuto
     @Override
     public void onDisable() {
         getServer().getServicesManager().unregisterAll(this);
+        permissionService = null;
     }
 
     /**

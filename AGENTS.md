@@ -2,9 +2,9 @@
 
 ## Purpose
 - `ClutchPerms` is a multi-framework Java project intended to grow into a shared permission system that works across Paper/Spigot, Fabric, NeoForge, and Forge.
-- The current state is a scaffold, not a finished permission platform.
+- The current state is an early persisted prototype, not a finished permission platform.
 - The repo currently provides:
-  - a shared `common` module with a minimal permission API and in-memory implementation
+  - a shared `common` module with a minimal permission API, in-memory implementation, and JSON-backed persistence factory
   - a `paper` plugin module with a diagnostic `/clutchperms` command and Bukkit service registration
   - a `fabric` mod module with a diagnostic `/clutchperms` command and the same shared service
   - a `neoforge` mod module with a diagnostic `/clutchperms` command and the same shared service
@@ -38,18 +38,23 @@
   - `PermissionService`
   - `PermissionValue`
   - `PermissionNodes`
-- Current backend:
+- Current backends:
   - `InMemoryPermissionService`
+  - `PermissionServices.jsonFile(Path)` for JSON-backed persisted direct assignments
 - Current behavior:
   - stores permissions by `UUID` and normalized permission node
   - normalizes nodes with `trim().toLowerCase(Locale.ROOT)`
   - treats missing permissions as `UNSET`
   - `hasPermission(...)` returns `true` only for `PermissionValue.TRUE`
+  - `getPermissions(...)` returns an immutable snapshot of explicit assignments for a subject
+  - persists direct `UUID -> node -> TRUE/FALSE` assignments to `permissions.json`
+  - treats `UNSET` as entry removal
+  - fails startup on malformed persisted permission data
 - Not implemented yet:
-  - persistence
   - groups
   - inheritance
   - contexts
+  - permission mutation commands
   - offline storage
   - permission attachment bridges
   - cross-platform synchronization
@@ -87,6 +92,8 @@
   - Minecraft `26.1.2`
   - Forge `64.0.5`
   - ForgeGradle `7.0.25`
+- Gson:
+  - `2.13.2`
 - MockBukkit tests:
   - `org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.108.0`
   - test runtime Paper API pinned to `1.21.11-R0.1-SNAPSHOT`
@@ -135,6 +142,7 @@
 - Current test coverage:
   - `common`
     - unit tests for unset, true, false, and clear behavior
+    - unit tests for permission enumeration and JSON persistence
   - `paper`
     - MockBukkit tests for plugin boot, service registration, and command response
   - `fabric`
@@ -204,6 +212,7 @@
   - `plugin.yml`
   - MockBukkit tests
 - If you add new shared services or stateful behavior, prefer constructor-driven code in `common` and thin platform adapters in `paper`, `fabric`, `neoforge`, and `forge`.
+- If you change persisted permission behavior or file locations, update both `README.md` and this file.
 - If you change NeoForge entrypoints or dependencies, update `neoforge.mods.toml`.
 - If you change Forge entrypoints or dependencies, update `mods.toml`.
 

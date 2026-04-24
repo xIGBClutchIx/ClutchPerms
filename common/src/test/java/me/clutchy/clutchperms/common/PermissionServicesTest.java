@@ -1,0 +1,165 @@
+package me.clutchy.clutchperms.common;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.UUID;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+/**
+ * Verifies JSON-backed permission service loading and persistence.
+ */
+class PermissionServicesTest {
+
+    private static final UUID FIRST_SUBJECT = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    private static final UUID SECOND_SUBJECT = UUID.fromString("00000000-0000-0000-0000-000000000002");
+
+    /**
+     * Temporary directory used for JSON persistence test files.
+     */
+    @TempDir
+    private Path temporaryDirectory;
+
+    /**
+     * Confirms a missing JSON file starts with empty state.
+     */
+    @Test
+    void missingFileLoadsEmptyPermissions() {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+
+        PermissionService permissionService = PermissionServices.jsonFile(permissionsFile);
+
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(FIRST_SUBJECT, PermissionNodes.ADMIN));
+        assertEquals(Map.of(), permissionService.getPermissions(FIRST_SUBJECT));
+        assertFalse(Files.exists(permissionsFile));
+    }
+
+    /**
+     * Confirms explicit grant and denial values survive a reload.
+     */
+    @Test
+    void trueAndFalseValuesRoundTripThroughJson() {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        PermissionService permissionService = PermissionServices.jsonFile(permissionsFile);
+
+        permissionService.setPermission(FIRST_SUBJECT, " Example.Node ", PermissionValue.TRUE);
+        permissionService.setPermission(FIRST_SUBJECT, "Example.Denied", PermissionValue.FALSE);
+
+        PermissionService reloadedPermissionService = PermissionServices.jsonFile(permissionsFile);
+
+        assertEquals(PermissionValue.TRUE, reloadedPermissionService.getPermission(FIRST_SUBJECT, "example.node"));
+        assertEquals(PermissionValue.FALSE, reloadedPermissionService.getPermission(FIRST_SUBJECT, "example.denied"));
+        assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE), reloadedPermissionService.getPermissions(FIRST_SUBJECT));
+    }
+
+    /**
+     * Confirms unset and clear operations remove explicit values from persisted state.
+     */
+    @Test
+    void unsetAndClearRemovePersistedEntries() {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        PermissionService permissionService = PermissionServices.jsonFile(permissionsFile);
+
+        permissionService.setPermission(FIRST_SUBJECT, "first.node", PermissionValue.TRUE);
+        permissionService.setPermission(FIRST_SUBJECT, "first.node", PermissionValue.UNSET);
+        permissionService.setPermission(FIRST_SUBJECT, "second.node", PermissionValue.FALSE);
+        permissionService.clearPermission(FIRST_SUBJECT, "second.node");
+
+        PermissionService reloadedPermissionService = PermissionServices.jsonFile(permissionsFile);
+
+        assertEquals(PermissionValue.UNSET, reloadedPermissionService.getPermission(FIRST_SUBJECT, "first.node"));
+        assertEquals(PermissionValue.UNSET, reloadedPermissionService.getPermission(FIRST_SUBJECT, "second.node"));
+        assertEquals(Map.of(), reloadedPermissionService.getPermissions(FIRST_SUBJECT));
+    }
+
+    /**
+     * Confirms malformed or invalid permission files fail during construction.
+     *
+     * @throws IOException if the test file cannot be written
+     */
+    @Test
+    void invalidJsonFilesFailLoad() throws IOException {
+        assertFailsToLoad("{not-json");
+        assertFailsToLoad("""
+                {
+                  "version": 2,
+                  "subjects": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "subjects": {
+                    "not-a-uuid": {}
+                  }
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "   ": "TRUE"
+                    }
+                  }
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "example.node": "UNSET"
+                    }
+                  }
+                }
+                """);
+    }
+
+    /**
+     * Confirms saves create parent directories and use deterministic subject and node ordering.
+     *
+     * @throws IOException if the persisted file cannot be read
+     */
+    @Test
+    void saveCreatesParentDirectoriesAndWritesDeterministicJson() throws IOException {
+        Path permissionsFile = temporaryDirectory.resolve("nested").resolve("data").resolve("permissions.json");
+        PermissionService permissionService = PermissionServices.jsonFile(permissionsFile);
+
+        permissionService.setPermission(SECOND_SUBJECT, "z.node", PermissionValue.FALSE);
+        permissionService.setPermission(FIRST_SUBJECT, "B.Node", PermissionValue.TRUE);
+        permissionService.setPermission(FIRST_SUBJECT, "a.node", PermissionValue.FALSE);
+
+        String persistedJson = Files.readString(permissionsFile).replace("\r\n", "\n");
+
+        assertEquals("""
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "a.node": "FALSE",
+                      "b.node": "TRUE"
+                    },
+                    "00000000-0000-0000-0000-000000000002": {
+                      "z.node": "FALSE"
+                    }
+                  }
+                }
+                """, persistedJson);
+    }
+
+    private void assertFailsToLoad(String json) throws IOException {
+        Path permissionsFile = temporaryDirectory.resolve("invalid-permissions.json");
+        Files.writeString(permissionsFile, json);
+
+        assertThrows(PermissionStorageException.class, () -> PermissionServices.jsonFile(permissionsFile));
+    }
+}

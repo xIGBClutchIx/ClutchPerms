@@ -1,8 +1,11 @@
 package me.clutchy.clutchperms.common;
 
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -22,6 +25,21 @@ public final class InMemoryPermissionService implements PermissionService {
     private final ConcurrentMap<UUID, ConcurrentMap<String, PermissionValue>> permissions = new ConcurrentHashMap<>();
 
     /**
+     * Creates an empty in-memory permission service.
+     */
+    public InMemoryPermissionService() {
+    }
+
+    InMemoryPermissionService(Map<UUID, Map<String, PermissionValue>> initialPermissions) {
+        Objects.requireNonNull(initialPermissions, "initialPermissions");
+
+        initialPermissions.forEach((subjectId, subjectPermissions) -> {
+            Objects.requireNonNull(subjectPermissions, "subjectPermissions");
+            subjectPermissions.forEach((node, value) -> setPermission(subjectId, node, value));
+        });
+    }
+
+    /**
      * {@inheritDoc}
      */
     @Override
@@ -36,6 +54,21 @@ public final class InMemoryPermissionService implements PermissionService {
         }
 
         return subjectPermissions.getOrDefault(normalizedNode, PermissionValue.UNSET);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Map<String, PermissionValue> getPermissions(UUID subjectId) {
+        Objects.requireNonNull(subjectId, "subjectId");
+
+        Map<String, PermissionValue> subjectPermissions = permissions.get(subjectId);
+        if (subjectPermissions == null || subjectPermissions.isEmpty()) {
+            return Map.of();
+        }
+
+        return Collections.unmodifiableMap(new TreeMap<>(subjectPermissions));
     }
 
     /**
@@ -79,11 +112,23 @@ public final class InMemoryPermissionService implements PermissionService {
      * @throws NullPointerException if {@code node} is {@code null}
      * @throws IllegalArgumentException if the normalized node is blank
      */
-    private static String normalizeNode(String node) {
+    static String normalizeNode(String node) {
         String normalizedNode = Objects.requireNonNull(node, "node").trim().toLowerCase(Locale.ROOT);
         if (normalizedNode.isEmpty()) {
             throw new IllegalArgumentException("node must not be blank");
         }
         return normalizedNode;
+    }
+
+    Map<UUID, Map<String, PermissionValue>> snapshot() {
+        Map<UUID, Map<String, PermissionValue>> snapshot = new TreeMap<>(Comparator.comparing(UUID::toString));
+
+        permissions.forEach((subjectId, subjectPermissions) -> {
+            if (!subjectPermissions.isEmpty()) {
+                snapshot.put(subjectId, Collections.unmodifiableMap(new TreeMap<>(subjectPermissions)));
+            }
+        });
+
+        return Collections.unmodifiableMap(snapshot);
     }
 }

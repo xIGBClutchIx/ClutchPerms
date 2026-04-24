@@ -1,5 +1,8 @@
 package me.clutchy.clutchperms.paper;
 
+import java.util.Map;
+import java.util.UUID;
+
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,6 +69,7 @@ class ClutchPermsPaperPluginTest {
 
         assertNotNull(registration);
         assertSame(plugin.getPermissionService(), registration.getProvider());
+        assertEquals(Map.of(), registration.getProvider().getPermissions(playerId()));
     }
 
     /**
@@ -78,5 +82,9 @@ class ClutchPermsPaperPluginTest {
 
         assertTrue(server.dispatchCommand(player, "clutchperms"));
         assertEquals(Component.text(ClutchPermsPaperPlugin.STATUS_MESSAGE), player.nextComponentMessage());
+    }
+
+    private static UUID playerId() {
+        return UUID.fromString("00000000-0000-0000-0000-000000000001");
     }
 }

@@ -28,6 +28,7 @@ Current public types:
   - `UNSET`
 - `PermissionService`
   - `PermissionValue getPermission(UUID subjectId, String node)`
+  - `Map<String, PermissionValue> getPermissions(UUID subjectId)`
   - `boolean hasPermission(UUID subjectId, String node)`
   - `void setPermission(UUID subjectId, String node, PermissionValue value)`
   - `void clearPermission(UUID subjectId, String node)`
@@ -39,6 +40,11 @@ Current implementation:
   - stores permissions per `UUID`
   - normalizes nodes to lower-case
   - removes the entry when a permission is cleared or set back to `UNSET`
+- `PermissionServices.jsonFile(Path)`
+  - loads and saves direct permission assignments from JSON
+  - treats a missing file as empty state
+  - saves after every mutation
+  - fails startup on malformed or unsupported permission data
 
 ### `paper`
 Bukkit-safe plugin module.
@@ -46,10 +52,11 @@ Bukkit-safe plugin module.
 Current behavior:
 - compiles against the Paper API
 - avoids Paper-only APIs so the code stays Spigot-safe
-- creates an `InMemoryPermissionService` on plugin enable
+- creates a JSON-backed permission service on plugin enable
 - registers the shared service in Bukkit `ServicesManager`
 - registers `/clutchperms`
 - replies with a simple diagnostic message
+- stores direct permission assignments in the plugin data folder at `permissions.json`
 
 Current metadata:
 - plugin name: `ClutchPerms`
@@ -63,9 +70,10 @@ Packaging behavior:
 Fabric mod module built with Fabric Loom.
 
 Current behavior:
-- creates the same `InMemoryPermissionService` during mod initialization
+- creates the same JSON-backed permission service during mod initialization
 - registers `/clutchperms` with Brigadier through Fabric API
 - resets the static service reference when the server stops
+- stores direct permission assignments in the Fabric config directory at `clutchperms/permissions.json`
 
 Packaging behavior:
 - the final Fabric jar includes `common` as a nested included jar
@@ -74,9 +82,10 @@ Packaging behavior:
 NeoForge mod module built with ModDevGradle.
 
 Current behavior:
-- creates the same `InMemoryPermissionService` during mod construction
+- creates the same JSON-backed permission service during mod construction
 - registers `/clutchperms` with Brigadier through the NeoForge event bus
 - resets the static service reference when the server stops
+- stores direct permission assignments in the NeoForge config directory at `clutchperms/permissions.json`
 
 Packaging behavior:
 - the final NeoForge jar includes `common` as a nested jar through NeoForge jar-in-jar metadata
@@ -85,9 +94,10 @@ Packaging behavior:
 Forge mod module built with ForgeGradle.
 
 Current behavior:
-- creates the same `InMemoryPermissionService` during mod construction
+- creates the same JSON-backed permission service during mod construction
 - registers `/clutchperms` with Brigadier through the Forge event buses
 - resets the static service reference when the server stops
+- stores direct permission assignments in the Forge config directory at `clutchperms/permissions.json`
 
 Packaging behavior:
 - the final Forge jar includes the compiled classes from `common`
@@ -106,6 +116,7 @@ Packaging behavior:
 - ModDevGradle: `2.0.141`
 - Forge: `64.0.5`
 - ForgeGradle: `7.0.25`
+- Gson: `2.13.2`
 
 ### Test-specific compatibility note
 Paper tests use MockBukkit:
@@ -192,7 +203,7 @@ The Forge jar includes the shared `common` classes directly.
 ### Paper / Spigot
 `/clutchperms`
 - requires `clutchperms.admin`
-- currently returns a diagnostic message indicating that the in-memory permission service is active
+- currently returns a diagnostic message indicating that the persisted permission service is active
 
 ### Fabric
 `/clutchperms`
@@ -208,6 +219,28 @@ The Forge jar includes the shared `common` classes directly.
 
 At this stage, the platform commands are meant to prove bootstrapping and shared behavior, not to provide end-user permission management.
 
+## Permission Data
+
+The current persisted data model stores only direct permission assignments:
+- subject IDs are stored as UUID strings
+- permission nodes are normalized with `trim().toLowerCase(Locale.ROOT)`
+- only explicit `TRUE` and `FALSE` values are written
+- `UNSET` is represented by the absence of an entry
+- malformed files, invalid UUIDs, blank nodes, unknown values, or unsupported versions fail startup
+
+Example:
+```json
+{
+  "version": 1,
+  "subjects": {
+    "00000000-0000-0000-0000-000000000000": {
+      "example.node": "TRUE",
+      "example.denied": "FALSE"
+    }
+  }
+}
+```
+
 ## Testing
 
 ### Shared logic
@@ -215,7 +248,9 @@ At this stage, the platform commands are meant to prove bootstrapping and shared
 - unset permissions returning `UNSET`
 - `hasPermission(...)` behavior
 - round-tripping explicit `TRUE` and `FALSE`
+- listing explicit normalized permission assignments
 - clearing permissions back to `UNSET`
+- JSON persistence loading, saving, invalid data handling, and deterministic output
 
 ### Paper
 `paper` has MockBukkit tests for:
@@ -242,17 +277,16 @@ There are currently no Forge runtime tests. The module is verified through compi
 - Forge is server-side only for now.
 
 ## Known Limitations
-- No persistence layer
 - No groups or inheritance
 - No wildcard permissions
 - No contexts
+- No permission mutation commands yet
 - No LuckPerms bridge or migration path yet
 - No cross-platform transport or synchronization
 - No Fabric gameplay/runtime test suite yet
 
 ## Near-Term Extension Points
 Good next steps from this base:
-- add a persistence-backed permission store in `common`
 - add platform adapters for player lookup and permission resolution
 - expose permission inspection and mutation commands
 - define a cross-platform data model for users, groups, and inheritance

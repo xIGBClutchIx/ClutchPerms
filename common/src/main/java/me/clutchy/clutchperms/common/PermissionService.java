@@ -1,5 +1,6 @@
 package me.clutchy.clutchperms.common;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -15,6 +16,17 @@ public interface PermissionService {
      * @return the stored permission value, or {@link PermissionValue#UNSET} when no explicit value exists
      */
     PermissionValue getPermission(UUID subjectId, String node);
+
+    /**
+     * Lists every explicit permission assignment stored for a subject.
+     *
+     * <p>
+     * The returned map is an immutable snapshot keyed by normalized permission node. Permissions without an explicit value are omitted.
+     *
+     * @param subjectId unique identifier for the subject being inspected
+     * @return immutable snapshot of explicit permission assignments for the subject
+     */
+    Map<String, PermissionValue> getPermissions(UUID subjectId);
 
     /**
      * Resolves whether a subject should be treated as having a permission.

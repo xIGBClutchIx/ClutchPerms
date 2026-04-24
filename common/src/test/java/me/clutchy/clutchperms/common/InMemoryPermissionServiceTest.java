@@ -1,5 +1,6 @@
 package me.clutchy.clutchperms.common;
 
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -56,6 +58,21 @@ class InMemoryPermissionServiceTest {
     }
 
     /**
+     * Confirms explicit assignments can be listed as an immutable normalized snapshot.
+     */
+    @Test
+    void explicitPermissionsReturnImmutableNormalizedSnapshot() {
+        permissionService.setPermission(subjectId, " Example.Node ", PermissionValue.TRUE);
+        permissionService.setPermission(subjectId, "Example.Denied", PermissionValue.FALSE);
+
+        Map<String, PermissionValue> permissions = permissionService.getPermissions(subjectId);
+
+        assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE), permissions);
+        assertThrows(UnsupportedOperationException.class, () -> permissions.put("other.node", PermissionValue.TRUE));
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(subjectId, "other.node"));
+    }
+
+    /**
      * Confirms that clearing a node removes its explicit assignment entirely.
      */
     @Test
@@ -66,5 +83,6 @@ class InMemoryPermissionServiceTest {
 
         assertEquals(PermissionValue.UNSET, permissionService.getPermission(subjectId, PermissionNodes.ADMIN));
         assertFalse(permissionService.hasPermission(subjectId, PermissionNodes.ADMIN));
+        assertEquals(Map.of(), permissionService.getPermissions(subjectId));
     }
 }
