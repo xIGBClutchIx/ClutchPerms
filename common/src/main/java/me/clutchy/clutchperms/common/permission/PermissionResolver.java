@@ -1,5 +1,9 @@
 package me.clutchy.clutchperms.common.permission;
 
+import java.util.ArrayDeque;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -44,15 +48,15 @@ public final class PermissionResolver {
             return new PermissionResolution(directValue, PermissionResolution.Source.DIRECT, null);
         }
 
-        PermissionResolution groupResolution = resolveSubjectGroups(subjectId, node);
+        PermissionResolution groupResolution = resolveGroupHierarchy(groupService.getSubjectGroups(subjectId), node, PermissionResolution.Source.GROUP);
         if (groupResolution.value() != PermissionValue.UNSET) {
             return groupResolution;
         }
 
         if (groupService.hasGroup(GroupService.DEFAULT_GROUP)) {
-            PermissionValue defaultValue = groupService.getGroupPermission(GroupService.DEFAULT_GROUP, node);
-            if (defaultValue != PermissionValue.UNSET) {
-                return new PermissionResolution(defaultValue, PermissionResolution.Source.DEFAULT, GroupService.DEFAULT_GROUP);
+            PermissionResolution defaultResolution = resolveGroupHierarchy(Set.of(GroupService.DEFAULT_GROUP), node, PermissionResolution.Source.DEFAULT);
+            if (defaultResolution.value() != PermissionValue.UNSET) {
+                return defaultResolution;
             }
         }
 
@@ -83,12 +87,12 @@ public final class PermissionResolver {
 
         for (String groupName : groupService.getSubjectGroups(subjectId)) {
             if (groupService.hasGroup(groupName)) {
-                nodes.addAll(groupService.getGroupPermissions(groupName).keySet());
+                collectHierarchyNodes(groupName, nodes, new HashSet<>());
             }
         }
 
         if (groupService.hasGroup(GroupService.DEFAULT_GROUP)) {
-            nodes.addAll(groupService.getGroupPermissions(GroupService.DEFAULT_GROUP).keySet());
+            collectHierarchyNodes(GroupService.DEFAULT_GROUP, nodes, new HashSet<>());
         }
 
         Map<String, PermissionValue> effectivePermissions = new TreeMap<>();
@@ -101,26 +105,64 @@ public final class PermissionResolver {
         return Map.copyOf(effectivePermissions);
     }
 
-    private PermissionResolution resolveSubjectGroups(UUID subjectId, String node) {
-        String trueGroup = null;
-        for (String groupName : groupService.getSubjectGroups(subjectId)) {
-            if (!groupService.hasGroup(groupName)) {
-                continue;
+    private PermissionResolution resolveGroupHierarchy(Set<String> rootGroups, String node, PermissionResolution.Source source) {
+        Map<String, Integer> groupDepths = collectGroupDepths(rootGroups);
+        Map<Integer, Set<String>> groupsByDepth = new TreeMap<>();
+        groupDepths.forEach((groupName, depth) -> groupsByDepth.computeIfAbsent(depth, ignored -> new TreeSet<>()).add(groupName));
+
+        for (Set<String> groupNames : groupsByDepth.values()) {
+            String falseGroup = null;
+            String trueGroup = null;
+            for (String groupName : groupNames) {
+                PermissionValue groupValue = groupService.getGroupPermission(groupName, node);
+                if (groupValue == PermissionValue.FALSE && falseGroup == null) {
+                    falseGroup = groupName;
+                } else if (groupValue == PermissionValue.TRUE && trueGroup == null) {
+                    trueGroup = groupName;
+                }
             }
 
-            PermissionValue groupValue = groupService.getGroupPermission(groupName, node);
-            if (groupValue == PermissionValue.FALSE) {
-                return new PermissionResolution(PermissionValue.FALSE, PermissionResolution.Source.GROUP, groupName);
+            if (falseGroup != null) {
+                return new PermissionResolution(PermissionValue.FALSE, source, falseGroup);
             }
-            if (groupValue == PermissionValue.TRUE && trueGroup == null) {
-                trueGroup = groupName;
+            if (trueGroup != null) {
+                return new PermissionResolution(PermissionValue.TRUE, source, trueGroup);
             }
-        }
-
-        if (trueGroup != null) {
-            return new PermissionResolution(PermissionValue.TRUE, PermissionResolution.Source.GROUP, trueGroup);
         }
 
         return new PermissionResolution(PermissionValue.UNSET, PermissionResolution.Source.UNSET, null);
+    }
+
+    private Map<String, Integer> collectGroupDepths(Set<String> rootGroups) {
+        Map<String, Integer> groupDepths = new HashMap<>();
+        ArrayDeque<GroupDepth> queue = new ArrayDeque<>();
+
+        rootGroups.stream().filter(groupService::hasGroup).sorted(Comparator.naturalOrder()).forEach(groupName -> queue.add(new GroupDepth(groupName, 0)));
+
+        while (!queue.isEmpty()) {
+            GroupDepth groupDepth = queue.removeFirst();
+            Integer existingDepth = groupDepths.get(groupDepth.groupName());
+            if (existingDepth != null && existingDepth <= groupDepth.depth()) {
+                continue;
+            }
+
+            groupDepths.put(groupDepth.groupName(), groupDepth.depth());
+            groupService.getGroupParents(groupDepth.groupName()).stream().filter(groupService::hasGroup).sorted(Comparator.naturalOrder())
+                    .forEach(parentGroupName -> queue.addLast(new GroupDepth(parentGroupName, groupDepth.depth() + 1)));
+        }
+
+        return groupDepths;
+    }
+
+    private void collectHierarchyNodes(String groupName, Set<String> nodes, Set<String> visitedGroups) {
+        if (!visitedGroups.add(groupName) || !groupService.hasGroup(groupName)) {
+            return;
+        }
+
+        nodes.addAll(groupService.getGroupPermissions(groupName).keySet());
+        groupService.getGroupParents(groupName).forEach(parentGroupName -> collectHierarchyNodes(parentGroupName, nodes, visitedGroups));
+    }
+
+    private record GroupDepth(String groupName, int depth) {
     }
 }

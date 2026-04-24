@@ -57,6 +57,8 @@ public final class ClutchPermsCommands {
 
     private static final String GROUP_ARGUMENT = "group";
 
+    private static final String PARENT_ARGUMENT = "parent";
+
     private static final SimpleCommandExceptionType NO_PERMISSION = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_NO_PERMISSION));
 
     private static final SimpleCommandExceptionType OTHER_SOURCE_DENIED = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_OTHER_SOURCE_DENIED));
@@ -123,6 +125,9 @@ public final class ClutchPermsCommands {
                         .then(LiteralArgumentBuilder.<S>literal("create").executes(context -> executeAuthorized(environment, context, source -> createGroup(environment, context))))
                         .then(LiteralArgumentBuilder.<S>literal("delete").executes(context -> executeAuthorized(environment, context, source -> deleteGroup(environment, context))))
                         .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> executeAuthorized(environment, context, source -> listGroup(environment, context))))
+                        .then(LiteralArgumentBuilder.<S>literal("parents")
+                                .executes(context -> executeAuthorized(environment, context, source -> listGroupParents(environment, context))))
+                        .then(groupParentCommand(environment))
                         .then(LiteralArgumentBuilder.<S>literal("get")
                                 .then(ClutchPermsCommands.nodeArgument(environment)
                                         .executes(context -> executeAuthorized(environment, context, source -> getGroupPermission(environment, context)))))
@@ -173,6 +178,14 @@ public final class ClutchPermsCommands {
                         .then(groupArgument(environment).executes(context -> executeAuthorized(environment, context, source -> removeSubjectGroup(environment, context)))));
     }
 
+    private static <S> LiteralArgumentBuilder<S> groupParentCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("parent")
+                .then(LiteralArgumentBuilder.<S>literal("add")
+                        .then(parentGroupArgument(environment).executes(context -> executeAuthorized(environment, context, source -> addGroupParent(environment, context)))))
+                .then(LiteralArgumentBuilder.<S>literal("remove")
+                        .then(parentGroupArgument(environment).executes(context -> executeAuthorized(environment, context, source -> removeGroupParent(environment, context)))));
+    }
+
     private static <S> LiteralArgumentBuilder<S> checkCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("check")
                 .then(ClutchPermsCommands.nodeArgument(environment).executes(context -> executeAuthorized(environment, context, source -> checkPermission(environment, context))));
@@ -185,6 +198,11 @@ public final class ClutchPermsCommands {
 
     private static <S> RequiredArgumentBuilder<S, String> groupArgument(ClutchPermsCommandEnvironment<S> environment) {
         return RequiredArgumentBuilder.<S, String>argument(GROUP_ARGUMENT, StringArgumentType.word()).suggests((context, builder) -> suggestGroups(environment, builder));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> parentGroupArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(PARENT_ARGUMENT, StringArgumentType.word())
+                .suggests((context, builder) -> suggestParentGroups(environment, context, builder));
     }
 
     private static <S> int executeAuthorized(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, CommandAction<S> action) throws CommandSyntaxException {
@@ -374,9 +392,11 @@ public final class ClutchPermsCommands {
         String normalizedGroupName = normalizeGroupName(groupName);
         Map<String, PermissionValue> permissions;
         Set<UUID> members;
+        Set<String> parents;
         try {
             permissions = environment.groupService().getGroupPermissions(groupName);
             members = environment.groupService().getGroupMembers(groupName);
+            parents = environment.groupService().getGroupParents(groupName);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
@@ -389,6 +409,10 @@ public final class ClutchPermsCommands {
             environment.sendMessage(context.getSource(), CommandLang.groupPermissionsList(normalizedGroupName, assignments));
         }
 
+        if (!parents.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.groupParentsList(normalizedGroupName, String.join(", ", parents)));
+        }
+
         if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
             environment.sendMessage(context.getSource(), CommandLang.groupDefaultImplicit());
         } else if (members.isEmpty()) {
@@ -397,6 +421,50 @@ public final class ClutchPermsCommands {
             String memberList = members.stream().map(subjectId -> formatSubject(subjectId, environment)).collect(Collectors.joining(", "));
             environment.sendMessage(context.getSource(), CommandLang.groupMembersList(normalizedGroupName, memberList));
         }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int listGroupParents(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String groupName = getGroupName(context);
+        String normalizedGroupName = normalizeGroupName(groupName);
+        Set<String> parents;
+        try {
+            parents = environment.groupService().getGroupParents(groupName);
+        } catch (RuntimeException exception) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
+        }
+
+        if (parents.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.groupParentsEmpty(normalizedGroupName));
+        } else {
+            environment.sendMessage(context.getSource(), CommandLang.groupParentsList(normalizedGroupName, String.join(", ", parents)));
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int addGroupParent(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String groupName = getGroupName(context);
+        String parentGroupName = getParentGroupName(context);
+        try {
+            environment.groupService().addGroupParent(groupName, parentGroupName);
+        } catch (RuntimeException exception) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.groupParentAdded(normalizeGroupName(groupName), normalizeGroupName(parentGroupName)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int removeGroupParent(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String groupName = getGroupName(context);
+        String parentGroupName = getParentGroupName(context);
+        try {
+            environment.groupService().removeGroupParent(groupName, parentGroupName);
+        } catch (RuntimeException exception) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.groupParentRemoved(normalizeGroupName(groupName), normalizeGroupName(parentGroupName)));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -531,6 +599,14 @@ public final class ClutchPermsCommands {
         return groupName;
     }
 
+    private static <S> String getParentGroupName(CommandContext<S> context) throws CommandSyntaxException {
+        String parentGroupName = StringArgumentType.getString(context, PARENT_ARGUMENT);
+        if (parentGroupName.trim().isEmpty()) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(new IllegalArgumentException("group name must not be blank")));
+        }
+        return parentGroupName;
+    }
+
     private static <S> CompletableFuture<Suggestions> suggestOnlineSubjects(ClutchPermsCommandEnvironment<S> environment, S source, SuggestionsBuilder builder) {
         environment.onlineSubjectNames(source).stream().sorted(Comparator.naturalOrder()).forEach(builder::suggest);
         return builder.buildFuture();
@@ -540,6 +616,25 @@ public final class ClutchPermsCommands {
         String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
         environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining))
                 .forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestParentGroups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        String normalizedGroupName;
+        Set<String> existingParents;
+        try {
+            normalizedGroupName = normalizeGroupName(StringArgumentType.getString(context, GROUP_ARGUMENT));
+            existingParents = environment.groupService().getGroupParents(normalizedGroupName);
+        } catch (IllegalArgumentException exception) {
+            normalizedGroupName = "";
+            existingParents = Set.of();
+        }
+
+        String currentGroupName = normalizedGroupName;
+        Set<String> currentParents = existingParents;
+        environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> !group.equals(currentGroupName))
+                .filter(group -> !currentParents.contains(group)).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining)).forEach(builder::suggest);
         return builder.buildFuture();
     }
 
@@ -585,7 +680,7 @@ public final class ClutchPermsCommands {
         return switch (resolution.source()) {
             case DIRECT -> "direct";
             case GROUP -> "group " + resolution.groupName();
-            case DEFAULT -> "default group";
+            case DEFAULT -> GroupService.DEFAULT_GROUP.equals(resolution.groupName()) ? "default group" : "default group parent " + resolution.groupName();
             case UNSET -> "unset";
         };
     }

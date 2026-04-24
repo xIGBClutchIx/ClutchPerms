@@ -44,7 +44,7 @@ final class JsonFileGroupService implements GroupService {
     JsonFileGroupService(Path groupsFile) {
         this.groupsFile = groupsFile.toAbsolutePath().normalize();
         GroupData groupData = loadGroups();
-        this.delegate = new InMemoryGroupService(groupData.groupPermissions(), groupData.memberships());
+        this.delegate = new InMemoryGroupService(groupData.groupPermissions(), groupData.groupParents(), groupData.memberships());
     }
 
     @Override
@@ -113,16 +113,33 @@ final class JsonFileGroupService implements GroupService {
         return delegate.getGroupMembers(groupName);
     }
 
+    @Override
+    public synchronized Set<String> getGroupParents(String groupName) {
+        return delegate.getGroupParents(groupName);
+    }
+
+    @Override
+    public synchronized void addGroupParent(String groupName, String parentGroupName) {
+        delegate.addGroupParent(groupName, parentGroupName);
+        saveGroups();
+    }
+
+    @Override
+    public synchronized void removeGroupParent(String groupName, String parentGroupName) {
+        delegate.removeGroupParent(groupName, parentGroupName);
+        saveGroups();
+    }
+
     private GroupData loadGroups() {
         if (Files.notExists(groupsFile)) {
-            return new GroupData(Map.of(), Map.of());
+            return new GroupData(Map.of(), Map.of(), Map.of());
         }
 
         try (Reader reader = Files.newBufferedReader(groupsFile, StandardCharsets.UTF_8)) {
             JsonElement rootElement = JsonParser.parseReader(reader);
             return parseRoot(rootElement);
         } catch (NoSuchFileException exception) {
-            return new GroupData(Map.of(), Map.of());
+            return new GroupData(Map.of(), Map.of(), Map.of());
         } catch (IOException | JsonParseException | IllegalArgumentException exception) {
             throw new PermissionStorageException("Failed to load groups from " + groupsFile, exception);
         }
@@ -138,7 +155,7 @@ final class JsonFileGroupService implements GroupService {
             Path temporaryFile = Files.createTempFile(parentDirectory, groupsFile.getFileName().toString(), ".tmp");
             try {
                 try (Writer writer = Files.newBufferedWriter(temporaryFile, StandardCharsets.UTF_8)) {
-                    GSON.toJson(toJson(delegate.groupPermissionsSnapshot(), delegate.membershipsSnapshot()), writer);
+                    GSON.toJson(toJson(delegate.groupPermissionsSnapshot(), delegate.groupParentsSnapshot(), delegate.membershipsSnapshot()), writer);
                     writer.write(System.lineSeparator());
                 }
 
@@ -178,9 +195,12 @@ final class JsonFileGroupService implements GroupService {
             throw new IllegalArgumentException("groups must be an object");
         }
 
-        Map<String, Map<String, PermissionValue>> groupPermissions = parseGroups(groupsElement.getAsJsonObject());
+        ParsedGroups parsedGroups = parseGroups(groupsElement.getAsJsonObject());
+        Map<String, Map<String, PermissionValue>> groupPermissions = parsedGroups.groupPermissions();
+        Map<String, Set<String>> groupParents = parsedGroups.groupParents();
+        validateGroupParents(groupParents, groupPermissions.keySet());
         Map<UUID, Set<String>> memberships = parseMemberships(root, groupPermissions.keySet());
-        return new GroupData(groupPermissions, memberships);
+        return new GroupData(groupPermissions, groupParents, memberships);
     }
 
     private static int readVersion(JsonObject root) {
@@ -201,8 +221,9 @@ final class JsonFileGroupService implements GroupService {
         }
     }
 
-    private static Map<String, Map<String, PermissionValue>> parseGroups(JsonObject groupsElement) {
+    private static ParsedGroups parseGroups(JsonObject groupsElement) {
         Map<String, Map<String, PermissionValue>> groupPermissions = new LinkedHashMap<>();
+        Map<String, Set<String>> groupParents = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> groupEntry : groupsElement.entrySet()) {
             String groupName = InMemoryGroupService.normalizeGroupName(groupEntry.getKey());
             if (groupPermissions.containsKey(groupName)) {
@@ -218,8 +239,9 @@ final class JsonFileGroupService implements GroupService {
                 throw new IllegalArgumentException("permissions for group " + groupName + " must be an object");
             }
             groupPermissions.put(groupName, parseGroupPermissions(groupName, permissionsElement.getAsJsonObject()));
+            groupParents.put(groupName, parseGroupParents(groupName, groupElement.getAsJsonObject()));
         }
-        return groupPermissions;
+        return new ParsedGroups(groupPermissions, groupParents);
     }
 
     private static Map<String, PermissionValue> parseGroupPermissions(String groupName, JsonObject permissionsElement) {
@@ -229,6 +251,60 @@ final class JsonFileGroupService implements GroupService {
             permissions.put(normalizedNode, parsePermissionValue(groupName, normalizedNode, permissionEntry.getValue()));
         }
         return permissions;
+    }
+
+    private static Set<String> parseGroupParents(String groupName, JsonObject groupElement) {
+        JsonElement parentsElement = groupElement.get("parents");
+        if (parentsElement == null) {
+            return Set.of();
+        }
+        if (!parentsElement.isJsonArray()) {
+            throw new IllegalArgumentException("parents for group " + groupName + " must be an array");
+        }
+
+        Set<String> parents = new LinkedHashSet<>();
+        for (JsonElement parentElement : parentsElement.getAsJsonArray()) {
+            if (parentElement == null || !parentElement.isJsonPrimitive() || !parentElement.getAsJsonPrimitive().isString()) {
+                throw new IllegalArgumentException("parent for group " + groupName + " must be a string");
+            }
+
+            String parentGroupName = InMemoryGroupService.normalizeGroupName(parentElement.getAsString());
+            if (!parents.add(parentGroupName)) {
+                throw new IllegalArgumentException("duplicate parent " + parentGroupName + " for group " + groupName);
+            }
+        }
+        return parents;
+    }
+
+    private static void validateGroupParents(Map<String, Set<String>> groupParents, Set<String> knownGroups) {
+        for (Map.Entry<String, Set<String>> entry : groupParents.entrySet()) {
+            String groupName = entry.getKey();
+            for (String parentGroupName : entry.getValue()) {
+                if (groupName.equals(parentGroupName)) {
+                    throw new IllegalArgumentException("group cannot inherit itself: " + groupName);
+                }
+                if (!knownGroups.contains(parentGroupName)) {
+                    throw new IllegalArgumentException("group " + groupName + " references unknown parent " + parentGroupName);
+                }
+            }
+        }
+
+        for (String groupName : knownGroups) {
+            validateNoParentCycle(groupName, groupName, groupParents, new LinkedHashSet<>());
+        }
+    }
+
+    private static void validateNoParentCycle(String rootGroupName, String currentGroupName, Map<String, Set<String>> groupParents, Set<String> visitedGroups) {
+        if (!visitedGroups.add(currentGroupName)) {
+            return;
+        }
+
+        for (String parentGroupName : groupParents.getOrDefault(currentGroupName, Set.of())) {
+            if (rootGroupName.equals(parentGroupName)) {
+                throw new IllegalArgumentException("group inheritance cycle detected for " + rootGroupName);
+            }
+            validateNoParentCycle(rootGroupName, parentGroupName, groupParents, visitedGroups);
+        }
     }
 
     private static PermissionValue parsePermissionValue(String groupName, String node, JsonElement valueElement) {
@@ -300,7 +376,8 @@ final class JsonFileGroupService implements GroupService {
         return subjectGroups;
     }
 
-    private static JsonObject toJson(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<UUID, Set<String>> membershipsSnapshot) {
+    private static JsonObject toJson(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<String, Set<String>> groupParentsSnapshot,
+            Map<UUID, Set<String>> membershipsSnapshot) {
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
 
@@ -314,6 +391,12 @@ final class JsonFileGroupService implements GroupService {
                 }
             });
             group.add("permissions", permissions);
+            Set<String> parentsSnapshot = groupParentsSnapshot.getOrDefault(groupName, Set.of());
+            if (!parentsSnapshot.isEmpty()) {
+                JsonArray parents = new JsonArray();
+                parentsSnapshot.forEach(parents::add);
+                group.add("parents", parents);
+            }
             groups.add(groupName, group);
         });
         root.add("groups", groups);
@@ -328,6 +411,9 @@ final class JsonFileGroupService implements GroupService {
         return root;
     }
 
-    private record GroupData(Map<String, Map<String, PermissionValue>> groupPermissions, Map<UUID, Set<String>> memberships) {
+    private record ParsedGroups(Map<String, Map<String, PermissionValue>> groupPermissions, Map<String, Set<String>> groupParents) {
+    }
+
+    private record GroupData(Map<String, Map<String, PermissionValue>> groupPermissions, Map<String, Set<String>> groupParents, Map<UUID, Set<String>> memberships) {
     }
 }

@@ -22,6 +22,8 @@ public final class InMemoryGroupService implements GroupService {
 
     private final ConcurrentMap<String, ConcurrentMap<String, PermissionValue>> groupPermissions = new ConcurrentHashMap<>();
 
+    private final ConcurrentMap<String, Set<String>> groupParents = new ConcurrentHashMap<>();
+
     private final ConcurrentMap<UUID, Set<String>> memberships = new ConcurrentHashMap<>();
 
     /**
@@ -30,14 +32,17 @@ public final class InMemoryGroupService implements GroupService {
     public InMemoryGroupService() {
     }
 
-    InMemoryGroupService(Map<String, Map<String, PermissionValue>> initialGroupPermissions, Map<UUID, Set<String>> initialMemberships) {
+    InMemoryGroupService(Map<String, Map<String, PermissionValue>> initialGroupPermissions, Map<String, Set<String>> initialGroupParents,
+            Map<UUID, Set<String>> initialMemberships) {
         Objects.requireNonNull(initialGroupPermissions, "initialGroupPermissions");
+        Objects.requireNonNull(initialGroupParents, "initialGroupParents");
         Objects.requireNonNull(initialMemberships, "initialMemberships");
 
         initialGroupPermissions.forEach((groupName, permissions) -> {
             createGroup(groupName);
             permissions.forEach((node, value) -> setGroupPermission(groupName, node, value));
         });
+        initialGroupParents.forEach((groupName, parents) -> parents.forEach(parentGroupName -> addGroupParent(groupName, parentGroupName)));
         initialMemberships.forEach((subjectId, groups) -> groups.forEach(groupName -> addSubjectGroup(subjectId, groupName)));
     }
 
@@ -66,6 +71,7 @@ public final class InMemoryGroupService implements GroupService {
         if (groupPermissions.putIfAbsent(normalizedGroupName, new ConcurrentHashMap<>()) != null) {
             throw new IllegalArgumentException("group already exists: " + normalizedGroupName);
         }
+        groupParents.putIfAbsent(normalizedGroupName, ConcurrentHashMap.newKeySet());
     }
 
     /**
@@ -75,6 +81,8 @@ public final class InMemoryGroupService implements GroupService {
     public void deleteGroup(String groupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         groupPermissions.remove(normalizedGroupName);
+        groupParents.remove(normalizedGroupName);
+        groupParents.forEach((ignored, parents) -> parents.remove(normalizedGroupName));
         memberships.forEach((subjectId, groups) -> groups.remove(normalizedGroupName));
         memberships.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
@@ -180,6 +188,48 @@ public final class InMemoryGroupService implements GroupService {
         return Collections.unmodifiableSet(members);
     }
 
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Set<String> getGroupParents(String groupName) {
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        Set<String> parents = groupParents.get(normalizedGroupName);
+        if (parents == null || parents.isEmpty()) {
+            return Set.of();
+        }
+        return Collections.unmodifiableSet(new TreeSet<>(parents));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void addGroupParent(String groupName, String parentGroupName) {
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        String normalizedParentGroupName = normalizeExistingGroupName(parentGroupName);
+        if (normalizedGroupName.equals(normalizedParentGroupName)) {
+            throw new IllegalArgumentException("group cannot inherit itself: " + normalizedGroupName);
+        }
+        if (createsCycle(normalizedGroupName, normalizedParentGroupName)) {
+            throw new IllegalArgumentException("group inheritance cycle detected between " + normalizedGroupName + " and " + normalizedParentGroupName);
+        }
+        groupParents.computeIfAbsent(normalizedGroupName, ignored -> ConcurrentHashMap.newKeySet()).add(normalizedParentGroupName);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void removeGroupParent(String groupName, String parentGroupName) {
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        String normalizedParentGroupName = normalizeExistingGroupName(parentGroupName);
+        groupParents.computeIfPresent(normalizedGroupName, (ignored, parents) -> {
+            parents.remove(normalizedParentGroupName);
+            return parents;
+        });
+    }
+
     static String normalizeGroupName(String groupName) {
         String normalizedGroupName = Objects.requireNonNull(groupName, "groupName").trim().toLowerCase(Locale.ROOT);
         if (normalizedGroupName.isEmpty()) {
@@ -204,6 +254,16 @@ public final class InMemoryGroupService implements GroupService {
         return Collections.unmodifiableMap(snapshot);
     }
 
+    Map<String, Set<String>> groupParentsSnapshot() {
+        Map<String, Set<String>> snapshot = new TreeMap<>();
+        groupParents.forEach((groupName, parents) -> {
+            if (!parents.isEmpty()) {
+                snapshot.put(groupName, Collections.unmodifiableSet(new TreeSet<>(parents)));
+            }
+        });
+        return Collections.unmodifiableMap(snapshot);
+    }
+
     private String normalizeExistingGroupName(String groupName) {
         String normalizedGroupName = normalizeGroupName(groupName);
         if (!groupPermissions.containsKey(normalizedGroupName)) {
@@ -216,5 +276,29 @@ public final class InMemoryGroupService implements GroupService {
         if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
             throw new IllegalArgumentException("default group membership is implicit");
         }
+    }
+
+    private boolean createsCycle(String childGroupName, String parentGroupName) {
+        Set<String> visited = new TreeSet<>();
+        return reachesGroup(parentGroupName, childGroupName, visited);
+    }
+
+    private boolean reachesGroup(String currentGroupName, String targetGroupName, Set<String> visited) {
+        if (!visited.add(currentGroupName)) {
+            return false;
+        }
+        if (currentGroupName.equals(targetGroupName)) {
+            return true;
+        }
+        Set<String> parents = groupParents.get(currentGroupName);
+        if (parents == null || parents.isEmpty()) {
+            return false;
+        }
+        for (String parentGroupName : parents) {
+            if (reachesGroup(parentGroupName, targetGroupName, visited)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

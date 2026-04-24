@@ -58,23 +58,25 @@ Shared package ownership:
 - Stored values are `TRUE`, `FALSE`, or absent. Absence is `UNSET`.
 - `PermissionService#hasPermission(...)` is true only for `TRUE`.
 - Groups are named, normalized, and store explicit permission assignments.
+- Groups can inherit multiple parent groups recursively.
 - User group membership is direct only.
 - A group named `default` applies implicitly to every subject when it exists.
 - Users cannot be explicitly added to or removed from `default`.
-- Effective resolution order is direct user assignment, explicit user groups, then implicit `default`.
-- Within the same explicit group tier, `FALSE` wins over `TRUE`.
+- Effective resolution order is direct user assignment, explicit user group hierarchy, then implicit `default` hierarchy.
+- Closer child group permissions beat parent permissions.
+- Within the same inheritance depth, `FALSE` wins over `TRUE`.
 - Subject metadata stores UUID, last-known name, and last-seen timestamp.
 - Command targets resolve exact online name first, exact stored last-known name second, and UUID third.
 - Ambiguous stored last-known names must fail clearly instead of mutating an arbitrary UUID.
 
-Do not add inheritance, wildcards, contexts, priorities, imports, migrations, or LuckPerms bridges unless the user asks for that slice.
+Do not add wildcards, contexts, priorities, imports, migrations, or LuckPerms bridges unless the user asks for that slice.
 
 ## Storage And Reload
 
 Current persisted files:
 
 - `permissions.json` for direct user permission assignments
-- `groups.json` for group definitions, group permissions, and memberships
+- `groups.json` for group definitions, group permissions, parent links, and memberships
 - `subjects.json` for subject metadata
 
 Locations:
@@ -91,7 +93,7 @@ Storage expectations:
 - Create parent directories as needed.
 - Use deterministic output.
 - Write through temporary files and replace the target file.
-- Fail startup or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, and explicit `default` memberships.
+- Fail startup or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
 
 ## Runtime Bridges
@@ -117,6 +119,8 @@ Current command surface:
 - `/clutchperms user <target> group add|remove <group>`
 - `/clutchperms group list`
 - `/clutchperms group <group> create|delete|list|get|set|clear`
+- `/clutchperms group <group> parents`
+- `/clutchperms group <group> parent add|remove <parent>`
 - `/clutchperms users list`
 - `/clutchperms users search <name>`
 

@@ -76,6 +76,14 @@ final class CommandLang {
 
     private static final String GROUP_MEMBERS_LIST = "Members of group %s: %s";
 
+    private static final String GROUP_PARENTS_EMPTY = "Group %s has no parent groups.";
+
+    private static final String GROUP_PARENTS_LIST = "Parents of group %s: %s";
+
+    private static final String GROUP_PARENT_ADDED = "Added parent group %s to group %s.";
+
+    private static final String GROUP_PARENT_REMOVED = "Removed parent group %s from group %s.";
+
     private static final String GROUP_DEFAULT_IMPLICIT = "Group default applies to every subject implicitly.";
 
     private static final String GROUP_PERMISSION_GET = "Group %s has %s = %s.";
@@ -100,7 +108,8 @@ final class CommandLang {
                 command(rootLiteral, "user <target> groups"), command(rootLiteral, "user <target> group add <group>"), command(rootLiteral, "user <target> group remove <group>"),
                 command(rootLiteral, "user <target> check <node>"), command(rootLiteral, "group list"), command(rootLiteral, "group <group> create"),
                 command(rootLiteral, "group <group> delete"), command(rootLiteral, "group <group> list"), command(rootLiteral, "group <group> get <node>"),
-                command(rootLiteral, "group <group> set <node> <true|false>"), command(rootLiteral, "group <group> clear <node>"), command(rootLiteral, "users list"),
+                command(rootLiteral, "group <group> set <node> <true|false>"), command(rootLiteral, "group <group> clear <node>"), command(rootLiteral, "group <group> parents"),
+                command(rootLiteral, "group <group> parent add <parent>"), command(rootLiteral, "group <group> parent remove <parent>"), command(rootLiteral, "users list"),
                 command(rootLiteral, "users search <name>"));
     }
 
@@ -226,6 +235,22 @@ final class CommandLang {
 
     static String groupMembersList(String group, String members) {
         return format(GROUP_MEMBERS_LIST, group, members);
+    }
+
+    static String groupParentsEmpty(String group) {
+        return format(GROUP_PARENTS_EMPTY, group);
+    }
+
+    static String groupParentsList(String group, String parents) {
+        return format(GROUP_PARENTS_LIST, group, parents);
+    }
+
+    static String groupParentAdded(String group, String parent) {
+        return format(GROUP_PARENT_ADDED, parent, group);
+    }
+
+    static String groupParentRemoved(String group, String parent) {
+        return format(GROUP_PARENT_REMOVED, parent, group);
     }
 
     static String groupDefaultImplicit() {

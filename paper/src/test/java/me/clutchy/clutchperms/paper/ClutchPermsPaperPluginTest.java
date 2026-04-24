@@ -193,6 +193,25 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms inherited group permissions are applied when a matching player joins.
+     */
+    @Test
+    void storedInheritedGroupPermissionsApplyWhenMatchingPlayerJoins() {
+        UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000103");
+        plugin.getGroupService().createGroup("base");
+        plugin.getGroupService().setGroupPermission("base", "Example.InheritedJoin", PermissionValue.TRUE);
+        plugin.getGroupService().createGroup("staff");
+        plugin.getGroupService().addGroupParent("staff", "base");
+        plugin.getGroupService().addSubjectGroup(targetId, "staff");
+        PlayerMock player = new PlayerMock(server, "Target", targetId);
+
+        server.addPlayer(player);
+
+        assertTrue(player.isPermissionSet("example.inheritedjoin"));
+        assertTrue(player.hasPermission("example.inheritedjoin"));
+    }
+
+    /**
      * Confirms online players are refreshed immediately after direct service mutations.
      */
     @Test
@@ -233,6 +252,19 @@ class ClutchPermsPaperPluginTest {
 
         plugin.getGroupService().clearGroupPermission("staff", "Example.GroupRuntime");
         assertFalse(player.isPermissionSet("example.groupruntime"));
+
+        plugin.getGroupService().createGroup("base");
+        plugin.getGroupService().setGroupPermission("base", "Example.InheritedRuntime", PermissionValue.TRUE);
+        plugin.getGroupService().addGroupParent("staff", "base");
+        assertTrue(player.isPermissionSet("example.inheritedruntime"));
+        assertTrue(player.hasPermission("example.inheritedruntime"));
+
+        plugin.getGroupService().setGroupPermission("base", "Example.InheritedRuntime", PermissionValue.FALSE);
+        assertTrue(player.isPermissionSet("example.inheritedruntime"));
+        assertFalse(player.hasPermission("example.inheritedruntime"));
+
+        plugin.getGroupService().removeGroupParent("staff", "base");
+        assertFalse(player.isPermissionSet("example.inheritedruntime"));
     }
 
     /**
@@ -261,8 +293,10 @@ class ClutchPermsPaperPluginTest {
     void clutchPermsCommandAllowsGroupAdmin() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
+        plugin.getGroupService().createGroup("admin");
         plugin.getGroupService().createGroup("staff");
-        plugin.getGroupService().setGroupPermission("staff", PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getGroupService().setGroupPermission("admin", PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getGroupService().addGroupParent("staff", "admin");
         plugin.getGroupService().addSubjectGroup(admin.getUniqueId(), "staff");
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
@@ -310,6 +344,14 @@ class ClutchPermsPaperPluginTest {
         assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("admin", "example.group"));
         assertTrue(target.isPermissionSet("example.group"));
         assertTrue(target.hasPermission("example.group"));
+
+        assertEquals(1, dispatcher.execute("clutchperms group base create", adminSource));
+        assertEquals(1, dispatcher.execute("clutchperms group base set example.inherited true", adminSource));
+        assertEquals(1, dispatcher.execute("clutchperms group admin parent add base", adminSource));
+        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("base", "example.inherited"));
+        assertTrue(GroupServices.jsonFile(groupsFile).getGroupParents("admin").contains("base"));
+        assertTrue(target.isPermissionSet("example.inherited"));
+        assertTrue(target.hasPermission("example.inherited"));
     }
 
     /**
@@ -409,7 +451,18 @@ class ClutchPermsPaperPluginTest {
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
 
-        Files.writeString(groupsFile, "{ malformed groups json", StandardCharsets.UTF_8);
+        Files.writeString(groupsFile, """
+                {
+                  "version": 1,
+                  "groups": {
+                    "staff": {
+                      "permissions": {},
+                      "parents": {}
+                    }
+                  },
+                  "memberships": {}
+                }
+                """, StandardCharsets.UTF_8);
 
         assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
 

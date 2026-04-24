@@ -81,6 +81,23 @@ final class FabricRuntimePermissionBridgeTest {
     }
 
     @Test
+    void inheritedGroupAssignmentResolvesThroughBridge() {
+        groupService.createGroup("base");
+        groupService.createGroup("staff");
+        groupService.addGroupParent("staff", "base");
+        groupService.addSubjectGroup(SUBJECT_ID, "staff");
+
+        groupService.setGroupPermission("base", "example.inherited", PermissionValue.TRUE);
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.inherited"));
+
+        groupService.setGroupPermission("base", "example.inherited", PermissionValue.FALSE);
+        assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.inherited"));
+
+        groupService.clearGroupPermission("base", "example.inherited");
+        assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(permissionResolver, SUBJECT_ID, "example.inherited"));
+    }
+
+    @Test
     void commandMutationPersistsAndResolvesThroughBridge(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
         Path groupsFile = temporaryDirectory.resolve("groups.json");
@@ -107,6 +124,12 @@ final class FabricRuntimePermissionBridgeTest {
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " group add admin", console));
         assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("admin", "example.group"));
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.group"));
+
+        assertEquals(1, dispatcher.execute("clutchperms group base create", console));
+        assertEquals(1, dispatcher.execute("clutchperms group base set example.inherited true", console));
+        assertEquals(1, dispatcher.execute("clutchperms group admin parent add base", console));
+        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("base", "example.inherited"));
+        assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.inherited"));
     }
 
     @Test
@@ -159,7 +182,18 @@ final class FabricRuntimePermissionBridgeTest {
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        Files.writeString(groupsFile, "{ malformed groups json", StandardCharsets.UTF_8);
+        Files.writeString(groupsFile, """
+                {
+                  "version": 1,
+                  "groups": {
+                    "staff": {
+                      "permissions": {},
+                      "parents": {}
+                    }
+                  },
+                  "memberships": {}
+                }
+                """, StandardCharsets.UTF_8);
 
         CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
 

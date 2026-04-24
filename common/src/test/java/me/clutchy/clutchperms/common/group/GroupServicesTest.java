@@ -56,19 +56,49 @@ class GroupServicesTest {
         Path groupsFile = temporaryDirectory.resolve("groups.json");
         GroupService groupService = GroupServices.jsonFile(groupsFile);
 
+        groupService.createGroup("Staff");
         groupService.createGroup("Admin");
+        groupService.setGroupPermission("staff", "Staff.Node", PermissionValue.TRUE);
         groupService.setGroupPermission("admin", "Example.Node", PermissionValue.TRUE);
         groupService.setGroupPermission("admin", "Example.Denied", PermissionValue.FALSE);
+        groupService.addGroupParent("admin", "staff");
         groupService.addSubjectGroup(FIRST_SUBJECT, "admin");
 
         GroupService reloadedGroupService = GroupServices.jsonFile(groupsFile);
 
-        assertEquals(Set.of("admin"), reloadedGroupService.getGroups());
+        assertEquals(Set.of("admin", "staff"), reloadedGroupService.getGroups());
         assertEquals(PermissionValue.TRUE, reloadedGroupService.getGroupPermission("admin", "example.node"));
         assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("admin", "example.denied"));
         assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE), reloadedGroupService.getGroupPermissions("admin"));
+        assertEquals(Set.of("staff"), reloadedGroupService.getGroupParents("admin"));
+        assertEquals(Set.of(), reloadedGroupService.getGroupParents("staff"));
         assertEquals(Set.of("admin"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
         assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("admin"));
+    }
+
+    /**
+     * Confirms legacy group files without parent arrays load with empty parent state.
+     *
+     * @throws IOException if the test file cannot be written
+     */
+    @Test
+    void missingParentsFieldLoadsEmptyParents() throws IOException {
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
+        Files.writeString(groupsFile, """
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {}
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+
+        GroupService groupService = GroupServices.jsonFile(groupsFile);
+
+        assertEquals(Set.of(), groupService.getGroupParents("admin"));
     }
 
     /**
@@ -86,6 +116,7 @@ class GroupServicesTest {
         groupService.createGroup("alpha");
         groupService.setGroupPermission("alpha", "B.Node", PermissionValue.TRUE);
         groupService.setGroupPermission("alpha", "a.node", PermissionValue.FALSE);
+        groupService.addGroupParent("alpha", "zeta");
         groupService.addSubjectGroup(SECOND_SUBJECT, "zeta");
         groupService.addSubjectGroup(FIRST_SUBJECT, "alpha");
 
@@ -99,7 +130,10 @@ class GroupServicesTest {
                       "permissions": {
                         "a.node": "FALSE",
                         "b.node": "TRUE"
-                      }
+                      },
+                      "parents": [
+                        "zeta"
+                      ]
                     },
                     "zeta": {
                       "permissions": {
@@ -117,6 +151,21 @@ class GroupServicesTest {
                   }
                 }
                 """, persistedJson);
+    }
+
+    /**
+     * Confirms deleting a group removes parent references to it.
+     */
+    @Test
+    void deleteGroupRemovesParentReferences() {
+        GroupService groupService = new InMemoryGroupService();
+        groupService.createGroup("base");
+        groupService.createGroup("staff");
+        groupService.addGroupParent("staff", "base");
+
+        groupService.deleteGroup("base");
+
+        assertEquals(Set.of(), groupService.getGroupParents("staff"));
     }
 
     /**
@@ -188,6 +237,124 @@ class GroupServicesTest {
                   }
                 }
                 """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {},
+                      "parents": {}
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {},
+                      "parents": [
+                        "   "
+                      ]
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {},
+                      "parents": [
+                        "staff",
+                        " Staff "
+                      ]
+                    },
+                    "staff": {
+                      "permissions": {}
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {},
+                      "parents": [
+                        "missing"
+                      ]
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {},
+                      "parents": [
+                        "admin"
+                      ]
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {},
+                      "parents": [
+                        "staff"
+                      ]
+                    },
+                    "staff": {
+                      "permissions": {},
+                      "parents": [
+                        "admin"
+                      ]
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {},
+                      "parents": [
+                        "staff"
+                      ]
+                    },
+                    "staff": {
+                      "permissions": {},
+                      "parents": [
+                        "base"
+                      ]
+                    },
+                    "base": {
+                      "permissions": {},
+                      "parents": [
+                        "admin"
+                      ]
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
     }
 
     /**
@@ -199,11 +366,25 @@ class GroupServicesTest {
         GroupService groupService = new InMemoryGroupService();
         PermissionResolver resolver = new PermissionResolver(permissionService, groupService);
 
+        groupService.createGroup("base");
+        groupService.setGroupPermission("base", "parent.node", PermissionValue.TRUE);
+        groupService.setGroupPermission("base", "shared.node", PermissionValue.FALSE);
+        groupService.createGroup("trusted");
+        groupService.setGroupPermission("trusted", "same-depth.node", PermissionValue.TRUE);
+        groupService.createGroup("restricted");
+        groupService.setGroupPermission("restricted", "same-depth.node", PermissionValue.FALSE);
         groupService.createGroup("default");
         groupService.setGroupPermission("default", "example.node", PermissionValue.TRUE);
+        groupService.createGroup("default-parent");
+        groupService.setGroupPermission("default-parent", "default.parent", PermissionValue.TRUE);
+        groupService.addGroupParent("default", "default-parent");
         groupService.createGroup("staff");
         groupService.setGroupPermission("staff", "example.node", PermissionValue.FALSE);
+        groupService.setGroupPermission("staff", "shared.node", PermissionValue.TRUE);
         groupService.setGroupPermission("staff", "staff.node", PermissionValue.TRUE);
+        groupService.addGroupParent("staff", "base");
+        groupService.addGroupParent("staff", "trusted");
+        groupService.addGroupParent("staff", "restricted");
         groupService.createGroup("builder");
         groupService.setGroupPermission("builder", "staff.node", PermissionValue.FALSE);
         groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
@@ -212,13 +393,42 @@ class GroupServicesTest {
         assertEquals(PermissionValue.FALSE, resolver.resolve(FIRST_SUBJECT, "example.node").value());
         assertEquals(PermissionResolution.Source.GROUP, resolver.resolve(FIRST_SUBJECT, "example.node").source());
         assertEquals(PermissionValue.FALSE, resolver.resolve(FIRST_SUBJECT, "staff.node").value());
+        assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "parent.node").value());
+        assertEquals("base", resolver.resolve(FIRST_SUBJECT, "parent.node").groupName());
+        assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "shared.node").value());
+        assertEquals("staff", resolver.resolve(FIRST_SUBJECT, "shared.node").groupName());
+        assertEquals(PermissionValue.FALSE, resolver.resolve(FIRST_SUBJECT, "same-depth.node").value());
+        assertEquals("restricted", resolver.resolve(FIRST_SUBJECT, "same-depth.node").groupName());
         assertEquals(PermissionValue.TRUE, resolver.resolve(SECOND_SUBJECT, "example.node").value());
+        assertEquals(PermissionValue.TRUE, resolver.resolve(SECOND_SUBJECT, "default.parent").value());
+        assertEquals(PermissionResolution.Source.DEFAULT, resolver.resolve(SECOND_SUBJECT, "default.parent").source());
+        assertEquals("default-parent", resolver.resolve(SECOND_SUBJECT, "default.parent").groupName());
 
         permissionService.setPermission(FIRST_SUBJECT, "example.node", PermissionValue.TRUE);
 
         assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "example.node").value());
         assertEquals(PermissionResolution.Source.DIRECT, resolver.resolve(FIRST_SUBJECT, "example.node").source());
-        assertEquals(Map.of("example.node", PermissionValue.TRUE, "staff.node", PermissionValue.FALSE), resolver.getEffectivePermissions(FIRST_SUBJECT));
+        assertEquals(Map.of("example.node", PermissionValue.TRUE, "staff.node", PermissionValue.FALSE, "parent.node", PermissionValue.TRUE, "shared.node", PermissionValue.TRUE,
+                "same-depth.node", PermissionValue.FALSE, "default.parent", PermissionValue.TRUE), resolver.getEffectivePermissions(FIRST_SUBJECT));
+    }
+
+    /**
+     * Confirms parent mutation validation catches unknown groups, self-parenting, and cycles.
+     */
+    @Test
+    void parentMutationsRejectInvalidLinks() {
+        GroupService groupService = new InMemoryGroupService();
+        groupService.createGroup("admin");
+        groupService.createGroup("staff");
+        groupService.createGroup("base");
+
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "missing"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "admin"));
+
+        groupService.addGroupParent("admin", "staff");
+        groupService.addGroupParent("staff", "base");
+
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("base", "admin"));
     }
 
     /**
@@ -244,11 +454,15 @@ class GroupServicesTest {
 
         groupService.createGroup("admin");
         groupService.setGroupPermission("admin", "example.node", PermissionValue.TRUE);
+        groupService.createGroup("base");
+        groupService.addGroupParent("admin", "base");
+        groupService.removeGroupParent("admin", "base");
         groupService.addSubjectGroup(FIRST_SUBJECT, "admin");
         groupService.removeSubjectGroup(FIRST_SUBJECT, "admin");
         assertThrows(IllegalArgumentException.class, () -> groupService.addSubjectGroup(FIRST_SUBJECT, "missing"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "missing"));
 
-        assertEquals(List.of("all", "all"), fullRefreshes);
+        assertEquals(List.of("all", "all", "all", "all", "all"), fullRefreshes);
         assertEquals(List.of(FIRST_SUBJECT, FIRST_SUBJECT), subjectRefreshes);
     }
 

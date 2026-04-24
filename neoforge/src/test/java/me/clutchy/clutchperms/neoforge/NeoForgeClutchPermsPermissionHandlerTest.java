@@ -91,6 +91,23 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
     }
 
     @Test
+    void inheritedGroupAssignmentOverridesBooleanDefault() {
+        groupService.createGroup("base");
+        groupService.createGroup("staff");
+        groupService.addGroupParent("staff", "base");
+        groupService.addSubjectGroup(SUBJECT_ID, "staff");
+
+        groupService.setGroupPermission("base", "example.node", PermissionValue.TRUE);
+        assertEquals(Boolean.TRUE, handler.getOfflinePermission(SUBJECT_ID, booleanNode));
+
+        groupService.setGroupPermission("base", "example.node", PermissionValue.FALSE);
+        assertEquals(Boolean.FALSE, handler.getOfflinePermission(SUBJECT_ID, booleanNode));
+
+        groupService.clearGroupPermission("base", "example.node");
+        assertEquals(Boolean.TRUE, handler.getOfflinePermission(SUBJECT_ID, booleanNode));
+    }
+
+    @Test
     void nonBooleanNodeFallsBackToNodeDefault() {
         PermissionNode<String> stringNode = new PermissionNode<>("example", "label", PermissionTypes.STRING, (player, subjectId, context) -> "default");
         permissionService.setPermission(SUBJECT_ID, "example.label", PermissionValue.FALSE);
@@ -149,6 +166,11 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " group add admin", console));
         assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("admin", "example.group"));
         assertEquals(Boolean.TRUE, persistedHandler.getOfflinePermission(SUBJECT_ID, groupNode));
+
+        assertEquals(1, dispatcher.execute("clutchperms group base create", console));
+        assertEquals(1, dispatcher.execute("clutchperms group base set example.group true", console));
+        assertEquals(1, dispatcher.execute("clutchperms group admin parent add base", console));
+        assertEquals(Boolean.TRUE, persistedHandler.getOfflinePermission(SUBJECT_ID, groupNode));
     }
 
     @Test
@@ -187,7 +209,18 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        Files.writeString(groupsFile, "{ malformed groups json", StandardCharsets.UTF_8);
+        Files.writeString(groupsFile, """
+                {
+                  "version": 1,
+                  "groups": {
+                    "staff": {
+                      "permissions": {},
+                      "parents": {}
+                    }
+                  },
+                  "memberships": {}
+                }
+                """, StandardCharsets.UTF_8);
 
         CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
 

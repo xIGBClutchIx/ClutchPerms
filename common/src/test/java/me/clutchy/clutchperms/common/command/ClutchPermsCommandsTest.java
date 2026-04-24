@@ -205,6 +205,25 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms effective command authorization can come from an inherited parent group.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void playerWithInheritedGroupAdminPermissionCanMutatePermissions() throws CommandSyntaxException {
+        groupService.createGroup("admin");
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("admin", PermissionNodes.ADMIN, PermissionValue.TRUE);
+        groupService.addGroupParent("staff", "admin");
+        groupService.addSubjectGroup(ADMIN_ID, "staff");
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        dispatcher.execute("clutchperms user Target set example.node false", player);
+
+        assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
+    }
+
+    /**
      * Confirms group commands manage group permissions and subject memberships.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -230,6 +249,55 @@ class ClutchPermsCommandsTest {
                 "Groups for Target (00000000-0000-0000-0000-000000000002): admin", "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.",
                 "Permissions for group admin: example.node=TRUE", "Members of group admin: Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.",
                 "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."), console.messages());
+    }
+
+    /**
+     * Confirms group parent commands manage inherited group links.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanManageGroupParentsAndCheckInheritedPermissions() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group base create", console);
+        dispatcher.execute("clutchperms group base set example.inherited true", console);
+        dispatcher.execute("clutchperms group staff create", console);
+        dispatcher.execute("clutchperms group staff parent add base", console);
+        dispatcher.execute("clutchperms group staff parents", console);
+        dispatcher.execute("clutchperms user Target group add staff", console);
+        dispatcher.execute("clutchperms user Target check example.inherited", console);
+        dispatcher.execute("clutchperms group staff list", console);
+        dispatcher.execute("clutchperms group staff parent remove base", console);
+        dispatcher.execute("clutchperms group staff parents", console);
+
+        assertEquals(PermissionValue.UNSET, permissionResolver.resolve(TARGET_ID, "example.inherited").value());
+        assertEquals(List.of("Created group base.", "Set example.inherited for group base to TRUE.", "Created group staff.", "Added parent group base to group staff.",
+                "Parents of group staff: base", "Added Target (00000000-0000-0000-0000-000000000002) to group staff.",
+                "Target (00000000-0000-0000-0000-000000000002) effective example.inherited = TRUE from group base.", "No permissions set for group staff.",
+                "Parents of group staff: base", "Members of group staff: 00000000-0000-0000-0000-000000000002 (00000000-0000-0000-0000-000000000002)",
+                "Removed parent group base from group staff.", "Group staff has no parent groups."), console.messages());
+    }
+
+    /**
+     * Confirms parent command failures report invalid inheritance operations.
+     *
+     * @throws CommandSyntaxException when command setup fails unexpectedly
+     */
+    @Test
+    void parentCommandsRejectInvalidLinks() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+        dispatcher.execute("clutchperms group admin create", console);
+        dispatcher.execute("clutchperms group staff create", console);
+        dispatcher.execute("clutchperms group admin parent add staff", console);
+
+        CommandSyntaxException unknown = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group admin parent add missing", console));
+        CommandSyntaxException self = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group admin parent add admin", console));
+        CommandSyntaxException cycle = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group staff parent add admin", console));
+
+        assertTrue(unknown.getMessage().contains("Group operation failed: unknown group: missing"));
+        assertTrue(self.getMessage().contains("Group operation failed: group cannot inherit itself: admin"));
+        assertTrue(cycle.getMessage().contains("Group operation failed: group inheritance cycle detected"));
     }
 
     /**
@@ -389,11 +457,14 @@ class ClutchPermsCommandsTest {
     void nodeSuggestionsIncludeEffectiveGroupAssignments() {
         groupService.createGroup("staff");
         groupService.setGroupPermission("staff", "example.group", PermissionValue.TRUE);
+        groupService.createGroup("base");
+        groupService.setGroupPermission("base", "example.inherited", PermissionValue.TRUE);
+        groupService.addGroupParent("staff", "base");
         groupService.addSubjectGroup(TARGET_ID, "staff");
         groupService.createGroup("default");
         groupService.setGroupPermission("default", "default.node", PermissionValue.TRUE);
 
-        assertEquals(List.of("clutchperms.admin", "default.node", "example.group"), suggestionTexts("clutchperms user Target check "));
+        assertEquals(List.of("clutchperms.admin", "default.node", "example.group", "example.inherited"), suggestionTexts("clutchperms user Target check "));
     }
 
     /**
@@ -405,6 +476,19 @@ class ClutchPermsCommandsTest {
         groupService.setGroupPermission("staff", "example.group", PermissionValue.TRUE);
 
         assertEquals(List.of("clutchperms.admin", "example.group"), suggestionTexts("clutchperms group staff get "));
+    }
+
+    /**
+     * Confirms parent suggestions include valid groups and exclude the current group and existing parents.
+     */
+    @Test
+    void parentSuggestionsIncludeValidGroups() {
+        groupService.createGroup("admin");
+        groupService.createGroup("default");
+        groupService.createGroup("staff");
+        groupService.addGroupParent("admin", "staff");
+
+        assertEquals(List.of("default"), suggestionTexts("clutchperms group admin parent add "));
     }
 
     /**
@@ -484,8 +568,9 @@ class ClutchPermsCommandsTest {
                 "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>", "/clutchperms user <target> groups",
                 "/clutchperms user <target> group add <group>", "/clutchperms user <target> group remove <group>", "/clutchperms user <target> check <node>",
                 "/clutchperms group list", "/clutchperms group <group> create", "/clutchperms group <group> delete", "/clutchperms group <group> list",
-                "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>", "/clutchperms users list",
-                "/clutchperms users search <name>");
+                "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>",
+                "/clutchperms group <group> parents", "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>",
+                "/clutchperms users list", "/clutchperms users search <name>");
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {

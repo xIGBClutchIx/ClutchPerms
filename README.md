@@ -1,18 +1,18 @@
 # ClutchPerms
 
-ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic groups, subject metadata, reload support, and platform runtime bridges.
+ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It currently provides a shared permission model, JSON storage, Brigadier commands, basic inherited groups, subject metadata, reload support, and platform runtime bridges.
 
-This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, basic groups, an implicit `default` group, and effective permission resolution shared across platforms.
+This is a usable prototype, not a mature permissions suite. The project intentionally keeps the model small: direct user permissions, recursive multi-parent groups, an implicit `default` group, and effective permission resolution shared across platforms.
 
 ## What Works
 
 - Shared `/clutchperms` command behavior on Paper, Fabric, NeoForge, and Forge
 - JSON-backed storage for direct permissions, groups, and subject metadata
 - Direct user permission `TRUE` / `FALSE` / `UNSET`
-- Basic named groups with direct user membership
+- Basic named groups with direct user membership and recursive multi-parent inheritance
 - Implicit `default` group when a group named `default` exists
-- Effective resolution order: direct user assignment, explicit user groups, then `default`
-- `FALSE` wins over `TRUE` within the same group tier
+- Effective resolution order: direct user assignment, explicit user group hierarchy, then `default` hierarchy
+- Closer child group permissions beat parent permissions; `FALSE` wins over `TRUE` at the same inheritance depth
 - Reload command for manual JSON edits
 - Last-known player name recording and offline name targeting
 - Paper runtime bridge using plugin-owned `PermissionAttachment`s
@@ -53,6 +53,9 @@ All platforms expose the same shared command tree:
 /clutchperms group <group> get <node>
 /clutchperms group <group> set <node> <true|false>
 /clutchperms group <group> clear <node>
+/clutchperms group <group> parents
+/clutchperms group <group> parent add <parent>
+/clutchperms group <group> parent remove <parent>
 /clutchperms users list
 /clutchperms users search <name>
 ```
@@ -75,7 +78,7 @@ ClutchPerms writes three versioned JSON files:
 | File | Purpose |
 | --- | --- |
 | `permissions.json` | Direct user permission assignments |
-| `groups.json` | Group definitions, group permissions, and direct user memberships |
+| `groups.json` | Group definitions, group permissions, parent links, and direct user memberships |
 | `subjects.json` | Last-known subject names and last-seen timestamps |
 
 Direct permission example:
@@ -106,7 +109,10 @@ Group example:
     "admin": {
       "permissions": {
         "clutchperms.admin": "TRUE"
-      }
+      },
+      "parents": [
+        "default"
+      ]
     }
   },
   "memberships": {
@@ -117,7 +123,7 @@ Group example:
 }
 ```
 
-Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, and explicit `default` memberships fail startup or reload.
+Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup or reload.
 
 ## Forge And NeoForge Activation
 
@@ -188,7 +194,7 @@ forge/     Forge mod adapter and native permission handler
 Important shared packages:
 
 - `common.permission` - direct permissions, effective resolution, and permission service factories
-- `common.group` - groups, memberships, group storage, and group observers
+- `common.group` - groups, memberships, parent links, group storage, and group observers
 - `common.subject` - last-known subject metadata
 - `common.storage` - storage exceptions
 - `common.command` - shared Brigadier command tree and command messages
@@ -218,7 +224,6 @@ Paper tests use MockBukkit `4.108.0` with Paper API `1.21.11-R0.1-SNAPSHOT`, whi
 
 ## Known Limitations
 
-- No group inheritance
 - No wildcard permissions
 - No contexts
 - No group priorities

@@ -86,4 +86,21 @@ final class ObservingGroupService implements GroupService {
     public Set<UUID> getGroupMembers(String groupName) {
         return delegate.getGroupMembers(groupName);
     }
+
+    @Override
+    public Set<String> getGroupParents(String groupName) {
+        return delegate.getGroupParents(groupName);
+    }
+
+    @Override
+    public void addGroupParent(String groupName, String parentGroupName) {
+        delegate.addGroupParent(groupName, parentGroupName);
+        listener.groupsChanged();
+    }
+
+    @Override
+    public void removeGroupParent(String groupName, String parentGroupName) {
+        delegate.removeGroupParent(groupName, parentGroupName);
+        listener.groupsChanged();
+    }
 }

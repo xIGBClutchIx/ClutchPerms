@@ -110,4 +110,28 @@ public interface GroupService {
      * @return immutable snapshot of subject UUIDs
      */
     Set<UUID> getGroupMembers(String groupName);
+
+    /**
+     * Lists direct parent groups inherited by one group.
+     *
+     * @param groupName group name to inspect
+     * @return immutable snapshot of normalized parent group names
+     */
+    Set<String> getGroupParents(String groupName);
+
+    /**
+     * Adds one direct parent group link.
+     *
+     * @param groupName group name that will inherit from the parent
+     * @param parentGroupName parent group to inherit
+     */
+    void addGroupParent(String groupName, String parentGroupName);
+
+    /**
+     * Removes one direct parent group link.
+     *
+     * @param groupName group name to update
+     * @param parentGroupName parent group to remove
+     */
+    void removeGroupParent(String groupName, String parentGroupName);
 }
