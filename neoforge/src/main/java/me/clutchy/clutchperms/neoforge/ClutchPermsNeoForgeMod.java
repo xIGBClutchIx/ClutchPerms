@@ -2,9 +2,7 @@ package me.clutchy.clutchperms.neoforge;
 
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 import org.slf4j.Logger;
 
@@ -12,22 +10,19 @@ import com.mojang.logging.LogUtils;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
-import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
-import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
-import me.clutchy.clutchperms.common.permission.PermissionServices;
+import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntime;
+import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
+import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
-import me.clutchy.clutchperms.common.storage.StorageFileKind;
-import me.clutchy.clutchperms.common.storage.StorageFiles;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
-import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.common.Mod;
@@ -54,63 +49,17 @@ public final class ClutchPermsNeoForgeMod {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /**
-     * Active permission service instance for the current NeoForge server lifecycle.
+     * Active shared storage runtime for the current NeoForge server lifecycle.
      */
-    private static PermissionService permissionService;
-
-    /**
-     * Active subject metadata service instance for the current NeoForge server lifecycle.
-     */
-    private static SubjectMetadataService subjectMetadataService;
-
-    /**
-     * Active group service instance for the current NeoForge server lifecycle.
-     */
-    private static GroupService groupService;
-
-    /**
-     * Active manual known node registry for the current NeoForge server lifecycle.
-     */
-    private static MutablePermissionNodeRegistry manualPermissionNodeRegistry;
-
-    /**
-     * Active merged known node registry for the current NeoForge server lifecycle.
-     */
-    private static PermissionNodeRegistry permissionNodeRegistry;
-
-    /**
-     * Active effective permission resolver for the current NeoForge server lifecycle.
-     */
-    private static PermissionResolver permissionResolver;
-
-    /**
-     * Permission assignment storage path for diagnostics.
-     */
-    private static Path permissionsFile;
-
-    /**
-     * Subject metadata storage path for diagnostics.
-     */
-    private static Path subjectsFile;
-
-    /**
-     * Group storage path for diagnostics.
-     */
-    private static Path groupsFile;
-
-    /**
-     * Manual known permission node registry storage path for diagnostics.
-     */
-    private static Path nodesFile;
+    private static ClutchPermsRuntime runtime;
 
     /**
      * Initializes the shared persisted service and hooks command registration into the NeoForge lifecycle.
      */
     public ClutchPermsNeoForgeMod() {
-        permissionsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("permissions.json");
-        subjectsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("subjects.json");
-        groupsFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("groups.json");
-        nodesFile = FMLPaths.CONFIGDIR.get().resolve(MOD_ID).resolve("nodes.json");
+        Path storageDirectory = FMLPaths.CONFIGDIR.get().resolve(MOD_ID);
+        runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(storageDirectory),
+                () -> PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsNeoForgeMod::registeredBooleanPermissionNodes), ClutchPermsRuntimeHooks.noop());
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -161,12 +110,10 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private void onServerStopped(ServerStoppedEvent event) {
-        permissionService = null;
-        subjectMetadataService = null;
-        groupService = null;
-        manualPermissionNodeRegistry = null;
-        permissionNodeRegistry = null;
-        permissionResolver = null;
+        if (runtime != null) {
+            runtime.clear();
+            runtime = null;
+        }
     }
 
     /**
@@ -176,7 +123,7 @@ public final class ClutchPermsNeoForgeMod {
      * @throws NullPointerException if the service is requested before initialization completes
      */
     public static PermissionService getPermissionService() {
-        return Objects.requireNonNull(permissionService, "Permission service has not been initialized");
+        return getRuntime().permissionService();
     }
 
     /**
@@ -186,7 +133,7 @@ public final class ClutchPermsNeoForgeMod {
      * @throws NullPointerException if the service is requested before initialization completes
      */
     public static SubjectMetadataService getSubjectMetadataService() {
-        return Objects.requireNonNull(subjectMetadataService, "Subject metadata service has not been initialized");
+        return getRuntime().subjectMetadataService();
     }
 
     /**
@@ -195,7 +142,7 @@ public final class ClutchPermsNeoForgeMod {
      * @return the service initialized during NeoForge bootstrap
      */
     public static GroupService getGroupService() {
-        return Objects.requireNonNull(groupService, "Group service has not been initialized");
+        return getRuntime().groupService();
     }
 
     /**
@@ -204,7 +151,7 @@ public final class ClutchPermsNeoForgeMod {
      * @return the registry initialized during NeoForge bootstrap
      */
     public static PermissionNodeRegistry getPermissionNodeRegistry() {
-        return Objects.requireNonNull(permissionNodeRegistry, "Permission node registry has not been initialized");
+        return getRuntime().permissionNodeRegistry();
     }
 
     /**
@@ -213,7 +160,7 @@ public final class ClutchPermsNeoForgeMod {
      * @return the manual registry initialized during NeoForge bootstrap
      */
     public static MutablePermissionNodeRegistry getManualPermissionNodeRegistry() {
-        return Objects.requireNonNull(manualPermissionNodeRegistry, "Manual permission node registry has not been initialized");
+        return getRuntime().manualPermissionNodeRegistry();
     }
 
     /**
@@ -222,7 +169,7 @@ public final class ClutchPermsNeoForgeMod {
      * @return the resolver initialized during NeoForge bootstrap
      */
     public static PermissionResolver getPermissionResolver() {
-        return Objects.requireNonNull(permissionResolver, "Permission resolver has not been initialized");
+        return getRuntime().permissionResolver();
     }
 
     /**
@@ -231,10 +178,7 @@ public final class ClutchPermsNeoForgeMod {
      * @return active command status diagnostics
      */
     public static CommandStatusDiagnostics getStatusDiagnostics() {
-        return new CommandStatusDiagnostics(formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
-                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")),
-                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")),
-                formatPath(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")), runtimeBridgeStatus());
+        return getRuntime().statusDiagnostics(runtimeBridgeStatus());
     }
 
     /**
@@ -243,23 +187,7 @@ public final class ClutchPermsNeoForgeMod {
     public static void reloadStorage() {
         logStorageLoadStart();
         try {
-            PermissionService reloadedPermissionService = observablePermissionService(
-                    PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")));
-            SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices
-                    .jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
-            GroupService reloadedGroupService = observableGroupService(GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")));
-            MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries.observing(
-                    PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")),
-                    ClutchPermsNeoForgeMod::refreshRuntimePermissions);
-            PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry,
-                    PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsNeoForgeMod::registeredBooleanPermissionNodes));
-            materializeStorageFiles();
-            permissionService = reloadedPermissionService;
-            subjectMetadataService = reloadedSubjectMetadataService;
-            groupService = reloadedGroupService;
-            manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
-            permissionNodeRegistry = reloadedPermissionNodeRegistry;
-            permissionResolver = new PermissionResolver(permissionService, groupService);
+            getRuntime().reload();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             LOGGER.error("Failed to load ClutchPerms storage from {}", storageRoot(), exception);
@@ -271,10 +199,7 @@ public final class ClutchPermsNeoForgeMod {
      * Validates persisted storage from disk without replacing active services or runtime state.
      */
     public static void validateStorage() {
-        PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"));
-        SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
-        GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized"));
-        PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized"));
+        getRuntime().validate();
     }
 
     /**
@@ -283,7 +208,7 @@ public final class ClutchPermsNeoForgeMod {
      * @return active storage backup service
      */
     public static StorageBackupService getStorageBackupService() {
-        return StorageBackupService.forFiles(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized").getParent().resolve("backups"), storageFiles());
+        return getRuntime().storageBackupService();
     }
 
     /**
@@ -304,68 +229,23 @@ public final class ClutchPermsNeoForgeMod {
         return NeoForgeClutchPermsPermissionHandler.booleanNodeNames(PermissionAPI.getRegisteredNodes());
     }
 
-    private static String formatPath(Path path) {
-        return path.toAbsolutePath().normalize().toString();
+    private static ClutchPermsRuntime getRuntime() {
+        return Objects.requireNonNull(runtime, "ClutchPerms runtime has not been initialized");
     }
 
     private static Path storageRoot() {
-        return Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized").getParent();
-    }
-
-    private static void materializeStorageFiles() {
-        StorageFiles.materializeMissingJsonFiles(storageFiles());
-    }
-
-    private static Map<StorageFileKind, Path> storageFiles() {
-        return Map.of(StorageFileKind.PERMISSIONS, Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"), StorageFileKind.SUBJECTS,
-                Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"), StorageFileKind.GROUPS,
-                Objects.requireNonNull(groupsFile, "Groups file has not been initialized"), StorageFileKind.NODES,
-                Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized"));
+        return getRuntime().storagePaths().storageRoot();
     }
 
     private static void logStorageLoadStart() {
-        LOGGER.debug("ClutchPerms storage files: permissions={}, subjects={}, groups={}, nodes={}",
-                formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
-                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")),
-                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")),
-                formatPath(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")));
+        LOGGER.debug("ClutchPerms storage files: permissions={}, subjects={}, groups={}, nodes={}", getRuntime().storagePaths().permissionsFile(),
+                getRuntime().storagePaths().subjectsFile(), getRuntime().storagePaths().groupsFile(), getRuntime().storagePaths().nodesFile());
     }
 
     private static void logStorageLoadSuccess() {
         LOGGER.info("Loaded ClutchPerms storage from {}: {} known subjects, {} groups, {} manual known nodes, {} total known nodes.", storageRoot(),
                 getSubjectMetadataService().getSubjects().size(), getGroupService().getGroups().size(), getManualPermissionNodeRegistry().getKnownNodes().size(),
                 getPermissionNodeRegistry().getKnownNodes().size());
-    }
-
-    private static PermissionService observablePermissionService(PermissionService storagePermissionService) {
-        return PermissionServices.observing(storagePermissionService, ClutchPermsNeoForgeMod::invalidateSubjectCache);
-    }
-
-    private static GroupService observableGroupService(GroupService storageGroupService) {
-        return GroupServices.observing(storageGroupService, new GroupChangeListener() {
-
-            @Override
-            public void subjectGroupsChanged(UUID subjectId) {
-                invalidateSubjectCache(subjectId);
-            }
-
-            @Override
-            public void groupsChanged() {
-                invalidateAllResolverCache();
-            }
-        });
-    }
-
-    private static void invalidateSubjectCache(UUID subjectId) {
-        if (permissionResolver != null) {
-            permissionResolver.invalidateSubject(subjectId);
-        }
-    }
-
-    private static void invalidateAllResolverCache() {
-        if (permissionResolver != null) {
-            permissionResolver.invalidateAll();
-        }
     }
 
     private void recordSubject(ServerPlayer player) {

@@ -50,6 +50,7 @@ Shared package ownership:
 - `common.node` - known permission node registry, manual node storage, registry composition, and node observers
 - `common.subject` - last-known subject metadata
 - `common.storage` - storage exceptions, atomic file writes, backup listing, and restore rollback helpers
+- `common.runtime` - platform-neutral storage paths, active service snapshots, reload/validate/backup wiring, resolver cache invalidation, and runtime refresh hooks
 - `common.command` - shared Brigadier root wiring, command behavior, command messages, and platform command environment contract
 - `common.command.subcommand` - shared Brigadier branch builders for `/backup`, `/user`, `/group`, `/users`, and `/nodes`
 
@@ -120,6 +121,7 @@ Storage expectations:
 - `/clutchperms validate` should parse all persisted files without replacing active services, refreshing runtime bridges, or mutating storage.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
 - Successful reload should replace active services and the active resolver cache; failed reload should leave the old resolver and its cache in place.
+- Shared storage lifecycle wiring belongs in `common.runtime.ClutchPermsRuntime`; platform modules should provide storage roots, platform known-node suppliers, runtime refresh hooks, service registration, logging, and lifecycle events.
 - `/clutchperms backup restore` restores one file, then reloads all four persisted files and refreshes runtime bridges. If reload fails, it must roll disk back to the previous live file and keep active services/runtime state unchanged.
 - If restore rollback fails, command feedback should report that rollback failure explicitly.
 
