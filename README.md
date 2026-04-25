@@ -88,6 +88,7 @@ Useful grants:
 | `/clutchperms group list [page]` | `clutchperms.admin.group.list` | Lists groups. |
 | `/clutchperms group <group> create` | `clutchperms.admin.group.create` | Creates a group. |
 | `/clutchperms group <group> delete` | `clutchperms.admin.group.delete` | Deletes a group and related links. |
+| `/clutchperms group <group> rename <new-group>` | `clutchperms.admin.group.rename` | Renames a group and updates related links. |
 | `/clutchperms group <group> list [page]` | `clutchperms.admin.group.view` | Lists group permissions, display metadata, parents, and members. |
 | `/clutchperms group <group> get <node>` | `clutchperms.admin.group.get` | Shows one direct group permission. |
 | `/clutchperms group <group> set <node> <true\|false>` | `clutchperms.admin.group.set` | Sets one direct group permission. |
@@ -116,7 +117,7 @@ Notes:
 - Page numbers start at 1. Invalid or out-of-range pages return styled ClutchPerms feedback and a command to try.
 - Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
-- The `default` group always exists, applies implicitly to every subject, and cannot be deleted.
+- The `default` group always exists, applies implicitly to every subject, and cannot be deleted or renamed.
 - Users cannot be explicitly added to or removed from `default`.
 - Display text accepts `&0-9`, `&a-f`, `&k-o`, `&r`, and `&&`; raw section signs, blank values, invalid codes, and values over 128 raw characters are rejected.
 - Permission assignments may use exact nodes, `*`, or terminal wildcards like `example.*`.

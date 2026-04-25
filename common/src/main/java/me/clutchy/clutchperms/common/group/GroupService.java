@@ -48,6 +48,14 @@ public interface GroupService {
     void deleteGroup(String groupName);
 
     /**
+     * Renames a group and updates every parent link and explicit membership that references it. The built-in {@link #DEFAULT_GROUP} cannot be renamed or used as the new name.
+     *
+     * @param groupName group name to rename
+     * @param newGroupName new group name to use
+     */
+    void renameGroup(String groupName, String newGroupName);
+
+    /**
      * Looks up one explicit group permission assignment.
      *
      * @param groupName group name to inspect

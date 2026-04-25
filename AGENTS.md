@@ -68,7 +68,7 @@ Shared package ownership:
 - Groups are named, normalized, and store explicit permission assignments.
 - Groups can inherit multiple parent groups recursively.
 - User group membership is direct only.
-- The `default` group always exists, applies implicitly to every subject, and cannot be deleted.
+- The `default` group always exists, applies implicitly to every subject, and cannot be deleted or renamed.
 - Users cannot be explicitly added to or removed from `default`.
 - Effective resolution order is direct user assignment, explicit user group hierarchy, then implicit `default` hierarchy.
 - Closer child group permissions beat parent permissions.
@@ -195,6 +195,7 @@ Current command surface:
 - `/clutchperms user <target> suffix get|set|clear`
 - `/clutchperms group list [page]`
 - `/clutchperms group <group> create|delete|get|set|clear`
+- `/clutchperms group <group> rename <new-group>`
 - `/clutchperms group <group> list [page]`
 - `/clutchperms group <group> prefix get|set|clear`
 - `/clutchperms group <group> suffix get|set|clear`

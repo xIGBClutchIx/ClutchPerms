@@ -118,6 +118,46 @@ public final class InMemoryGroupService implements GroupService {
      * {@inheritDoc}
      */
     @Override
+    public void renameGroup(String groupName, String newGroupName) {
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        String normalizedNewGroupName = normalizeGroupName(newGroupName);
+        if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
+            throw new IllegalArgumentException("default group cannot be renamed");
+        }
+        if (GroupService.DEFAULT_GROUP.equals(normalizedNewGroupName)) {
+            throw new IllegalArgumentException("group cannot be renamed to default");
+        }
+        if (groupPermissions.containsKey(normalizedNewGroupName)) {
+            throw new IllegalArgumentException("group already exists: " + normalizedNewGroupName);
+        }
+
+        ConcurrentMap<String, PermissionValue> permissions = groupPermissions.remove(normalizedGroupName);
+        groupPermissions.put(normalizedNewGroupName, permissions);
+
+        DisplayProfile display = groupDisplays.remove(normalizedGroupName);
+        if (display != null && !display.isEmpty()) {
+            groupDisplays.put(normalizedNewGroupName, display);
+        }
+
+        Set<String> parents = groupParents.remove(normalizedGroupName);
+        groupParents.put(normalizedNewGroupName, parents == null ? ConcurrentHashMap.newKeySet() : parents);
+        groupParents.forEach((ignored, currentParents) -> {
+            if (currentParents.remove(normalizedGroupName)) {
+                currentParents.add(normalizedNewGroupName);
+            }
+        });
+
+        memberships.forEach((ignored, groups) -> {
+            if (groups.remove(normalizedGroupName)) {
+                groups.add(normalizedNewGroupName);
+            }
+        });
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public PermissionValue getGroupPermission(String groupName, String node) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         String normalizedNode = PermissionNodes.normalize(node);

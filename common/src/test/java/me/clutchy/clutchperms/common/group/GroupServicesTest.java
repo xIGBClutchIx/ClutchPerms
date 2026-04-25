@@ -86,6 +86,58 @@ class GroupServicesTest {
     }
 
     /**
+     * Confirms renaming a group preserves its state and updates every stored reference.
+     */
+    @Test
+    void renameGroupPreservesStateAndPersistsThroughJson() {
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
+        GroupService groupService = GroupServices.jsonFile(groupsFile);
+
+        groupService.createGroup("base");
+        groupService.setGroupPermission("base", "base.node", PermissionValue.TRUE);
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "staff.node", PermissionValue.FALSE);
+        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+        groupService.setGroupSuffix("staff", DisplayText.parse("&f*"));
+        groupService.addGroupParent("staff", "base");
+        groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
+        groupService.createGroup("child");
+        groupService.addGroupParent("child", "staff");
+
+        groupService.renameGroup("staff", "Moderator");
+        GroupService reloadedGroupService = GroupServices.jsonFile(groupsFile);
+
+        assertFalse(reloadedGroupService.hasGroup("staff"));
+        assertTrue(reloadedGroupService.hasGroup("moderator"));
+        assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("moderator", "staff.node"));
+        assertEquals("&7[Staff]", reloadedGroupService.getGroupDisplay("moderator").prefix().orElseThrow().rawText());
+        assertEquals("&f*", reloadedGroupService.getGroupDisplay("moderator").suffix().orElseThrow().rawText());
+        assertEquals(Set.of("base"), reloadedGroupService.getGroupParents("moderator"));
+        assertEquals(Set.of("moderator"), reloadedGroupService.getGroupParents("child"));
+        assertEquals(Set.of("moderator"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
+        assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("moderator"));
+    }
+
+    /**
+     * Confirms invalid group rename targets fail without mutating existing state.
+     */
+    @Test
+    void renameGroupRejectsInvalidTargets() {
+        GroupService groupService = new InMemoryGroupService();
+        groupService.createGroup("staff");
+        groupService.createGroup("admin");
+
+        assertEquals("default group cannot be renamed", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("default", "fallback")).getMessage());
+        assertEquals("group cannot be renamed to default", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("staff", "default")).getMessage());
+        assertEquals("group name must not be blank", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("staff", "   ")).getMessage());
+        assertEquals("unknown group: missing", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("missing", "new")).getMessage());
+        assertEquals("group already exists: admin", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("staff", "admin")).getMessage());
+        assertEquals("group already exists: staff", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("staff", "Staff")).getMessage());
+
+        assertEquals(Set.of("admin", "default", "staff"), groupService.getGroups());
+    }
+
+    /**
      * Confirms legacy group files without parent arrays load with empty parent state.
      *
      * @throws IOException if the test file cannot be written
@@ -208,6 +260,9 @@ class GroupServicesTest {
         assertGroupStatePreserved(groupService, groupsFile, persistedJson);
 
         assertThrows(PermissionStorageException.class, () -> groupService.deleteGroup("staff"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.renameGroup("staff", "renamed"));
         assertGroupStatePreserved(groupService, groupsFile, persistedJson);
 
         assertThrows(PermissionStorageException.class, () -> groupService.setGroupPermission("staff", "new.node", PermissionValue.FALSE));
@@ -685,12 +740,14 @@ class GroupServicesTest {
         groupService.createGroup("base");
         groupService.addGroupParent("admin", "base");
         groupService.removeGroupParent("admin", "base");
-        groupService.addSubjectGroup(FIRST_SUBJECT, "admin");
-        groupService.removeSubjectGroup(FIRST_SUBJECT, "admin");
+        groupService.renameGroup("admin", "owner");
+        groupService.addSubjectGroup(FIRST_SUBJECT, "owner");
+        groupService.removeSubjectGroup(FIRST_SUBJECT, "owner");
         assertThrows(IllegalArgumentException.class, () -> groupService.addSubjectGroup(FIRST_SUBJECT, "missing"));
-        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "missing"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("owner", "missing"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("missing", "other"));
 
-        assertEquals(List.of("all", "all", "all", "all", "all", "all", "all"), fullRefreshes);
+        assertEquals(List.of("all", "all", "all", "all", "all", "all", "all", "all"), fullRefreshes);
         assertEquals(List.of(FIRST_SUBJECT, FIRST_SUBJECT), subjectRefreshes);
     }
 
@@ -710,6 +767,7 @@ class GroupServicesTest {
     private static void assertGroupRuntimeState(GroupService groupService) {
         assertEquals(Set.of("base", "default", "guest", "staff"), groupService.getGroups());
         assertFalse(groupService.hasGroup("new"));
+        assertFalse(groupService.hasGroup("renamed"));
         assertEquals(PermissionValue.TRUE, groupService.getGroupPermission("staff", "old.node"));
         assertEquals(PermissionValue.UNSET, groupService.getGroupPermission("staff", "new.node"));
         assertEquals(Map.of("old.node", PermissionValue.TRUE), groupService.getGroupPermissions("staff"));

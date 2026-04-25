@@ -95,6 +95,8 @@ public final class ClutchPermsCommands {
 
     private static final String GROUP_ARGUMENT = CommandArguments.GROUP;
 
+    private static final String NEW_GROUP_ARGUMENT = CommandArguments.NEW_GROUP;
+
     private static final String PARENT_ARGUMENT = CommandArguments.PARENT;
 
     private static final String BACKUP_KIND_ARGUMENT = CommandArguments.BACKUP_KIND;
@@ -174,6 +176,7 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("user <target> <prefix|suffix> clear", PermissionNodes.ADMIN_USER_DISPLAY_CLEAR, "Clears direct user chat display text."),
             new CommandHelpEntry("group list [page]", PermissionNodes.ADMIN_GROUP_LIST, "Lists groups."),
             new CommandHelpEntry("group <group> <create|delete>", PermissionNodes.ADMIN_GROUP_VIEW, "Creates or deletes a group."),
+            new CommandHelpEntry("group <group> rename <new-group>", PermissionNodes.ADMIN_GROUP_RENAME, "Renames a group and updates references."),
             new CommandHelpEntry("group <group> list [page]", PermissionNodes.ADMIN_GROUP_VIEW, "Lists group permissions, parents, and members."),
             new CommandHelpEntry("group <group> parents [page]", PermissionNodes.ADMIN_GROUP_PARENTS, "Lists parent groups."),
             new CommandHelpEntry("group <group> <get|clear> <node>", PermissionNodes.ADMIN_GROUP_GET, "Reads or clears one group permission."),
@@ -564,6 +567,16 @@ public final class ClutchPermsCommands {
             @Override
             public int delete(CommandContext<S> context) throws CommandSyntaxException {
                 return deleteGroup(environment, context);
+            }
+
+            @Override
+            public int renameUsage(CommandContext<S> context) {
+                return sendGroupRenameUsage(environment, context);
+            }
+
+            @Override
+            public int rename(CommandContext<S> context) throws CommandSyntaxException {
+                return renameGroup(environment, context);
             }
 
             @Override
@@ -977,6 +990,11 @@ public final class ClutchPermsCommands {
         return sendUsage(environment, context, "Missing permission node.", "Choose the group permission node to clear.", List.of("group " + group + " clear <node>"));
     }
 
+    private static <S> int sendGroupRenameUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing new group name.", "Choose the new group name.", List.of("group " + group + " rename <new-group>"));
+    }
+
     private static <S> int sendGroupDisplayUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) {
         String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
         return sendUsage(environment, context, "Missing group " + slot.label() + " command.", "Get, set, or clear this group's " + slot.label() + ".",
@@ -1149,12 +1167,12 @@ public final class ClutchPermsCommands {
 
     private static List<String> groupRootUsages() {
         return List.of("group list", "group <group> <create|delete|list|parents>", "group <group> <get|clear> <node>", "group <group> set <node> <true|false>",
-                "group <group> parent <add|remove> <parent>", "group <group> <prefix|suffix> get|set|clear");
+                "group <group> rename <new-group>", "group <group> parent <add|remove> <parent>", "group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsages(String group) {
         return List.of("group " + group + " <create|delete|list|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
-                "group " + group + " parent <add|remove> <parent>", "group " + group + " <prefix|suffix> get|set|clear");
+                "group " + group + " rename <new-group>", "group " + group + " parent <add|remove> <parent>", "group " + group + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> usersUsages() {
@@ -1566,6 +1584,19 @@ public final class ClutchPermsCommands {
         }
 
         environment.sendMessage(context.getSource(), CommandLang.groupDeleted(normalizeGroupName(groupName)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int renameGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        String newGroupName = getNewGroupName(context);
+        try {
+            environment.groupService().renameGroup(groupName, newGroupName);
+        } catch (RuntimeException exception) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
+        }
+
+        environment.sendMessage(context.getSource(), CommandLang.groupRenamed(normalizeGroupName(groupName), normalizeGroupName(newGroupName)));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1996,6 +2027,14 @@ public final class ClutchPermsCommands {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(new IllegalArgumentException("group name must not be blank")));
         }
         return parentGroupName;
+    }
+
+    private static <S> String getNewGroupName(CommandContext<S> context) throws CommandSyntaxException {
+        String newGroupName = StringArgumentType.getString(context, NEW_GROUP_ARGUMENT);
+        if (newGroupName.trim().isEmpty()) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(new IllegalArgumentException("group name must not be blank")));
+        }
+        return newGroupName;
     }
 
     private static <S> String requireExistingGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String groupName) throws CommandSyntaxException {

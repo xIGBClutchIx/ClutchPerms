@@ -81,6 +81,13 @@ final class JsonFileGroupService implements GroupService {
     }
 
     @Override
+    public synchronized void renameGroup(String groupName, String newGroupName) {
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.renameGroup(groupName, newGroupName);
+        commit(candidate);
+    }
+
+    @Override
     public synchronized PermissionValue getGroupPermission(String groupName, String node) {
         return delegate.getGroupPermission(groupName, node);
     }

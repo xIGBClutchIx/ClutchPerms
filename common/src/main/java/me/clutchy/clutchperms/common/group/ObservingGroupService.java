@@ -46,6 +46,12 @@ final class ObservingGroupService implements GroupService {
     }
 
     @Override
+    public void renameGroup(String groupName, String newGroupName) {
+        delegate.renameGroup(groupName, newGroupName);
+        listener.groupsChanged();
+    }
+
+    @Override
     public PermissionValue getGroupPermission(String groupName, String node) {
         return delegate.getGroupPermission(groupName, node);
     }

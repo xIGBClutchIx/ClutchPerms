@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 
@@ -46,6 +47,7 @@ import me.clutchy.clutchperms.common.subject.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -147,9 +149,11 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("perms group", perms);
 
         assertEquals(commandListPageOneMessages("cperms"), cperms.messages());
-        assertEquals(List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
-                "  /perms group <group> <create|delete|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
-                "  /perms group <group> parent <add|remove> <parent>", "  /perms group <group> <prefix|suffix> get|set|clear"), perms.messages());
+        assertEquals(
+                List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
+                        "  /perms group <group> <create|delete|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
+                        "  /perms group <group> rename <new-group>", "  /perms group <group> parent <add|remove> <parent>", "  /perms group <group> <prefix|suffix> get|set|clear"),
+                perms.messages());
         assertSuggests(perms.commandMessages().get(3), "/perms group list");
     }
 
@@ -234,6 +238,7 @@ class ClutchPermsCommandsTest {
         TestSource groupRoot = TestSource.console();
         TestSource groupTarget = TestSource.console();
         TestSource groupGet = TestSource.console();
+        TestSource groupRename = TestSource.console();
         TestSource userRoot = TestSource.console();
         TestSource userSet = TestSource.console();
         TestSource backupRestore = TestSource.console();
@@ -247,6 +252,9 @@ class ClutchPermsCommandsTest {
 
         assertEquals(0, dispatcher.execute("clutchperms group test get", groupGet));
         assertEquals(List.of("Missing permission node.", "Choose the group permission node to read.", "Try one:", "  /clutchperms group test get <node>"), groupGet.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms group test rename", groupRename));
+        assertEquals(List.of("Missing new group name.", "Choose the new group name.", "Try one:", "  /clutchperms group test rename <new-group>"), groupRename.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms user", userRoot));
         assertEquals(userRootUsageMessages(), userRoot.messages());
@@ -817,6 +825,24 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms the exact group rename permission authorizes only the rename command.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void playerWithGroupRenamePermissionCanRenameGroupsOnly() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_RENAME, PermissionValue.TRUE);
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        dispatcher.execute("clutchperms group staff rename moderator", player);
+
+        assertFalse(groupService.hasGroup("staff"));
+        assertTrue(groupService.hasGroup("moderator"));
+        assertCommandFails("clutchperms group moderator delete", player, "You do not have permission to use ClutchPerms commands.");
+    }
+
+    /**
      * Confirms wildcard admin permissions authorize command execution through the shared resolver.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -876,6 +902,32 @@ class ClutchPermsCommandsTest {
                         "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.", "Group admin (page 1/1):",
                         "  permission example.node=TRUE", "  member Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.",
                         "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."),
+                console.messages());
+    }
+
+    /**
+     * Confirms group rename command updates memberships and invalidates cached effective permissions.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanRenameGroupsAndKeepEffectivePermissions() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff create", console);
+        dispatcher.execute("clutchperms group staff set staff.node true", console);
+        dispatcher.execute("clutchperms user Target group add staff", console);
+        assertEquals(PermissionValue.TRUE, permissionResolver.resolve(TARGET_ID, "staff.node").value());
+        dispatcher.execute("clutchperms group staff rename moderator", console);
+        dispatcher.execute("clutchperms user Target check staff.node", console);
+
+        assertFalse(groupService.hasGroup("staff"));
+        assertTrue(groupService.hasGroup("moderator"));
+        assertEquals(Set.of("moderator"), groupService.getSubjectGroups(TARGET_ID));
+        assertEquals(PermissionValue.TRUE, permissionResolver.resolve(TARGET_ID, "staff.node").value());
+        assertEquals(
+                List.of("Created group staff.", "Set staff.node for group staff to TRUE.", "Added Target (00000000-0000-0000-0000-000000000002) to group staff.",
+                        "Renamed group staff to moderator.", "Target (00000000-0000-0000-0000-000000000002) effective staff.node = TRUE from group moderator."),
                 console.messages());
     }
 
@@ -1055,8 +1107,27 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
 
         assertCommandFails("clutchperms group default delete", console, "Group operation failed: default group cannot be deleted");
+        assertCommandFails("clutchperms group default rename fallback", console, "Group operation failed: default group cannot be renamed");
 
         assertTrue(groupService.hasGroup("default"));
+    }
+
+    /**
+     * Confirms group rename rejects destinations that would break group invariants.
+     *
+     * @throws CommandSyntaxException when command setup fails unexpectedly
+     */
+    @Test
+    void groupRenameRejectsInvalidDestinations() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+        dispatcher.execute("clutchperms group staff create", console);
+        dispatcher.execute("clutchperms group admin create", console);
+
+        assertCommandFails("clutchperms group staff rename default", console, "Group operation failed: group cannot be renamed to default");
+        assertCommandFails("clutchperms group staff rename admin", console, "Group operation failed: group already exists: admin");
+        assertCommandFails("clutchperms group staff rename Staff", console, "Group operation failed: group already exists: staff");
+
+        assertTrue(groupService.hasGroup("staff"));
     }
 
     /**
@@ -1219,6 +1290,19 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms rename pre-checks unknown source groups and reports close matches.
+     */
+    @Test
+    void unknownGroupRenameSourceSuggestsClosestGroup() {
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms group staf rename moderator", console, "Unknown group: staf");
+
+        assertMessageContains(console, "Closest groups: staff");
+    }
+
+    /**
      * Confirms unknown group targets suggest listing groups when there are no close matches.
      */
     @Test
@@ -1292,6 +1376,17 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of(), suggestionTexts("clutchperms user Missing group remove "));
         assertEquals(List.of("staff"), suggestionTexts("clutchperms user Ambiguous group add "));
         assertEquals(List.of(), suggestionTexts("clutchperms user Ambiguous group remove "));
+    }
+
+    /**
+     * Confirms rename destination is treated as a new name rather than suggesting existing groups.
+     */
+    @Test
+    void groupRenameDestinationHasNoExistingGroupSuggestions() {
+        groupService.createGroup("staff");
+        groupService.createGroup("builder");
+
+        assertEquals(List.of(), suggestionTexts("clutchperms group staff rename "));
     }
 
     /**
@@ -1735,14 +1830,15 @@ class ClutchPermsCommandsTest {
     private static List<String> groupRootUsageMessages() {
         return List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /clutchperms group list",
                 "  /clutchperms group <group> <create|delete|list|parents>", "  /clutchperms group <group> <get|clear> <node>",
-                "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> parent <add|remove> <parent>",
-                "  /clutchperms group <group> <prefix|suffix> get|set|clear");
+                "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> rename <new-group>",
+                "  /clutchperms group <group> parent <add|remove> <parent>", "  /clutchperms group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsageMessages(String group) {
         return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try one:", "  /clutchperms group " + group + " <create|delete|list|parents>",
                 "  /clutchperms group " + group + " <get|clear> <node>", "  /clutchperms group " + group + " set <node> <true|false>",
-                "  /clutchperms group " + group + " parent <add|remove> <parent>", "  /clutchperms group " + group + " <prefix|suffix> get|set|clear");
+                "  /clutchperms group " + group + " rename <new-group>", "  /clutchperms group " + group + " parent <add|remove> <parent>",
+                "  /clutchperms group " + group + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userRootUsageMessages() {

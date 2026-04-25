@@ -42,6 +42,10 @@ public final class GroupSubcommand {
 
         int delete(CommandContext<S> context) throws CommandSyntaxException;
 
+        int renameUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int rename(CommandContext<S> context) throws CommandSyntaxException;
+
         int show(CommandContext<S> context) throws CommandSyntaxException;
 
         int parents(CommandContext<S> context) throws CommandSyntaxException;
@@ -96,6 +100,7 @@ public final class GroupSubcommand {
         RequiredArgumentBuilder<S, String> group = groupArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::targetUsage))
                 .then(LiteralArgumentBuilder.<S>literal("create").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CREATE, handlers::create)))
                 .then(LiteralArgumentBuilder.<S>literal("delete").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_DELETE, handlers::delete)))
+                .then(renameCommand(authorized, handlers))
                 .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::show))
                         .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::show))))
                 .then(LiteralArgumentBuilder.<S>literal("parents").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents))
@@ -109,6 +114,11 @@ public final class GroupSubcommand {
                 .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::list))
                         .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::list))))
                 .then(group);
+    }
+
+    private static <S> LiteralArgumentBuilder<S> renameCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
+        return LiteralArgumentBuilder.<S>literal("rename").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_RENAME, handlers::renameUsage))
+                .then(GroupSubcommand.<S>newGroupArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_RENAME, handlers::rename)));
     }
 
     private static <S> LiteralArgumentBuilder<S> parentCommand(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
@@ -172,6 +182,10 @@ public final class GroupSubcommand {
     private static <S> RequiredArgumentBuilder<S, String> parentGroupArgument(ClutchPermsCommandEnvironment<S> environment) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.PARENT, StringArgumentType.word())
                 .suggests((context, builder) -> suggestParentGroups(environment, context, builder));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> newGroupArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.NEW_GROUP, StringArgumentType.word());
     }
 
     private static <S> CompletableFuture<Suggestions> suggestGroups(ClutchPermsCommandEnvironment<S> environment, SuggestionsBuilder builder) {

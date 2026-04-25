@@ -82,6 +82,9 @@ permissions:
   clutchperms.admin.group.delete:
     description: Allows deleting groups.
     default: false
+  clutchperms.admin.group.rename:
+    description: Allows renaming groups.
+    default: false
   clutchperms.admin.group.view:
     description: Allows viewing group details.
     default: false

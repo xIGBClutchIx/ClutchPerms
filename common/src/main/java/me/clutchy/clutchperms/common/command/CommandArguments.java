@@ -20,6 +20,8 @@ public final class CommandArguments {
 
     public static final String GROUP = "group";
 
+    public static final String NEW_GROUP = "newGroup";
+
     public static final String PARENT = "parent";
 
     public static final String BACKUP_KIND = "backupKind";

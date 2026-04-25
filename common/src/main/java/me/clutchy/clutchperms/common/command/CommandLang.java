@@ -223,6 +223,8 @@ final class CommandLang {
 
     private static final String GROUP_DELETED = "Deleted group %s.";
 
+    private static final String GROUP_RENAMED = "Renamed group %s to %s.";
+
     private static final String GROUP_PERMISSIONS_EMPTY = "No permissions set for group %s.";
 
     private static final String GROUP_PERMISSIONS_LIST = "Permissions for group %s: %s";
@@ -723,6 +725,10 @@ final class CommandLang {
 
     static CommandMessage groupDeleted(String group) {
         return success(GROUP_DELETED, group);
+    }
+
+    static CommandMessage groupRenamed(String group, String newGroup) {
+        return success(GROUP_RENAMED, group, newGroup);
     }
 
     static CommandMessage groupPermissionsEmpty(String group) {
