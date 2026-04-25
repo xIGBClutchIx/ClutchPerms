@@ -190,7 +190,7 @@ final class FabricRuntimePermissionBridgeTest {
     }
 
     @Test
-    void malformedBackupRestoreRollsBackAndPreservesBridgeState(@TempDir Path temporaryDirectory) throws Exception {
+    void malformedBackupRestoreFailsValidationAndPreservesBridgeState(@TempDir Path temporaryDirectory) throws Exception {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
         PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
         activePermissionService.setPermission(SUBJECT_ID, "Example.Backup", PermissionValue.TRUE);
@@ -213,7 +213,7 @@ final class FabricRuntimePermissionBridgeTest {
                 """, StandardCharsets.UTF_8);
 
         assertCommandFails(dispatcher, "clutchperms backup restore permissions " + backupFileName, console,
-                "Backup operation failed: Failed to apply restored permissions backup " + backupFileName);
+                "Backup operation failed: Failed to validate permissions backup " + backupFileName);
 
         assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.backup"));

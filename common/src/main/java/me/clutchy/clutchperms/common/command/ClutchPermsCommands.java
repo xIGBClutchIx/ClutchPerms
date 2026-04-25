@@ -40,6 +40,7 @@ import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolution;
 import me.clutchy.clutchperms.common.permission.PermissionResolverCacheStats;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackup;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
@@ -843,7 +844,8 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
         }
-        requireKnownBackupFile(context, kind, backupFileName, backups);
+        StorageBackup backup = requireKnownBackupFile(context, kind, backupFileName, backups);
+        validateBackup(environment, kind, backup);
         try {
             backupService.restoreBackup(kind, backupFileName, () -> {
                 environment.reloadStorage();
@@ -1415,11 +1417,11 @@ public final class ClutchPermsCommands {
         return normalizedGroupName;
     }
 
-    private static <S> void requireKnownBackupFile(CommandContext<S> context, StorageFileKind kind, String backupFileName, List<StorageBackup> backups)
+    private static <S> StorageBackup requireKnownBackupFile(CommandContext<S> context, StorageFileKind kind, String backupFileName, List<StorageBackup> backups)
             throws CommandSyntaxException {
-        boolean knownBackupFile = backups.stream().map(StorageBackup::fileName).anyMatch(backupFileName::equals);
-        if (knownBackupFile) {
-            return;
+        Optional<StorageBackup> knownBackupFile = backups.stream().filter(backup -> backup.fileName().equals(backupFileName)).findFirst();
+        if (knownBackupFile.isPresent()) {
+            return knownBackupFile.get();
         }
 
         List<CommandMessage> messages = new ArrayList<>();
@@ -1435,6 +1437,15 @@ public final class ClutchPermsCommands {
         messages.add(CommandLang.tryHeader());
         messages.add(CommandLang.suggestion(rootLiteral(context), "backup list " + kind.token()));
         throw feedback(messages);
+    }
+
+    private static <S> void validateBackup(ClutchPermsCommandEnvironment<S> environment, StorageFileKind kind, StorageBackup backup) throws CommandSyntaxException {
+        try {
+            environment.validateBackup(kind, backup.path());
+        } catch (RuntimeException exception) {
+            throw BACKUP_OPERATION_FAILED
+                    .create(CommandLang.backupOperationFailed(new PermissionStorageException("Failed to validate " + kind.token() + " backup " + backup.fileName(), exception)));
+        }
     }
 
     private static <S> void requireManuallyRegisteredNode(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String normalizedNode)

@@ -122,7 +122,7 @@ Storage expectations:
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
 - Successful reload should replace active services and the active resolver cache; failed reload should leave the old resolver and its cache in place.
 - Shared storage lifecycle wiring belongs in `common.runtime.ClutchPermsRuntime`; platform modules should provide storage roots, platform known-node suppliers, runtime refresh hooks, service registration, logging, and lifecycle events.
-- `/clutchperms backup restore` restores one file, then reloads all four persisted files and refreshes runtime bridges. If reload fails, it must roll disk back to the previous live file and keep active services/runtime state unchanged.
+- `/clutchperms backup restore` validates the selected backup file before replacing live storage, then restores one file, reloads all four persisted files, and refreshes runtime bridges. If pre-restore validation fails, disk and active runtime state must remain unchanged. If reload fails after replacement, it must roll disk back to the previous live file and keep active services/runtime state unchanged.
 - If restore rollback fails, command feedback should report that rollback failure explicitly.
 
 ## Runtime Bridges

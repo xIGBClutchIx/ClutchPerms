@@ -200,7 +200,7 @@ Restore one file from a backup:
 clutchperms backup restore groups groups-YYYYMMDD-HHMMSSSSS.json
 ```
 
-Restore validates and reloads all storage immediately. If reload fails, ClutchPerms rolls the disk file back and keeps the active runtime state unchanged.
+Restore validates the selected backup before replacing the live file, then reloads all storage immediately. If reload fails after replacement, ClutchPerms rolls the disk file back and keeps the active runtime state unchanged.
 
 ## 9. Enable Forge And NeoForge Runtime Checks
 

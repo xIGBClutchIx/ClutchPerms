@@ -1,17 +1,23 @@
 package me.clutchy.clutchperms.common.command;
 
+import java.nio.file.Path;
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 import me.clutchy.clutchperms.common.group.GroupService;
+import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
 /**
  * Adapts platform-specific Brigadier command sources to the shared ClutchPerms command tree.
@@ -96,6 +102,23 @@ public interface ClutchPermsCommandEnvironment<S> {
      */
     default StorageBackupService storageBackupService() {
         throw new UnsupportedOperationException("Storage backups are not available for this command environment");
+    }
+
+    /**
+     * Validates one selected backup file before it replaces live storage.
+     *
+     * @param kind selected storage file kind
+     * @param backupFile selected backup path
+     */
+    default void validateBackup(StorageFileKind kind, Path backupFile) {
+        StorageFileKind requiredKind = Objects.requireNonNull(kind, "kind");
+        Path requiredBackupFile = Objects.requireNonNull(backupFile, "backupFile");
+        switch (requiredKind) {
+            case PERMISSIONS -> PermissionServices.jsonFile(requiredBackupFile);
+            case SUBJECTS -> SubjectMetadataServices.jsonFile(requiredBackupFile);
+            case GROUPS -> GroupServices.jsonFile(requiredBackupFile);
+            case NODES -> PermissionNodeRegistries.jsonFile(requiredBackupFile);
+        }
     }
 
     /**

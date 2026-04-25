@@ -308,15 +308,41 @@ class ClutchPermsCommandsTest {
     void backupRestoreRestoresFileAndRefreshesRuntimeState() throws IOException, CommandSyntaxException {
         Path liveFile = temporaryDirectory.resolve("permissions.json");
         Files.writeString(liveFile, "current");
-        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "restored");
+        String restoredPermissions = """
+                {
+                  "version": 1,
+                  "subjects": {}
+                }
+                """;
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", restoredPermissions);
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms backup restore permissions permissions-20260424-120000000.json", console);
 
-        assertEquals("restored", Files.readString(liveFile));
+        assertEquals(restoredPermissions, Files.readString(liveFile));
         assertEquals(1, environment.reloads());
         assertEquals(1, environment.runtimeRefreshes());
         assertEquals(List.of("Restored permissions from backup permissions-20260424-120000000.json."), console.messages());
+    }
+
+    /**
+     * Confirms backup restore validates the selected backup before replacing the live file.
+     *
+     * @throws IOException when test backup setup fails
+     */
+    @Test
+    void backupRestoreValidatesBackupBeforeReplacingLiveFile() throws IOException {
+        Path liveFile = temporaryDirectory.resolve("permissions.json");
+        Files.writeString(liveFile, "current");
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "not-json");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms backup restore permissions permissions-20260424-120000000.json", console,
+                "Backup operation failed: Failed to validate permissions backup permissions-20260424-120000000.json");
+
+        assertEquals("current", Files.readString(liveFile));
+        assertEquals(0, environment.reloads());
+        assertEquals(0, environment.runtimeRefreshes());
     }
 
     /**
@@ -328,7 +354,12 @@ class ClutchPermsCommandsTest {
     void backupRestoreFailureRollsBackFileAndDoesNotRefreshRuntimeState() throws IOException {
         Path liveFile = temporaryDirectory.resolve("permissions.json");
         Files.writeString(liveFile, "current");
-        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "restored");
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", """
+                {
+                  "version": 1,
+                  "subjects": {}
+                }
+                """);
         environment.failReload(new PermissionStorageException("bad restored permissions"));
         TestSource console = TestSource.console();
 

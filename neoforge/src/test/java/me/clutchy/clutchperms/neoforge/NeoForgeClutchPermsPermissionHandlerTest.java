@@ -242,7 +242,7 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
     }
 
     @Test
-    void malformedBackupRestoreRollsBackAndPreservesPermissionHandlerState(@TempDir Path temporaryDirectory) throws Exception {
+    void malformedBackupRestoreFailsValidationAndPreservesPermissionHandlerState(@TempDir Path temporaryDirectory) throws Exception {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
         PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
         activePermissionService.setPermission(SUBJECT_ID, "example.backup", PermissionValue.TRUE);
@@ -267,7 +267,7 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
                 """, StandardCharsets.UTF_8);
 
         assertCommandFails(dispatcher, "clutchperms backup restore permissions " + backupFileName, console,
-                "Backup operation failed: Failed to apply restored permissions backup " + backupFileName);
+                "Backup operation failed: Failed to validate permissions backup " + backupFileName);
 
         assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
         assertEquals(Boolean.TRUE, suppliedHandler.getOfflinePermission(SUBJECT_ID, backupNode));

@@ -600,12 +600,12 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
-     * Confirms malformed restored files roll disk back and preserve active Paper runtime state.
+     * Confirms malformed backups fail validation before replacing live storage and preserve active Paper runtime state.
      *
      * @throws Exception when file setup fails unexpectedly
      */
     @Test
-    void malformedBackupRestoreRollsBackAndPreservesRuntimeBridge() throws Exception {
+    void malformedBackupRestoreFailsValidationAndPreservesRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
         plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
@@ -629,7 +629,7 @@ class ClutchPermsPaperPluginTest {
                 """, StandardCharsets.UTF_8);
 
         assertCommandFails(dispatcher, "clutchperms backup restore permissions " + backupFileName, admin,
-                "Backup operation failed: Failed to apply restored permissions backup " + backupFileName);
+                "Backup operation failed: Failed to validate permissions backup " + backupFileName);
 
         assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.backup"));

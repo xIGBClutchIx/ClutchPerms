@@ -112,6 +112,8 @@ Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank
 
 Backups are created before replacing an existing live JSON file. The first save of a missing file does not create a backup.
 
+Backup restore validates the selected backup file before replacing live storage. After replacement, ClutchPerms reloads all storage; if reload fails, it rolls the restored file back.
+
 If a JSON-backed mutation cannot save, ClutchPerms leaves both the live file and the in-memory runtime state unchanged.
 
 ```text
