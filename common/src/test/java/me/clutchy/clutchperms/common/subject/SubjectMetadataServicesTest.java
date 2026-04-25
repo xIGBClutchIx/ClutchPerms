@@ -111,6 +111,36 @@ class SubjectMetadataServicesTest {
     }
 
     /**
+     * Confirms failed JSON saves leave subject metadata runtime state and persisted state unchanged.
+     *
+     * @throws IOException if test storage setup cannot be written or read
+     */
+    @Test
+    void failedSavesDoNotCommitSubjectMetadataMutations() throws IOException {
+        Path subjectsFile = temporaryDirectory.resolve("subjects.json");
+        Files.writeString(subjectsFile, """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "lastKnownName": "First",
+                      "lastSeen": "2026-04-24T12:00:00Z"
+                    }
+                  }
+                }
+                """);
+        SubjectMetadataService subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
+        String persistedJson = Files.readString(subjectsFile);
+        blockBackupRoot();
+
+        assertThrows(PermissionStorageException.class, () -> subjectMetadataService.recordSubject(FIRST_SUBJECT, "Changed", SECOND_SEEN));
+        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> subjectMetadataService.recordSubject(SECOND_SUBJECT, "Second", SECOND_SEEN));
+        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+    }
+
+    /**
      * Confirms malformed or invalid subject metadata files fail during construction.
      *
      * @throws IOException if the test file cannot be written
@@ -164,5 +194,22 @@ class SubjectMetadataServicesTest {
         Files.writeString(subjectsFile, json);
 
         assertThrows(PermissionStorageException.class, () -> SubjectMetadataServices.jsonFile(subjectsFile));
+    }
+
+    private void assertSubjectMetadataStatePreserved(SubjectMetadataService subjectMetadataService, Path subjectsFile, String persistedJson) throws IOException {
+        assertSubjectMetadataRuntimeState(subjectMetadataService);
+        assertEquals(persistedJson, Files.readString(subjectsFile));
+        assertSubjectMetadataRuntimeState(SubjectMetadataServices.jsonFile(subjectsFile));
+    }
+
+    private static void assertSubjectMetadataRuntimeState(SubjectMetadataService subjectMetadataService) {
+        SubjectMetadata firstSubject = new SubjectMetadata(FIRST_SUBJECT, "First", FIRST_SEEN);
+        assertEquals(firstSubject, subjectMetadataService.getSubject(FIRST_SUBJECT).orElseThrow());
+        assertFalse(subjectMetadataService.getSubject(SECOND_SUBJECT).isPresent());
+        assertEquals(Map.of(FIRST_SUBJECT, firstSubject), subjectMetadataService.getSubjects());
+    }
+
+    private void blockBackupRoot() throws IOException {
+        Files.writeString(temporaryDirectory.resolve("backups"), "blocked");
     }
 }

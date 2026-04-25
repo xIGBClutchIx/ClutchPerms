@@ -110,6 +110,8 @@ Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank
 
 Backups are created before replacing an existing live JSON file. The first save of a missing file does not create a backup.
 
+If a JSON-backed mutation cannot save, ClutchPerms leaves both the live file and the in-memory runtime state unchanged.
+
 ```text
 backups/
   permissions/permissions-YYYYMMDD-HHMMSSSSS.json

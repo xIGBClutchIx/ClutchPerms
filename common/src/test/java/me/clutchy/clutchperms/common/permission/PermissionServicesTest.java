@@ -90,6 +90,36 @@ class PermissionServicesTest {
     }
 
     /**
+     * Confirms failed JSON saves leave both runtime state and persisted state unchanged.
+     *
+     * @throws IOException if test storage setup cannot be written or read
+     */
+    @Test
+    void failedSavesDoNotCommitPermissionMutations() throws IOException {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        Files.writeString(permissionsFile, """
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "clear.node": "FALSE",
+                      "old.node": "TRUE"
+                    }
+                  }
+                }
+                """);
+        PermissionService permissionService = PermissionServices.jsonFile(permissionsFile);
+        String persistedJson = Files.readString(permissionsFile);
+        blockBackupRoot();
+
+        assertThrows(PermissionStorageException.class, () -> permissionService.setPermission(FIRST_SUBJECT, "new.node", PermissionValue.TRUE));
+        assertPermissionStatePreserved(permissionService, permissionsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> permissionService.clearPermission(FIRST_SUBJECT, "clear.node"));
+        assertPermissionStatePreserved(permissionService, permissionsFile, persistedJson);
+    }
+
+    /**
      * Confirms malformed or invalid permission files fail during construction.
      *
      * @throws IOException if the test file cannot be written
@@ -232,5 +262,22 @@ class PermissionServicesTest {
         Files.writeString(permissionsFile, json);
 
         assertThrows(PermissionStorageException.class, () -> PermissionServices.jsonFile(permissionsFile));
+    }
+
+    private void assertPermissionStatePreserved(PermissionService permissionService, Path permissionsFile, String persistedJson) throws IOException {
+        assertPermissionRuntimeState(permissionService);
+        assertEquals(persistedJson, Files.readString(permissionsFile));
+        assertPermissionRuntimeState(PermissionServices.jsonFile(permissionsFile));
+    }
+
+    private static void assertPermissionRuntimeState(PermissionService permissionService) {
+        assertEquals(PermissionValue.TRUE, permissionService.getPermission(FIRST_SUBJECT, "old.node"));
+        assertEquals(PermissionValue.FALSE, permissionService.getPermission(FIRST_SUBJECT, "clear.node"));
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(FIRST_SUBJECT, "new.node"));
+        assertEquals(Map.of("clear.node", PermissionValue.FALSE, "old.node", PermissionValue.TRUE), permissionService.getPermissions(FIRST_SUBJECT));
+    }
+
+    private void blockBackupRoot() throws IOException {
+        Files.writeString(temporaryDirectory.resolve("backups"), "blocked");
     }
 }

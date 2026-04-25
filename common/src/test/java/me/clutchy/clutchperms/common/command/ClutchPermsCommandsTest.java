@@ -801,6 +801,29 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms direct permission storage failures return styled command feedback instead of raw exceptions.
+     *
+     * @throws CommandSyntaxException if command failures are not handled by the command layer
+     */
+    @Test
+    void directPermissionMutationFailuresReturnStyledErrors() throws CommandSyntaxException {
+        permissionService = new FailingMutationPermissionService(new PermissionStorageException("save blocked"));
+        permissionResolver = new PermissionResolver(permissionService, groupService);
+        environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, manualPermissionNodeRegistry, permissionResolver);
+        environment.addOnlineSubject("Target", TARGET_ID);
+        dispatcher = new CommandDispatcher<>();
+        ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment, rootLiteral)));
+        TestSource console = TestSource.console();
+
+        assertEquals(0, dispatcher.execute("clutchperms user Target set example.node true", console));
+        assertEquals(List.of("Permission operation failed: save blocked"), console.messages());
+
+        console.messages().clear();
+        assertEquals(0, dispatcher.execute("clutchperms user Target clear example.node", console));
+        assertEquals(List.of("Permission operation failed: save blocked"), console.messages());
+    }
+
+    /**
      * Confirms node suggestions include built-in nodes and explicit assignments for the selected target.
      */
     @Test
@@ -1055,6 +1078,35 @@ class ClutchPermsCommandsTest {
     private static List<String> nodesUsageMessages() {
         return List.of("Missing nodes command.", "List, search, add, or remove known permission nodes.", "Try one:", "  /clutchperms nodes list",
                 "  /clutchperms nodes search <query>", "  /clutchperms nodes add <node> [description]", "  /clutchperms nodes remove <node>");
+    }
+
+    private static final class FailingMutationPermissionService implements PermissionService {
+
+        private final RuntimeException failure;
+
+        private FailingMutationPermissionService(RuntimeException failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public PermissionValue getPermission(UUID subjectId, String node) {
+            return PermissionValue.UNSET;
+        }
+
+        @Override
+        public Map<String, PermissionValue> getPermissions(UUID subjectId) {
+            return Map.of();
+        }
+
+        @Override
+        public void setPermission(UUID subjectId, String node, PermissionValue value) {
+            throw failure;
+        }
+
+        @Override
+        public void clearPermission(UUID subjectId, String node) {
+            throw failure;
+        }
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {

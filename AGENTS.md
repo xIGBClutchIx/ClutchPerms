@@ -110,6 +110,8 @@ Storage expectations:
 - Write through temporary files and replace the target file.
 - Before replacing an existing live JSON file, create a rolling backup through `common.storage.StorageBackupService`.
 - Do not replace the live file if backup creation fails.
+- JSON-backed mutations must commit in-memory runtime state only after the replacement file is successfully written.
+- If a mutation save fails, keep the previous in-memory state, resolver cache notifications, runtime bridge notifications, and live JSON file unchanged.
 - The first save of a missing live file must not create a backup.
 - Keep backup retention at the newest 10 files per storage kind until a runtime config exists.
 - Backup layout is `backups/<kind>/<kind>-YYYYMMDD-HHMMSSSSS.json`, where kind is `permissions`, `subjects`, `groups`, or `nodes`.

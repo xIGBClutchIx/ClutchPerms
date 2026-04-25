@@ -91,6 +91,36 @@ class PermissionNodeRegistriesTest {
     }
 
     /**
+     * Confirms failed JSON saves leave manual node runtime state and persisted state unchanged.
+     *
+     * @throws IOException if test storage setup cannot be written or read
+     */
+    @Test
+    void failedSavesDoNotCommitNodeRegistryMutations() throws IOException {
+        Path nodesFile = temporaryDirectory.resolve("nodes.json");
+        Files.writeString(nodesFile, """
+                {
+                  "version": 1,
+                  "nodes": {
+                    "existing.node": {
+                      "description": "Existing"
+                    },
+                    "remove.node": {}
+                  }
+                }
+                """);
+        MutablePermissionNodeRegistry registry = PermissionNodeRegistries.jsonFile(nodesFile);
+        String persistedJson = Files.readString(nodesFile);
+        blockBackupRoot();
+
+        assertThrows(PermissionStorageException.class, () -> registry.addNode("new.node", "New"));
+        assertNodeRegistryStatePreserved(registry, nodesFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> registry.removeNode("remove.node"));
+        assertNodeRegistryStatePreserved(registry, nodesFile, persistedJson);
+    }
+
+    /**
      * Confirms malformed or invalid node registry files fail during construction.
      *
      * @throws IOException if a test file cannot be written
@@ -212,5 +242,21 @@ class PermissionNodeRegistriesTest {
         Files.writeString(nodesFile, json);
 
         assertThrows(PermissionStorageException.class, () -> PermissionNodeRegistries.jsonFile(nodesFile));
+    }
+
+    private void assertNodeRegistryStatePreserved(PermissionNodeRegistry registry, Path nodesFile, String persistedJson) throws IOException {
+        assertNodeRegistryRuntimeState(registry);
+        assertEquals(persistedJson, Files.readString(nodesFile));
+        assertNodeRegistryRuntimeState(PermissionNodeRegistries.jsonFile(nodesFile));
+    }
+
+    private static void assertNodeRegistryRuntimeState(PermissionNodeRegistry registry) {
+        assertEquals(
+                Set.of(new KnownPermissionNode("existing.node", "Existing", PermissionNodeSource.MANUAL), new KnownPermissionNode("remove.node", "", PermissionNodeSource.MANUAL)),
+                registry.getKnownNodes());
+    }
+
+    private void blockBackupRoot() throws IOException {
+        Files.writeString(temporaryDirectory.resolve("backups"), "blocked");
     }
 }

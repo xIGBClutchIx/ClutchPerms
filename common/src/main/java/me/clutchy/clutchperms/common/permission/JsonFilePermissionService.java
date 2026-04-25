@@ -33,7 +33,7 @@ final class JsonFilePermissionService implements PermissionService {
 
     private final Path permissionsFile;
 
-    private final InMemoryPermissionService delegate;
+    private InMemoryPermissionService delegate;
 
     JsonFilePermissionService(Path permissionsFile) {
         this.permissionsFile = permissionsFile.toAbsolutePath().normalize();
@@ -61,8 +61,10 @@ final class JsonFilePermissionService implements PermissionService {
      */
     @Override
     public synchronized void setPermission(UUID subjectId, String node, PermissionValue value) {
-        delegate.setPermission(subjectId, node, value);
-        savePermissions();
+        InMemoryPermissionService candidate = copyDelegate();
+        candidate.setPermission(subjectId, node, value);
+        savePermissions(candidate.snapshot());
+        delegate = candidate;
     }
 
     /**
@@ -70,8 +72,14 @@ final class JsonFilePermissionService implements PermissionService {
      */
     @Override
     public synchronized void clearPermission(UUID subjectId, String node) {
-        delegate.clearPermission(subjectId, node);
-        savePermissions();
+        InMemoryPermissionService candidate = copyDelegate();
+        candidate.clearPermission(subjectId, node);
+        savePermissions(candidate.snapshot());
+        delegate = candidate;
+    }
+
+    private InMemoryPermissionService copyDelegate() {
+        return new InMemoryPermissionService(delegate.snapshot());
     }
 
     private Map<UUID, Map<String, PermissionValue>> loadPermissions() {
@@ -89,10 +97,10 @@ final class JsonFilePermissionService implements PermissionService {
         }
     }
 
-    private void savePermissions() {
+    private void savePermissions(Map<UUID, Map<String, PermissionValue>> snapshot) {
         try {
             StorageFiles.writeAtomicallyWithBackup(permissionsFile, StorageFileKind.PERMISSIONS, writer -> {
-                GSON.toJson(toJson(delegate.snapshot()), writer);
+                GSON.toJson(toJson(snapshot), writer);
                 writer.write(System.lineSeparator());
             });
         } catch (IOException exception) {

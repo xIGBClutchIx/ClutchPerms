@@ -103,6 +103,8 @@ public final class ClutchPermsCommands {
 
     private static final DynamicCommandExceptionType VALIDATE_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
+    private static final DynamicCommandExceptionType PERMISSION_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
     private static final DynamicCommandExceptionType GROUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType NODE_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
@@ -895,7 +897,11 @@ public final class ClutchPermsCommands {
         CommandSubject subject = resolveSubject(environment, context);
         PermissionAssignment assignment = getPermissionAssignment(context);
 
-        environment.permissionService().setPermission(subject.id(), assignment.node(), assignment.value());
+        try {
+            environment.permissionService().setPermission(subject.id(), assignment.node(), assignment.value());
+        } catch (RuntimeException exception) {
+            throw PERMISSION_OPERATION_FAILED.create(CommandLang.permissionOperationFailed(exception));
+        }
         environment.sendMessage(context.getSource(), CommandLang.permissionSet(assignment.node(), formatSubject(subject), assignment.value()));
         return Command.SINGLE_SUCCESS;
     }
@@ -904,7 +910,11 @@ public final class ClutchPermsCommands {
         CommandSubject subject = resolveSubject(environment, context);
         String node = getNode(context);
 
-        environment.permissionService().clearPermission(subject.id(), node);
+        try {
+            environment.permissionService().clearPermission(subject.id(), node);
+        } catch (RuntimeException exception) {
+            throw PERMISSION_OPERATION_FAILED.create(CommandLang.permissionOperationFailed(exception));
+        }
         environment.sendMessage(context.getSource(), CommandLang.permissionClear(node, formatSubject(subject)));
         return Command.SINGLE_SUCCESS;
     }

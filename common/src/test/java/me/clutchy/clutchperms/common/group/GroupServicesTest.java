@@ -156,6 +156,69 @@ class GroupServicesTest {
     }
 
     /**
+     * Confirms failed JSON saves leave group runtime state and persisted state unchanged.
+     *
+     * @throws IOException if test storage setup cannot be written or read
+     */
+    @Test
+    void failedSavesDoNotCommitGroupMutations() throws IOException {
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
+        Files.writeString(groupsFile, """
+                {
+                  "version": 1,
+                  "groups": {
+                    "base": {
+                      "permissions": {}
+                    },
+                    "guest": {
+                      "permissions": {}
+                    },
+                    "staff": {
+                      "permissions": {
+                        "old.node": "TRUE"
+                      },
+                      "parents": [
+                        "base"
+                      ]
+                    }
+                  },
+                  "memberships": {
+                    "00000000-0000-0000-0000-000000000001": [
+                      "staff"
+                    ]
+                  }
+                }
+                """);
+        GroupService groupService = GroupServices.jsonFile(groupsFile);
+        String persistedJson = Files.readString(groupsFile);
+        blockBackupRoot();
+
+        assertThrows(PermissionStorageException.class, () -> groupService.createGroup("new"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.deleteGroup("staff"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.setGroupPermission("staff", "new.node", PermissionValue.FALSE));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.clearGroupPermission("staff", "old.node"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.addSubjectGroup(SECOND_SUBJECT, "base"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.removeSubjectGroup(FIRST_SUBJECT, "staff"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.addGroupParent("guest", "base"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.removeGroupParent("staff", "base"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+    }
+
+    /**
      * Confirms deleting a group removes parent references to it.
      */
     @Test
@@ -576,5 +639,28 @@ class GroupServicesTest {
         Files.writeString(groupsFile, json);
 
         assertThrows(PermissionStorageException.class, () -> GroupServices.jsonFile(groupsFile));
+    }
+
+    private void assertGroupStatePreserved(GroupService groupService, Path groupsFile, String persistedJson) throws IOException {
+        assertGroupRuntimeState(groupService);
+        assertEquals(persistedJson, Files.readString(groupsFile));
+        assertGroupRuntimeState(GroupServices.jsonFile(groupsFile));
+    }
+
+    private static void assertGroupRuntimeState(GroupService groupService) {
+        assertEquals(Set.of("base", "guest", "staff"), groupService.getGroups());
+        assertFalse(groupService.hasGroup("new"));
+        assertEquals(PermissionValue.TRUE, groupService.getGroupPermission("staff", "old.node"));
+        assertEquals(PermissionValue.UNSET, groupService.getGroupPermission("staff", "new.node"));
+        assertEquals(Map.of("old.node", PermissionValue.TRUE), groupService.getGroupPermissions("staff"));
+        assertEquals(Set.of("base"), groupService.getGroupParents("staff"));
+        assertEquals(Set.of(), groupService.getGroupParents("guest"));
+        assertEquals(Set.of("staff"), groupService.getSubjectGroups(FIRST_SUBJECT));
+        assertEquals(Set.of(), groupService.getSubjectGroups(SECOND_SUBJECT));
+        assertEquals(Set.of(FIRST_SUBJECT), groupService.getGroupMembers("staff"));
+    }
+
+    private void blockBackupRoot() throws IOException {
+        Files.writeString(temporaryDirectory.resolve("backups"), "blocked");
     }
 }

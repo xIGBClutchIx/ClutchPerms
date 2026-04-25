@@ -38,7 +38,7 @@ final class JsonFileGroupService implements GroupService {
 
     private final Path groupsFile;
 
-    private final InMemoryGroupService delegate;
+    private InMemoryGroupService delegate;
 
     JsonFileGroupService(Path groupsFile) {
         this.groupsFile = groupsFile.toAbsolutePath().normalize();
@@ -58,14 +58,16 @@ final class JsonFileGroupService implements GroupService {
 
     @Override
     public synchronized void createGroup(String groupName) {
-        delegate.createGroup(groupName);
-        saveGroups();
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.createGroup(groupName);
+        commit(candidate);
     }
 
     @Override
     public synchronized void deleteGroup(String groupName) {
-        delegate.deleteGroup(groupName);
-        saveGroups();
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.deleteGroup(groupName);
+        commit(candidate);
     }
 
     @Override
@@ -80,14 +82,16 @@ final class JsonFileGroupService implements GroupService {
 
     @Override
     public synchronized void setGroupPermission(String groupName, String node, PermissionValue value) {
-        delegate.setGroupPermission(groupName, node, value);
-        saveGroups();
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.setGroupPermission(groupName, node, value);
+        commit(candidate);
     }
 
     @Override
     public synchronized void clearGroupPermission(String groupName, String node) {
-        delegate.clearGroupPermission(groupName, node);
-        saveGroups();
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.clearGroupPermission(groupName, node);
+        commit(candidate);
     }
 
     @Override
@@ -97,14 +101,16 @@ final class JsonFileGroupService implements GroupService {
 
     @Override
     public synchronized void addSubjectGroup(UUID subjectId, String groupName) {
-        delegate.addSubjectGroup(subjectId, groupName);
-        saveGroups();
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.addSubjectGroup(subjectId, groupName);
+        commit(candidate);
     }
 
     @Override
     public synchronized void removeSubjectGroup(UUID subjectId, String groupName) {
-        delegate.removeSubjectGroup(subjectId, groupName);
-        saveGroups();
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.removeSubjectGroup(subjectId, groupName);
+        commit(candidate);
     }
 
     @Override
@@ -119,14 +125,25 @@ final class JsonFileGroupService implements GroupService {
 
     @Override
     public synchronized void addGroupParent(String groupName, String parentGroupName) {
-        delegate.addGroupParent(groupName, parentGroupName);
-        saveGroups();
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.addGroupParent(groupName, parentGroupName);
+        commit(candidate);
     }
 
     @Override
     public synchronized void removeGroupParent(String groupName, String parentGroupName) {
-        delegate.removeGroupParent(groupName, parentGroupName);
-        saveGroups();
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.removeGroupParent(groupName, parentGroupName);
+        commit(candidate);
+    }
+
+    private InMemoryGroupService copyDelegate() {
+        return new InMemoryGroupService(delegate.groupPermissionsSnapshot(), delegate.groupParentsSnapshot(), delegate.membershipsSnapshot());
+    }
+
+    private void commit(InMemoryGroupService candidate) {
+        saveGroups(candidate.groupPermissionsSnapshot(), candidate.groupParentsSnapshot(), candidate.membershipsSnapshot());
+        delegate = candidate;
     }
 
     private GroupData loadGroups() {
@@ -144,10 +161,11 @@ final class JsonFileGroupService implements GroupService {
         }
     }
 
-    private void saveGroups() {
+    private void saveGroups(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<String, Set<String>> groupParentsSnapshot,
+            Map<UUID, Set<String>> membershipsSnapshot) {
         try {
             StorageFiles.writeAtomicallyWithBackup(groupsFile, StorageFileKind.GROUPS, writer -> {
-                GSON.toJson(toJson(delegate.groupPermissionsSnapshot(), delegate.groupParentsSnapshot(), delegate.membershipsSnapshot()), writer);
+                GSON.toJson(toJson(groupPermissionsSnapshot, groupParentsSnapshot, membershipsSnapshot), writer);
                 writer.write(System.lineSeparator());
             });
         } catch (IOException exception) {

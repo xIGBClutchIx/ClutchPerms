@@ -57,6 +57,8 @@ final class CommandLang {
 
     private static final String ERROR_VALIDATE_FAILED = "Failed to validate ClutchPerms storage: %s";
 
+    private static final String ERROR_PERMISSION_OPERATION_FAILED = "Permission operation failed: %s";
+
     private static final String ERROR_GROUP_OPERATION_FAILED = "Group operation failed: %s";
 
     private static final String ERROR_NODE_OPERATION_FAILED = "Known permission node operation failed: %s";
@@ -266,6 +268,10 @@ final class CommandLang {
 
     static CommandMessage validateFailed(Throwable exception) {
         return error(ERROR_VALIDATE_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage permissionOperationFailed(Throwable exception) {
+        return error(ERROR_PERMISSION_OPERATION_FAILED, exceptionMessage(exception));
     }
 
     static CommandMessage groupOperationFailed(Throwable exception) {

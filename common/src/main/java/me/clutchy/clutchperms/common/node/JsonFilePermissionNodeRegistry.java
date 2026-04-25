@@ -34,7 +34,7 @@ final class JsonFilePermissionNodeRegistry implements MutablePermissionNodeRegis
 
     private final Path nodesFile;
 
-    private final InMemoryPermissionNodeRegistry delegate;
+    private InMemoryPermissionNodeRegistry delegate;
 
     JsonFilePermissionNodeRegistry(Path nodesFile) {
         this.nodesFile = nodesFile.toAbsolutePath().normalize();
@@ -48,14 +48,22 @@ final class JsonFilePermissionNodeRegistry implements MutablePermissionNodeRegis
 
     @Override
     public synchronized void addNode(String node, String description) {
-        delegate.addNode(node, description);
-        saveNodes();
+        InMemoryPermissionNodeRegistry candidate = copyDelegate();
+        candidate.addNode(node, description);
+        saveNodes(candidate.getKnownNodes());
+        delegate = candidate;
     }
 
     @Override
     public synchronized void removeNode(String node) {
-        delegate.removeNode(node);
-        saveNodes();
+        InMemoryPermissionNodeRegistry candidate = copyDelegate();
+        candidate.removeNode(node);
+        saveNodes(candidate.getKnownNodes());
+        delegate = candidate;
+    }
+
+    private InMemoryPermissionNodeRegistry copyDelegate() {
+        return new InMemoryPermissionNodeRegistry(delegate.getKnownNodes());
     }
 
     private Set<KnownPermissionNode> loadNodes() {
@@ -73,10 +81,10 @@ final class JsonFilePermissionNodeRegistry implements MutablePermissionNodeRegis
         }
     }
 
-    private void saveNodes() {
+    private void saveNodes(Set<KnownPermissionNode> snapshot) {
         try {
             StorageFiles.writeAtomicallyWithBackup(nodesFile, StorageFileKind.NODES, writer -> {
-                GSON.toJson(toJson(delegate.getKnownNodes()), writer);
+                GSON.toJson(toJson(snapshot), writer);
                 writer.write(System.lineSeparator());
             });
         } catch (IOException exception) {

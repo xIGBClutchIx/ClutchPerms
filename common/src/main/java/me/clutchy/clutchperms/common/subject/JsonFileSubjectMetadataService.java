@@ -36,7 +36,7 @@ final class JsonFileSubjectMetadataService implements SubjectMetadataService {
 
     private final Path subjectsFile;
 
-    private final InMemorySubjectMetadataService delegate;
+    private InMemorySubjectMetadataService delegate;
 
     JsonFileSubjectMetadataService(Path subjectsFile) {
         this.subjectsFile = subjectsFile.toAbsolutePath().normalize();
@@ -48,8 +48,10 @@ final class JsonFileSubjectMetadataService implements SubjectMetadataService {
      */
     @Override
     public synchronized void recordSubject(UUID subjectId, String lastKnownName, Instant lastSeen) {
-        delegate.recordSubject(subjectId, lastKnownName, lastSeen);
-        saveSubjects();
+        InMemorySubjectMetadataService candidate = copyDelegate();
+        candidate.recordSubject(subjectId, lastKnownName, lastSeen);
+        saveSubjects(candidate.snapshot());
+        delegate = candidate;
     }
 
     /**
@@ -83,10 +85,14 @@ final class JsonFileSubjectMetadataService implements SubjectMetadataService {
         }
     }
 
-    private void saveSubjects() {
+    private InMemorySubjectMetadataService copyDelegate() {
+        return new InMemorySubjectMetadataService(delegate.snapshot());
+    }
+
+    private void saveSubjects(Map<UUID, SubjectMetadata> snapshot) {
         try {
             StorageFiles.writeAtomicallyWithBackup(subjectsFile, StorageFileKind.SUBJECTS, writer -> {
-                GSON.toJson(toJson(delegate.snapshot()), writer);
+                GSON.toJson(toJson(snapshot), writer);
                 writer.write(System.lineSeparator());
             });
         } catch (IOException exception) {
