@@ -188,6 +188,67 @@ class PermissionResolverTest {
     }
 
     /**
+     * Confirms a shared inherited parent uses its nearest depth when multiple paths reach it.
+     */
+    @Test
+    void sharedParentUsesNearestHierarchyDepth() {
+        groupService.createGroup("deep");
+        groupService.createGroup("middle");
+        groupService.createGroup("wide");
+        groupService.createGroup("shared");
+        groupService.setGroupPermission("shared", "shared.node", PermissionValue.TRUE);
+        groupService.addGroupParent("deep", "middle");
+        groupService.addGroupParent("middle", "shared");
+        groupService.addGroupParent("wide", "shared");
+        groupService.addSubjectGroup(SUBJECT_ID, "deep");
+        groupService.addSubjectGroup(SUBJECT_ID, "wide");
+
+        PermissionExplanation explanation = resolver.explain(SUBJECT_ID, "shared.node");
+
+        assertEquals(new PermissionResolution(PermissionValue.TRUE, PermissionResolution.Source.GROUP, "shared", "shared.node"), explanation.resolution());
+        assertEquals(List.of(new PermissionExplanation.Match(PermissionResolution.Source.GROUP, "shared", 1, "shared.node", PermissionValue.TRUE, true)), explanation.matches());
+    }
+
+    /**
+     * Confirms an explicitly assigned parent group competes at root depth instead of inherited depth.
+     */
+    @Test
+    void explicitParentMembershipCompetesAtRootDepth() {
+        groupService.createGroup("parent");
+        groupService.setGroupPermission("parent", "example.node", PermissionValue.TRUE);
+        groupService.createGroup("child");
+        groupService.setGroupPermission("child", "example.*", PermissionValue.FALSE);
+        groupService.addGroupParent("child", "parent");
+        groupService.addSubjectGroup(SUBJECT_ID, "child");
+        groupService.addSubjectGroup(SUBJECT_ID, "parent");
+
+        PermissionExplanation explanation = resolver.explain(SUBJECT_ID, "example.node");
+
+        assertEquals(new PermissionResolution(PermissionValue.TRUE, PermissionResolution.Source.GROUP, "parent", "example.node"), explanation.resolution());
+        assertEquals(List.of(new PermissionExplanation.Match(PermissionResolution.Source.GROUP, "parent", 0, "example.node", PermissionValue.TRUE, true),
+                new PermissionExplanation.Match(PermissionResolution.Source.GROUP, "child", 0, "example.*", PermissionValue.FALSE, false)), explanation.matches());
+    }
+
+    /**
+     * Confirms the default group depth beats a more specific inherited default-parent assignment.
+     */
+    @Test
+    void defaultGroupDepthBeatsDefaultParentSpecificity() {
+        groupService.setGroupPermission("default", "example.*", PermissionValue.FALSE);
+        groupService.createGroup("default-parent");
+        groupService.setGroupPermission("default-parent", "example.node", PermissionValue.TRUE);
+        groupService.addGroupParent("default", "default-parent");
+
+        PermissionExplanation explanation = resolver.explain(SUBJECT_ID, "example.node");
+
+        assertEquals(new PermissionResolution(PermissionValue.FALSE, PermissionResolution.Source.DEFAULT, "default", "example.*"), explanation.resolution());
+        assertEquals(
+                List.of(new PermissionExplanation.Match(PermissionResolution.Source.DEFAULT, "default", 0, "example.*", PermissionValue.FALSE, true),
+                        new PermissionExplanation.Match(PermissionResolution.Source.DEFAULT, "default-parent", 1, "example.node", PermissionValue.TRUE, false)),
+                explanation.matches());
+    }
+
+    /**
      * Confirms FALSE winners at the same source/depth/specificity are explained before TRUE matches.
      */
     @Test
