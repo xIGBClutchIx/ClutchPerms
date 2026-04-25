@@ -8,7 +8,7 @@
 - Use the Gradle wrapper: `./gradlew`.
 - Run relevant checks before finishing and report exactly what ran.
 - `.codex` is a local workspace file and is ignored. Do not stage it unless explicitly requested.
-- NeoForge tasks may generate `neoforge/logs/`; remove that directory before finishing if it appears.
+- NeoForge verification tasks clean generated `neoforge/logs/`; remove that directory before finishing only if it still appears.
 
 ## Project Purpose
 
