@@ -279,7 +279,7 @@ Important shared packages:
 - `common.node` - known permission node registry, manual node storage, and node registry observers
 - `common.subject` - last-known subject metadata
 - `common.storage` - storage exceptions, atomic writes, and backup/restore helpers
-- `common.command` - shared Brigadier command tree and command messages
+- `common.command` - shared Brigadier root wiring, command behavior, command messages, and subcommand branch builders
 
 Version pins live in `gradle.properties`. Module metadata lives in:
 

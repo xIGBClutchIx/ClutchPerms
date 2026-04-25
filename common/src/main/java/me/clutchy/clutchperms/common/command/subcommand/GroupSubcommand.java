@@ -1,0 +1,159 @@
+package me.clutchy.clutchperms.common.command.subcommand;
+
+import java.util.Comparator;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+
+import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
+import me.clutchy.clutchperms.common.command.CommandArguments;
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
+
+/**
+ * Builds the `/clutchperms group` command branch.
+ */
+public final class GroupSubcommand {
+
+    /**
+     * Handlers for group definition, permission, parent, and member command actions.
+     *
+     * @param <S> platform command source type
+     */
+    public interface Handlers<S> {
+
+        int rootUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int list(CommandContext<S> context) throws CommandSyntaxException;
+
+        int targetUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int unknownTargetUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int create(CommandContext<S> context) throws CommandSyntaxException;
+
+        int delete(CommandContext<S> context) throws CommandSyntaxException;
+
+        int show(CommandContext<S> context) throws CommandSyntaxException;
+
+        int parents(CommandContext<S> context) throws CommandSyntaxException;
+
+        int parentUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int parentAddUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int parentAdd(CommandContext<S> context) throws CommandSyntaxException;
+
+        int parentRemoveUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int parentRemove(CommandContext<S> context) throws CommandSyntaxException;
+
+        int unknownParentUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int getUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int get(CommandContext<S> context) throws CommandSyntaxException;
+
+        int setUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int set(CommandContext<S> context) throws CommandSyntaxException;
+
+        int clearUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int clear(CommandContext<S> context) throws CommandSyntaxException;
+    }
+
+    public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers,
+            SuggestionProvider<S> permissionNodes, SuggestionProvider<S> permissionAssignment) {
+        RequiredArgumentBuilder<S, String> group = groupArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::targetUsage))
+                .then(LiteralArgumentBuilder.<S>literal("create").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CREATE, handlers::create)))
+                .then(LiteralArgumentBuilder.<S>literal("delete").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_DELETE, handlers::delete)))
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::show)))
+                .then(LiteralArgumentBuilder.<S>literal("parents").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents)))
+                .then(parentCommand(environment, authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
+                .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
+                .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::unknownTargetUsage)));
+
+        return LiteralArgumentBuilder.<S>literal("group").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::rootUsage))
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::list))).then(group);
+    }
+
+    private static <S> LiteralArgumentBuilder<S> parentCommand(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
+        return LiteralArgumentBuilder.<S>literal("parent").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parentUsage))
+                .then(LiteralArgumentBuilder.<S>literal("add").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENT_ADD, handlers::parentAddUsage))
+                        .then(parentGroupArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENT_ADD, handlers::parentAdd))))
+                .then(LiteralArgumentBuilder.<S>literal("remove")
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENT_REMOVE, handlers::parentRemoveUsage))
+                        .then(parentGroupArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENT_REMOVE, handlers::parentRemove))))
+                .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::unknownParentUsage)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> getCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
+        return LiteralArgumentBuilder.<S>literal("get").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_GET, handlers::getUsage))
+                .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_GET, handlers::get)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> setCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionAssignment) {
+        return LiteralArgumentBuilder.<S>literal("set").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_SET, handlers::setUsage))
+                .then(assignmentArgument(permissionAssignment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_SET, handlers::set)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> clearCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
+        return LiteralArgumentBuilder.<S>literal("clear").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CLEAR, handlers::clearUsage))
+                .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CLEAR, handlers::clear)));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> nodeArgument(SuggestionProvider<S> permissionNodes) {
+        return RequiredArgumentBuilder.<S, String>argument(CommandArguments.NODE, StringArgumentType.greedyString()).suggests(permissionNodes);
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> assignmentArgument(SuggestionProvider<S> permissionAssignment) {
+        return RequiredArgumentBuilder.<S, String>argument(CommandArguments.ASSIGNMENT, StringArgumentType.greedyString()).suggests(permissionAssignment);
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> groupArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(CommandArguments.GROUP, StringArgumentType.word()).suggests((context, builder) -> suggestGroups(environment, builder));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> parentGroupArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(CommandArguments.PARENT, StringArgumentType.word())
+                .suggests((context, builder) -> suggestParentGroups(environment, context, builder));
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestGroups(ClutchPermsCommandEnvironment<S> environment, SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining))
+                .forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestParentGroups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        String normalizedGroupName;
+        Set<String> existingParents;
+        try {
+            normalizedGroupName = StringArgumentType.getString(context, CommandArguments.GROUP).trim().toLowerCase(Locale.ROOT);
+            existingParents = environment.groupService().getGroupParents(normalizedGroupName);
+        } catch (IllegalArgumentException exception) {
+            normalizedGroupName = "";
+            existingParents = Set.of();
+        }
+
+        String currentGroupName = normalizedGroupName;
+        Set<String> currentParents = existingParents;
+        environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> !group.equals(currentGroupName))
+                .filter(group -> !currentParents.contains(group)).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining)).forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private GroupSubcommand() {
+    }
+}

@@ -50,7 +50,8 @@ Shared package ownership:
 - `common.node` - known permission node registry, manual node storage, registry composition, and node observers
 - `common.subject` - last-known subject metadata
 - `common.storage` - storage exceptions, atomic file writes, backup listing, and restore rollback helpers
-- `common.command` - shared Brigadier command tree, command messages, and platform command environment contract
+- `common.command` - shared Brigadier root wiring, command behavior, command messages, and platform command environment contract
+- `common.command.subcommand` - shared Brigadier branch builders for `/backup`, `/user`, `/group`, `/users`, and `/nodes`
 
 ## Current Functional Model
 
@@ -135,6 +136,14 @@ Storage expectations:
 ## Commands
 
 Command behavior belongs in `common.command` unless it depends on platform APIs. Platform command classes should be thin adapters around the shared Brigadier tree.
+
+Command system layout:
+
+- `ClutchPermsCommands` owns the root `/clutchperms` builder, authorization wrapper, shared command actions, target parsing, and common feedback helpers.
+- Subcommand branch shape belongs in `common.command.subcommand` classes such as `BackupSubcommand`, `UserSubcommand`, `GroupSubcommand`, `UsersSubcommand`, and `NodesSubcommand`.
+- Subcommand classes should build Brigadier literals/arguments, suggestions that are local to the branch, and handler interfaces. They should not introduce platform APIs or duplicate command behavior that belongs in `ClutchPermsCommands`.
+- Use `CommandArguments` constants for shared argument names so handlers and branch builders stay aligned.
+- Keep command feedback text centralized in `CommandLang`; branch builders should call handlers rather than formatting user-facing messages directly.
 
 Current command surface:
 
