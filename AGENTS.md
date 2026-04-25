@@ -187,6 +187,7 @@ Current command surface:
 - `/clutchperms backup list page <page>`
 - `/clutchperms backup list <permissions|subjects|groups|nodes> [page]`
 - `/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>`
+- `/clutchperms user <target> info`
 - `/clutchperms user <target> list [page]`
 - `/clutchperms user <target> get|set|clear|check|explain`
 - `/clutchperms user <target> groups [page]`
@@ -195,6 +196,7 @@ Current command surface:
 - `/clutchperms user <target> suffix get|set|clear`
 - `/clutchperms group list [page]`
 - `/clutchperms group <group> create|delete|get|set|clear`
+- `/clutchperms group <group> info`
 - `/clutchperms group <group> rename <new-group>`
 - `/clutchperms group <group> list [page]`
 - `/clutchperms group <group> prefix get|set|clear`

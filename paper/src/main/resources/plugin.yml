@@ -37,6 +37,9 @@ permissions:
   clutchperms.admin.backup.restore:
     description: Allows restoring ClutchPerms backups.
     default: false
+  clutchperms.admin.user.info:
+    description: Allows viewing user summaries.
+    default: false
   clutchperms.admin.user.list:
     description: Allows listing direct user permissions.
     default: false
@@ -75,6 +78,9 @@ permissions:
     default: false
   clutchperms.admin.group.list:
     description: Allows listing groups.
+    default: false
+  clutchperms.admin.group.info:
+    description: Allows viewing group summaries.
     default: false
   clutchperms.admin.group.create:
     description: Allows creating groups.

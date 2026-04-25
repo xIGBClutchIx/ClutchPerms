@@ -26,6 +26,7 @@ import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
@@ -151,7 +152,7 @@ class ClutchPermsCommandsTest {
         assertEquals(commandListPageOneMessages("cperms"), cperms.messages());
         assertEquals(
                 List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
-                        "  /perms group <group> <create|delete|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
+                        "  /perms group <group> <create|delete|info|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
                         "  /perms group <group> rename <new-group>", "  /perms group <group> parent <add|remove> <parent>", "  /perms group <group> <prefix|suffix> get|set|clear"),
                 perms.messages());
         assertSuggests(perms.commandMessages().get(3), "/perms group list");
@@ -188,7 +189,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(List.of("ClutchPerms commands (page 1/13):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/13 | Next >"),
+        assertEquals(List.of("ClutchPerms commands (page 1/14):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/14 | Next >"),
                 console.messages());
         assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
     }
@@ -347,7 +348,7 @@ class ClutchPermsCommandsTest {
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
-        assertEquals(List.of("ClutchPerms commands (page 1/13):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/13 | Next >"), help.messages());
+        assertEquals(List.of("ClutchPerms commands (page 1/14):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/14 | Next >"), help.messages());
 
         permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
         permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
@@ -721,6 +722,122 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms user info summarizes identity, metadata, permissions, groups, and display values.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanShowUserInfoSummary() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(TARGET_ID, "StoredTarget", FIRST_SEEN);
+        permissionService.setPermission(TARGET_ID, "direct.node", PermissionValue.TRUE);
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "group.node", PermissionValue.TRUE);
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        groupService.setGroupPermission(GroupService.DEFAULT_GROUP, "default.node", PermissionValue.FALSE);
+        subjectMetadataService.setSubjectPrefix(TARGET_ID, DisplayText.parse("&a[Target]"));
+        groupService.setGroupSuffix("staff", DisplayText.parse("&f*"));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target info", console);
+
+        assertEquals(List.of("User Target (00000000-0000-0000-0000-000000000002):", "  subject Target (00000000-0000-0000-0000-000000000002)",
+                "  stored last-known name StoredTarget, last seen 2026-04-24T12:00:00Z", "  direct permissions 1", "  effective permissions 3",
+                "  groups default (implicit), staff", "  direct prefix &a[Target]", "  effective prefix &a[Target] from direct", "  direct suffix unset",
+                "  effective suffix &f* from group staff"), console.messages());
+        assertSuggests(console.commandMessages().get(3), "/clutchperms user 00000000-0000-0000-0000-000000000002 list");
+        assertSuggests(console.commandMessages().get(5), "/clutchperms user 00000000-0000-0000-0000-000000000002 groups");
+        assertSuggests(console.commandMessages().get(6), "/clutchperms user 00000000-0000-0000-0000-000000000002 prefix get");
+        assertSuggests(console.commandMessages().get(8), "/clutchperms user 00000000-0000-0000-0000-000000000002 suffix get");
+    }
+
+    /**
+     * Confirms UUID-only user info targets remain usable without stored subject metadata.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void userInfoSupportsUuidOnlyTargets() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user " + SECOND_TARGET_ID + " info", console);
+
+        assertEquals(List.of("User 00000000-0000-0000-0000-000000000004 (00000000-0000-0000-0000-000000000004):",
+                "  subject 00000000-0000-0000-0000-000000000004 (00000000-0000-0000-0000-000000000004)", "  stored metadata none", "  direct permissions 0",
+                "  effective permissions 0", "  groups default (implicit)", "  direct prefix unset", "  effective prefix unset", "  direct suffix unset",
+                "  effective suffix unset"), console.messages());
+    }
+
+    /**
+     * Confirms group info summarizes permissions, relationships, members, display values, and default status.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanShowGroupInfoSummary() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(TARGET_ID, "Target", FIRST_SEEN);
+        groupService.createGroup("base");
+        groupService.createGroup("staff");
+        groupService.createGroup("child");
+        groupService.setGroupPermission("staff", "group.node", PermissionValue.TRUE);
+        groupService.addGroupParent("staff", "base");
+        groupService.addGroupParent("child", "staff");
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff info", console);
+
+        assertEquals(List.of("Group staff:", "  name staff", "  direct permissions 1", "  parents base", "  child groups child",
+                "  explicit members Target (00000000-0000-0000-0000-000000000002)", "  prefix &7[Staff]", "  suffix unset"), console.messages());
+        assertSuggests(console.commandMessages().get(2), "/clutchperms group staff list");
+        assertSuggests(console.commandMessages().get(3), "/clutchperms group staff parents");
+        assertSuggests(console.commandMessages().get(6), "/clutchperms group staff prefix get");
+        assertSuggests(console.commandMessages().get(7), "/clutchperms group staff suffix get");
+    }
+
+    /**
+     * Confirms default group info calls out implicit membership and direct display values.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void groupInfoSummarizesDefaultGroup() throws CommandSyntaxException {
+        groupService.setGroupPermission(GroupService.DEFAULT_GROUP, "default.node", PermissionValue.FALSE);
+        groupService.setGroupPrefix(GroupService.DEFAULT_GROUP, DisplayText.parse("&8[Default]"));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group default info", console);
+
+        assertEquals(List.of("Group default:", "  name default", "  default group applies implicitly", "  direct permissions 1", "  parents none", "  child groups none",
+                "  explicit members none", "  prefix &8[Default]", "  suffix unset"), console.messages());
+    }
+
+    /**
+     * Confirms info summaries cap long lists deterministically.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void infoSummariesCapLongLists() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        for (int index = 1; index <= 6; index++) {
+            String suffix = String.format("%02d", index);
+            groupService.createGroup("group" + suffix);
+            groupService.addSubjectGroup(TARGET_ID, "group" + suffix);
+            groupService.createGroup("child" + suffix);
+            groupService.addGroupParent("child" + suffix, "staff");
+        }
+        TestSource userInfo = TestSource.console();
+        TestSource groupInfo = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target info", userInfo);
+        dispatcher.execute("clutchperms group staff info", groupInfo);
+
+        assertMessageContains(userInfo, "  groups default (implicit), group01, group02, group03, group04, +2 more");
+        assertMessageContains(groupInfo, "  child groups child01, child02, child03, child04, child05, +1 more");
+    }
+
+    /**
      * Confirms display commands validate ampersand formatting and report usage for incomplete sets.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -843,6 +960,30 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms exact info permissions authorize only the matching read-only summary commands.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void playerWithInfoPermissionsCanUseInfoOnly() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertCommandFails("clutchperms user Target info", player, "You do not have permission to use ClutchPerms commands.");
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_USER_INFO, PermissionValue.TRUE);
+        dispatcher.execute("clutchperms user Target info", player);
+
+        assertCommandFails("clutchperms user Target list", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandFails("clutchperms group staff info", player, "You do not have permission to use ClutchPerms commands.");
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_INFO, PermissionValue.TRUE);
+        dispatcher.execute("clutchperms group staff info", player);
+
+        assertCommandFails("clutchperms group staff list", player, "You do not have permission to use ClutchPerms commands.");
+    }
+
+    /**
      * Confirms wildcard admin permissions authorize command execution through the shared resolver.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -852,6 +993,7 @@ class ClutchPermsCommandsTest {
         permissionService.setPermission(ADMIN_ID, "clutchperms.admin.user.*", PermissionValue.TRUE);
         TestSource player = TestSource.player(ADMIN_ID);
 
+        dispatcher.execute("clutchperms user Target info", player);
         dispatcher.execute("clutchperms user Target set example.node false", player);
 
         assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
@@ -1225,6 +1367,21 @@ class ClutchPermsCommandsTest {
         assertMessageContains(console, "Use an exact online name, stored last-known name, or UUID.");
         assertMessageContains(console, "Closest online players: Target");
         assertMessageContains(console, "Closest known users: Targe (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T12:00:00Z)");
+    }
+
+    /**
+     * Confirms info commands reuse existing closest-match feedback for unknown targets.
+     */
+    @Test
+    void infoCommandsUseExistingClosestMatchFeedback() {
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms user Targt info", console, "Unknown user target: Targt");
+        assertMessageContains(console, "Closest online players: Target");
+
+        assertCommandFails("clutchperms group staf info", console, "Unknown group: staf");
+        assertMessageContains(console, "Closest groups: staff");
     }
 
     /**
@@ -1823,26 +1980,26 @@ class ClutchPermsCommandsTest {
 
     private static List<String> commandListPageTwoMessages(String rootLiteral) {
         return List.of("ClutchPerms commands (page 2/6):", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup list [kind] [page]",
-                "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup restore <kind> <backup-file>", "/" + rootLiteral + " user <target> list [page]",
-                "/" + rootLiteral + " user <target> get <node>", "/" + rootLiteral + " user <target> set <node> <true|false>", "< Prev | Page 2/6 | Next >");
+                "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup restore <kind> <backup-file>", "/" + rootLiteral + " user <target> info",
+                "/" + rootLiteral + " user <target> list [page]", "/" + rootLiteral + " user <target> get <node>", "< Prev | Page 2/6 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {
         return List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /clutchperms group list",
-                "  /clutchperms group <group> <create|delete|list|parents>", "  /clutchperms group <group> <get|clear> <node>",
+                "  /clutchperms group <group> <create|delete|info|list|parents>", "  /clutchperms group <group> <get|clear> <node>",
                 "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> rename <new-group>",
                 "  /clutchperms group <group> parent <add|remove> <parent>", "  /clutchperms group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsageMessages(String group) {
-        return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try one:", "  /clutchperms group " + group + " <create|delete|list|parents>",
+        return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try one:", "  /clutchperms group " + group + " <create|delete|info|list|parents>",
                 "  /clutchperms group " + group + " <get|clear> <node>", "  /clutchperms group " + group + " set <node> <true|false>",
                 "  /clutchperms group " + group + " rename <new-group>", "  /clutchperms group " + group + " parent <add|remove> <parent>",
                 "  /clutchperms group " + group + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userRootUsageMessages() {
-        return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try one:", "  /clutchperms user <target> <list|groups>",
+        return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try one:", "  /clutchperms user <target> <info|list|groups>",
                 "  /clutchperms user <target> <get|clear|check|explain> <node>", "  /clutchperms user <target> set <node> <true|false>",
                 "  /clutchperms user <target> group <add|remove> <group>", "  /clutchperms user <target> <prefix|suffix> get|set|clear");
     }

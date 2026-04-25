@@ -47,6 +47,8 @@ public final class UserSubcommand {
 
         int unknownTargetUsage(CommandContext<S> context) throws CommandSyntaxException;
 
+        int info(CommandContext<S> context) throws CommandSyntaxException;
+
         int list(CommandContext<S> context) throws CommandSyntaxException;
 
         int getUsage(CommandContext<S> context) throws CommandSyntaxException;
@@ -110,13 +112,17 @@ public final class UserSubcommand {
                 .suggests((context, builder) -> suggestUserTargets(environment, context.getSource(), builder));
 
         return LiteralArgumentBuilder.<S>literal("user").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::rootUsage))
-                .then(target.then(listCommand(authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
+                .then(target.then(infoCommand(authorized, handlers)).then(listCommand(authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
                         .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
                         .then(groupsCommand(authorized, handlers)).then(displayCommand("prefix", authorized, handlers, true))
                         .then(displayCommand("suffix", authorized, handlers, false)).then(groupCommand(environment, authorized, handlers))
                         .then(checkCommand(authorized, handlers, permissionNodes)).then(explainCommand(authorized, handlers, permissionNodes))
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::targetUsage))
                         .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::unknownTargetUsage))));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> infoCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
+        return LiteralArgumentBuilder.<S>literal("info").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_INFO, handlers::info));
     }
 
     private static <S> LiteralArgumentBuilder<S> listCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {

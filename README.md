@@ -70,6 +70,7 @@ Useful grants:
 | `/clutchperms backup list page <page>` | `clutchperms.admin.backup.list` | Lists all backups on a specific page. |
 | `/clutchperms backup list <kind> [page]` | `clutchperms.admin.backup.list` | Lists backups for one kind: `permissions`, `subjects`, `groups`, or `nodes`. |
 | `/clutchperms backup restore <kind> <backup-file>` | `clutchperms.admin.backup.restore` | Restores one backup file, validates all storage, and reloads if valid. |
+| `/clutchperms user <target> info` | `clutchperms.admin.user.info` | Shows a quick user summary. |
 | `/clutchperms user <target> list [page]` | `clutchperms.admin.user.list` | Lists direct permissions and display metadata for a user. |
 | `/clutchperms user <target> get <node>` | `clutchperms.admin.user.get` | Shows one direct user permission. |
 | `/clutchperms user <target> set <node> <true\|false>` | `clutchperms.admin.user.set` | Sets one direct user permission. |
@@ -88,6 +89,7 @@ Useful grants:
 | `/clutchperms group list [page]` | `clutchperms.admin.group.list` | Lists groups. |
 | `/clutchperms group <group> create` | `clutchperms.admin.group.create` | Creates a group. |
 | `/clutchperms group <group> delete` | `clutchperms.admin.group.delete` | Deletes a group and related links. |
+| `/clutchperms group <group> info` | `clutchperms.admin.group.info` | Shows a quick group summary. |
 | `/clutchperms group <group> rename <new-group>` | `clutchperms.admin.group.rename` | Renames a group and updates related links. |
 | `/clutchperms group <group> list [page]` | `clutchperms.admin.group.view` | Lists group permissions, display metadata, parents, and members. |
 | `/clutchperms group <group> get <node>` | `clutchperms.admin.group.get` | Shows one direct group permission. |

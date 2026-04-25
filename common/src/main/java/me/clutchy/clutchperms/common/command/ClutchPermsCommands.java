@@ -115,6 +115,8 @@ public final class ClutchPermsCommands {
 
     private static final int TARGET_MATCH_LIMIT = 5;
 
+    private static final int SUMMARY_VALUE_LIMIT = 5;
+
     private static final SimpleCommandExceptionType FEEDBACK_MESSAGES = new SimpleCommandExceptionType(new LiteralMessage("command feedback"));
 
     private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage(CommandLang.invalidNode(node).plainText()));
@@ -163,6 +165,7 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("backup list [kind] [page]", PermissionNodes.ADMIN_BACKUP_LIST, "Lists backups by file kind."),
             new CommandHelpEntry("backup list page <page>", PermissionNodes.ADMIN_BACKUP_LIST, "Lists all backups on a specific page."),
             new CommandHelpEntry("backup restore <kind> <backup-file>", PermissionNodes.ADMIN_BACKUP_RESTORE, "Restores one validated backup file."),
+            new CommandHelpEntry("user <target> info", PermissionNodes.ADMIN_USER_INFO, "Shows a quick user summary."),
             new CommandHelpEntry("user <target> list [page]", PermissionNodes.ADMIN_USER_LIST, "Lists direct user permissions."),
             new CommandHelpEntry("user <target> get <node>", PermissionNodes.ADMIN_USER_GET, "Shows one direct user permission."),
             new CommandHelpEntry("user <target> set <node> <true|false>", PermissionNodes.ADMIN_USER_SET, "Sets one direct user permission."),
@@ -175,6 +178,7 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("user <target> <prefix|suffix> set <text>", PermissionNodes.ADMIN_USER_DISPLAY_SET, "Sets direct user chat display text."),
             new CommandHelpEntry("user <target> <prefix|suffix> clear", PermissionNodes.ADMIN_USER_DISPLAY_CLEAR, "Clears direct user chat display text."),
             new CommandHelpEntry("group list [page]", PermissionNodes.ADMIN_GROUP_LIST, "Lists groups."),
+            new CommandHelpEntry("group <group> info", PermissionNodes.ADMIN_GROUP_INFO, "Shows a quick group summary."),
             new CommandHelpEntry("group <group> <create|delete>", PermissionNodes.ADMIN_GROUP_VIEW, "Creates or deletes a group."),
             new CommandHelpEntry("group <group> rename <new-group>", PermissionNodes.ADMIN_GROUP_RENAME, "Renames a group and updates references."),
             new CommandHelpEntry("group <group> list [page]", PermissionNodes.ADMIN_GROUP_VIEW, "Lists group permissions, parents, and members."),
@@ -395,6 +399,11 @@ public final class ClutchPermsCommands {
             }
 
             @Override
+            public int info(CommandContext<S> context) throws CommandSyntaxException {
+                return showUserInfo(environment, context);
+            }
+
+            @Override
             public int list(CommandContext<S> context) throws CommandSyntaxException {
                 return listPermissions(environment, context);
             }
@@ -577,6 +586,11 @@ public final class ClutchPermsCommands {
             @Override
             public int rename(CommandContext<S> context) throws CommandSyntaxException {
                 return renameGroup(environment, context);
+            }
+
+            @Override
+            public int info(CommandContext<S> context) throws CommandSyntaxException {
+                return showGroupInfo(environment, context);
             }
 
             @Override
@@ -1086,6 +1100,11 @@ public final class ClutchPermsCommands {
         sendPageNavigation(environment, context, pageCommand, page, totalPages);
     }
 
+    private static <S> void sendInfoRows(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String title, List<PagedRow> rows) {
+        environment.sendMessage(context.getSource(), CommandLang.heading(title + ":"));
+        rows.forEach(row -> environment.sendMessage(context.getSource(), CommandLang.listRow(row.text(), row.command())));
+    }
+
     private static <S> void sendPageNavigation(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String pageCommand, int page, int totalPages) {
         if (totalPages <= 1) {
             return;
@@ -1156,22 +1175,22 @@ public final class ClutchPermsCommands {
     }
 
     private static List<String> userRootUsages() {
-        return List.of("user <target> <list|groups>", "user <target> <get|clear|check|explain> <node>", "user <target> set <node> <true|false>",
+        return List.of("user <target> <info|list|groups>", "user <target> <get|clear|check|explain> <node>", "user <target> set <node> <true|false>",
                 "user <target> group <add|remove> <group>", "user <target> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userTargetUsages(String target) {
-        return List.of("user " + target + " <list|groups>", "user " + target + " <get|clear|check|explain> <node>", "user " + target + " set <node> <true|false>",
+        return List.of("user " + target + " <info|list|groups>", "user " + target + " <get|clear|check|explain> <node>", "user " + target + " set <node> <true|false>",
                 "user " + target + " group <add|remove> <group>", "user " + target + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupRootUsages() {
-        return List.of("group list", "group <group> <create|delete|list|parents>", "group <group> <get|clear> <node>", "group <group> set <node> <true|false>",
+        return List.of("group list", "group <group> <create|delete|info|list|parents>", "group <group> <get|clear> <node>", "group <group> set <node> <true|false>",
                 "group <group> rename <new-group>", "group <group> parent <add|remove> <parent>", "group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsages(String group) {
-        return List.of("group " + group + " <create|delete|list|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
+        return List.of("group " + group + " <create|delete|info|list|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
                 "group " + group + " rename <new-group>", "group " + group + " parent <add|remove> <parent>", "group " + group + " <prefix|suffix> get|set|clear");
     }
 
@@ -1355,6 +1374,31 @@ public final class ClutchPermsCommands {
 
         Optional<UUID> subjectId = environment.sourceSubjectId(source);
         return subjectId.isPresent() && environment.permissionResolver().hasPermission(subjectId.get(), requiredPermission);
+    }
+
+    private static <S> int showUserInfo(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        String rootLiteral = rootLiteral(context);
+        String subjectListCommand = fullCommand(rootLiteral, "user " + subject.id() + " list");
+        String subjectGroupsCommand = fullCommand(rootLiteral, "user " + subject.id() + " groups");
+        String subjectPrefixCommand = fullCommand(rootLiteral, "user " + subject.id() + " prefix get");
+        String subjectSuffixCommand = fullCommand(rootLiteral, "user " + subject.id() + " suffix get");
+
+        List<PagedRow> rows = new ArrayList<>();
+        rows.add(new PagedRow("subject " + formatSubject(subject), subjectListCommand));
+        Optional<SubjectMetadata> metadata = environment.subjectMetadataService().getSubject(subject.id());
+        rows.add(new PagedRow(metadata.map(value -> "stored last-known name " + value.lastKnownName() + ", last seen " + value.lastSeen()).orElse("stored metadata none"),
+                subjectListCommand));
+        rows.add(new PagedRow("direct permissions " + environment.permissionService().getPermissions(subject.id()).size(), subjectListCommand));
+        rows.add(new PagedRow("effective permissions " + environment.permissionResolver().getEffectivePermissions(subject.id()).size(), subjectListCommand));
+        rows.add(new PagedRow("groups " + summarizeSubjectGroups(environment, subject.id()), subjectGroupsCommand));
+        rows.add(new PagedRow("direct prefix " + formatDisplayValue(subjectDisplayValue(environment, subject.id(), DisplaySlot.PREFIX)), subjectPrefixCommand));
+        rows.add(new PagedRow("effective prefix " + formatEffectiveDisplay(environment.displayResolver().resolve(subject.id(), DisplaySlot.PREFIX)), subjectPrefixCommand));
+        rows.add(new PagedRow("direct suffix " + formatDisplayValue(subjectDisplayValue(environment, subject.id(), DisplaySlot.SUFFIX)), subjectSuffixCommand));
+        rows.add(new PagedRow("effective suffix " + formatEffectiveDisplay(environment.displayResolver().resolve(subject.id(), DisplaySlot.SUFFIX)), subjectSuffixCommand));
+
+        sendInfoRows(environment, context, "User " + formatSubject(subject), rows);
+        return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int listPermissions(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
@@ -1597,6 +1641,44 @@ public final class ClutchPermsCommands {
         }
 
         environment.sendMessage(context.getSource(), CommandLang.groupRenamed(normalizeGroupName(groupName), normalizeGroupName(newGroupName)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int showGroupInfo(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        String normalizedGroupName = normalizeGroupName(groupName);
+        Map<String, PermissionValue> permissions;
+        Set<UUID> members;
+        Set<String> parents;
+        List<String> childGroups;
+        try {
+            permissions = environment.groupService().getGroupPermissions(normalizedGroupName);
+            members = environment.groupService().getGroupMembers(normalizedGroupName);
+            parents = environment.groupService().getGroupParents(normalizedGroupName);
+            childGroups = findChildGroups(environment, normalizedGroupName);
+        } catch (RuntimeException exception) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
+        }
+
+        String rootLiteral = rootLiteral(context);
+        String groupListCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " list");
+        String groupParentsCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " parents");
+        String groupPrefixCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " prefix get");
+        String groupSuffixCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " suffix get");
+
+        List<PagedRow> rows = new ArrayList<>();
+        rows.add(new PagedRow("name " + normalizedGroupName, groupListCommand));
+        if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
+            rows.add(new PagedRow("default group applies implicitly", groupListCommand));
+        }
+        rows.add(new PagedRow("direct permissions " + permissions.size(), groupListCommand));
+        rows.add(new PagedRow("parents " + summarizeValues(parents), groupParentsCommand));
+        rows.add(new PagedRow("child groups " + summarizeValues(childGroups), fullCommand(rootLiteral, "group list")));
+        rows.add(new PagedRow("explicit members " + summarizeGroupMembers(environment, members), groupListCommand));
+        rows.add(new PagedRow("prefix " + formatDisplayValue(groupDisplayValue(environment, normalizedGroupName, DisplaySlot.PREFIX)), groupPrefixCommand));
+        rows.add(new PagedRow("suffix " + formatDisplayValue(groupDisplayValue(environment, normalizedGroupName, DisplaySlot.SUFFIX)), groupSuffixCommand));
+
+        sendInfoRows(environment, context, "Group " + normalizedGroupName, rows);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -2368,6 +2450,47 @@ public final class ClutchPermsCommands {
 
     private static String formatSubjectMetadata(SubjectMetadata subject) {
         return subject.lastKnownName() + " (" + subject.subjectId() + ", last seen " + subject.lastSeen() + ")";
+    }
+
+    private static <S> String summarizeSubjectGroups(ClutchPermsCommandEnvironment<S> environment, UUID subjectId) {
+        List<String> groups = new ArrayList<>(environment.groupService().getSubjectGroups(subjectId));
+        if (environment.groupService().hasGroup(GroupService.DEFAULT_GROUP)) {
+            groups.add(GroupService.DEFAULT_GROUP + " (implicit)");
+        }
+        return summarizeValues(groups);
+    }
+
+    private static <S> String summarizeGroupMembers(ClutchPermsCommandEnvironment<S> environment, Set<UUID> members) {
+        return summarizeValues(members.stream().map(subjectId -> formatSubject(subjectId, environment)).toList());
+    }
+
+    private static <S> List<String> findChildGroups(ClutchPermsCommandEnvironment<S> environment, String groupName) {
+        return environment.groupService().getGroups().stream().filter(group -> !group.equals(groupName))
+                .filter(group -> environment.groupService().getGroupParents(group).contains(groupName)).toList();
+    }
+
+    private static String summarizeValues(Collection<String> values) {
+        List<String> sortedValues = values.stream().sorted(Comparator.comparing((String value) -> value.toLowerCase(Locale.ROOT)).thenComparing(Comparator.naturalOrder()))
+                .toList();
+        if (sortedValues.isEmpty()) {
+            return "none";
+        }
+
+        List<String> shownValues = sortedValues.stream().limit(SUMMARY_VALUE_LIMIT).toList();
+        String summary = String.join(", ", shownValues);
+        int remaining = sortedValues.size() - shownValues.size();
+        if (remaining > 0) {
+            summary += ", +" + remaining + " more";
+        }
+        return summary;
+    }
+
+    private static String formatDisplayValue(Optional<DisplayText> value) {
+        return value.map(DisplayText::rawText).orElse("unset");
+    }
+
+    private static String formatEffectiveDisplay(DisplayResolution resolution) {
+        return resolution.value().map(value -> value.rawText() + " from " + formatDisplaySource(resolution)).orElse("unset");
     }
 
     private static String formatKnownNode(KnownPermissionNode node) {
