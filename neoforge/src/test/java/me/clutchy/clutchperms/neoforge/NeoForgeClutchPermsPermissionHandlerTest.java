@@ -163,6 +163,20 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
     }
 
     @Test
+    void commandAliasesExecuteStatusCommand(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
+        CommandDispatcher<TestSource> dispatcher = dispatcher(permissionService, groupService, permissionResolver, temporaryDirectory);
+        TestSource console = TestSource.console();
+
+        assertEquals(1, dispatcher.execute("cperms status", console));
+        assertTrue(console.messages().contains(ClutchPermsCommands.STATUS_MESSAGE));
+
+        console.messages().clear();
+
+        assertEquals(1, dispatcher.execute("perms status", console));
+        assertTrue(console.messages().contains(ClutchPermsCommands.STATUS_MESSAGE));
+    }
+
+    @Test
     void commandMutationPersistsAndResolvesThroughPermissionHandler(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
         Path permissionsFile = temporaryDirectory.resolve("permissions.json");
         Path groupsFile = temporaryDirectory.resolve("groups.json");
@@ -417,7 +431,7 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
 
     private static CommandDispatcher<TestSource> dispatcher(TestEnvironment environment) {
         CommandDispatcher<TestSource> dispatcher = new CommandDispatcher<>();
-        dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
+        ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment, rootLiteral)));
         return dispatcher;
     }
 

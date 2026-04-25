@@ -27,6 +27,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
+import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -211,6 +212,26 @@ class ClutchPermsPaperPluginTest {
         assertNextMessage(player, "Resolver cache: " + cacheStats.subjects() + " subjects, " + cacheStats.nodeResults() + " node results, " + cacheStats.effectiveSnapshots()
                 + " effective snapshots.");
         assertNextMessage(player, "Runtime bridge: " + plugin.getStatusDiagnostics().runtimeBridgeStatus());
+    }
+
+    /**
+     * Confirms the Paper adapter executes status through every shared root command alias.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void commandAliasesRespondWithStatusDiagnostics() throws Exception {
+        PlayerMock cpermsAdmin = server.addPlayer("CpermsAdmin");
+        PlayerMock permsAdmin = server.addPlayer("PermsAdmin");
+        plugin.getPermissionService().setPermission(cpermsAdmin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(permsAdmin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = dispatcherWithAllCommandRoots();
+
+        assertEquals(1, dispatcher.execute("cperms status", new TestCommandSourceStack(cpermsAdmin)));
+        assertNextMessage(cpermsAdmin, ClutchPermsCommands.STATUS_MESSAGE);
+
+        assertEquals(1, dispatcher.execute("perms status", new TestCommandSourceStack(permsAdmin)));
+        assertNextMessage(permsAdmin, ClutchPermsCommands.STATUS_MESSAGE);
     }
 
     /**
@@ -879,6 +900,12 @@ class ClutchPermsPaperPluginTest {
 
     private static UUID playerId() {
         return UUID.fromString("00000000-0000-0000-0000-000000000001");
+    }
+
+    private CommandDispatcher<CommandSourceStack> dispatcherWithAllCommandRoots() {
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin, rootLiteral)));
+        return dispatcher;
     }
 
     private static void assertCommandFails(CommandDispatcher<CommandSourceStack> dispatcher, String command, PlayerMock player, String expectedMessage) {
