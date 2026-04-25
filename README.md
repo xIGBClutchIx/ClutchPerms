@@ -40,63 +40,63 @@ Paper note: ClutchPerms attaches stored wildcard nodes such as `example.*` and e
 
 ## Commands
 
-All platforms expose the same shared command tree:
+All platforms expose the same shared command tree. Console and remote console can run commands for bootstrap. Players need the effective command permission for the exact command they run.
 
-```text
-/clutchperms
-/clutchperms status
-/clutchperms reload
-/clutchperms validate
-/clutchperms backup list
-/clutchperms backup list <permissions|subjects|groups|nodes>
-/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>
-/clutchperms user <target> list
-/clutchperms user <target> get <node>
-/clutchperms user <target> set <node> <true|false>
-/clutchperms user <target> clear <node>
-/clutchperms user <target> check <node>
-/clutchperms user <target> explain <node>
-/clutchperms user <target> groups
-/clutchperms user <target> group add <group>
-/clutchperms user <target> group remove <group>
-/clutchperms group list
-/clutchperms group <group> create
-/clutchperms group <group> delete
-/clutchperms group <group> list
-/clutchperms group <group> get <node>
-/clutchperms group <group> set <node> <true|false>
-/clutchperms group <group> clear <node>
-/clutchperms group <group> parents
-/clutchperms group <group> parent add <parent>
-/clutchperms group <group> parent remove <parent>
-/clutchperms users list
-/clutchperms users search <name>
-/clutchperms nodes list
-/clutchperms nodes search <query>
-/clutchperms nodes add <node>
-/clutchperms nodes add <node> <description>
-/clutchperms nodes remove <node>
-```
+Useful command grants:
 
-Command notes:
+| Grant | Covers |
+| --- | --- |
+| `clutchperms.admin.*` | Every ClutchPerms admin command |
+| `clutchperms.admin.backup.*` | Backup list and restore commands |
+| `clutchperms.admin.user.*` | Direct user permission commands and user group membership commands |
+| `clutchperms.admin.group.*` | Group definition, group permission, and group parent commands |
+| `clutchperms.admin.users.*` | Stored user list and search commands |
+| `clutchperms.admin.nodes.*` | Known permission node registry commands |
 
-- `/clutchperms` lists available commands.
-- `/clutchperms status` shows storage paths, known subject count, group count, known node count, resolver cache counts, and runtime bridge status. On Paper, the runtime line also includes permission manager override mode.
-- `/clutchperms validate` parses `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json` without applying them or refreshing runtime permissions.
-- `/clutchperms reload` reloads `permissions.json`, `subjects.json`, `groups.json`, and `nodes.json`. If any file is invalid, active runtime state is kept unchanged.
-- `/clutchperms backup list` shows stored backups newest first. Use `/clutchperms backup list permissions` or another file kind to filter.
-- `/clutchperms backup restore <kind> <backup-file>` restores one file, validates and reloads all storage immediately, then refreshes runtime bridges. If reload fails, ClutchPerms rolls the disk file back and keeps active runtime state unchanged.
-- `/clutchperms nodes ...` manages manually known exact permission nodes in `nodes.json`. This is for discovery, suggestions, diagnostics, and Paper wildcard expansion; it does not grant permissions by itself.
+`clutchperms.admin` is only the namespace root and does not grant command access. Non-player/non-console sources are denied where the platform can distinguish them.
+
+| Command | Permission | Description | Notes |
+| --- | --- | --- | --- |
+| `/clutchperms` | `clutchperms.admin.help` | Shows the command list. | Incomplete command branches also return contextual `Try:` suggestions. |
+| `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, subject count, group count, known node count, resolver cache counts, and runtime bridge status. | Paper also reports permission manager override mode. |
+| `/clutchperms reload` | `clutchperms.admin.reload` | Reloads all JSON storage files and refreshes runtime permissions. | If any file is invalid, active runtime state is kept unchanged. |
+| `/clutchperms validate` | `clutchperms.admin.validate` | Parses all JSON storage files without applying them. | Does not replace active services or refresh runtime permissions. |
+| `/clutchperms backup list` | `clutchperms.admin.backup.list` | Lists backups for all storage files, newest first. | Read-only. |
+| `/clutchperms backup list <permissions\|subjects\|groups\|nodes>` | `clutchperms.admin.backup.list` | Lists backups for one storage file kind. | Use the exact kind token shown in the command. |
+| `/clutchperms backup restore <permissions\|subjects\|groups\|nodes> <backup-file>` | `clutchperms.admin.backup.restore` | Restores one backup file, then validates and reloads all storage. | Rolls the disk file back and keeps active runtime state unchanged if reload fails. |
+| `/clutchperms user <target> list` | `clutchperms.admin.user.list` | Lists direct permission assignments for one user. | `<target>` accepts an online name, stored last-known name, or UUID. |
+| `/clutchperms user <target> get <node>` | `clutchperms.admin.user.get` | Shows one direct user permission assignment. | Reports `UNSET` when the user has no direct value for that node. |
+| `/clutchperms user <target> set <node> <true\|false>` | `clutchperms.admin.user.set` | Sets a direct user permission assignment. | Saves immediately and refreshes runtime permissions for that subject. |
+| `/clutchperms user <target> clear <node>` | `clutchperms.admin.user.clear` | Removes a direct user permission assignment. | Saves immediately and refreshes runtime permissions for that subject. |
+| `/clutchperms user <target> check <node>` | `clutchperms.admin.user.check` | Shows the effective permission value for a user. | Includes the winning source and wildcard assignment when applicable. |
+| `/clutchperms user <target> explain <node>` | `clutchperms.admin.user.explain` | Explains how the effective value was resolved. | Lists matching direct, group, and default assignments in resolver order and marks the winner. |
+| `/clutchperms user <target> groups` | `clutchperms.admin.user.groups` | Lists a user's explicit group memberships. | The implicit `default` group is not listed as explicit membership. |
+| `/clutchperms user <target> group add <group>` | `clutchperms.admin.user.group.add` | Adds a user to a group. | The `default` group cannot be assigned explicitly. |
+| `/clutchperms user <target> group remove <group>` | `clutchperms.admin.user.group.remove` | Removes a user from a group. | The `default` group cannot be removed explicitly. |
+| `/clutchperms group list` | `clutchperms.admin.group.list` | Lists groups. | Read-only. |
+| `/clutchperms group <group> create` | `clutchperms.admin.group.create` | Creates a group. | Group names are normalized by the shared group service. |
+| `/clutchperms group <group> delete` | `clutchperms.admin.group.delete` | Deletes a group. | Also removes related memberships and inheritance links through the group service. |
+| `/clutchperms group <group> list` | `clutchperms.admin.group.view` | Lists a group's direct permission assignments. | Read-only. |
+| `/clutchperms group <group> get <node>` | `clutchperms.admin.group.get` | Shows one direct group permission assignment. | Reports `UNSET` when the group has no direct value for that node. |
+| `/clutchperms group <group> set <node> <true\|false>` | `clutchperms.admin.group.set` | Sets a direct group permission assignment. | Saves immediately and clears the resolver cache. |
+| `/clutchperms group <group> clear <node>` | `clutchperms.admin.group.clear` | Removes a direct group permission assignment. | Saves immediately and clears the resolver cache. |
+| `/clutchperms group <group> parents` | `clutchperms.admin.group.parents` | Lists parent groups for a group. | Read-only. |
+| `/clutchperms group <group> parent add <parent>` | `clutchperms.admin.group.parent.add` | Adds an inheritance parent. | Parent cycles are rejected. |
+| `/clutchperms group <group> parent remove <parent>` | `clutchperms.admin.group.parent.remove` | Removes an inheritance parent. | Saves immediately and clears the resolver cache. |
+| `/clutchperms users list` | `clutchperms.admin.users.list` | Lists stored subject metadata. | Uses `subjects.json`, not the online player list. |
+| `/clutchperms users search <name>` | `clutchperms.admin.users.search` | Searches stored last-known names. | Helps resolve offline targets and ambiguous names. |
+| `/clutchperms nodes list` | `clutchperms.admin.nodes.list` | Lists known permission nodes. | Includes built-in, manual, and platform-discovered nodes where available. |
+| `/clutchperms nodes search <query>` | `clutchperms.admin.nodes.search` | Searches known nodes and descriptions. | Read-only. |
+| `/clutchperms nodes add <node> [description]` | `clutchperms.admin.nodes.add` | Adds or updates a manually known exact permission node. | Writes to `nodes.json`; this is for discovery, suggestions, diagnostics, and Paper wildcard expansion. |
+| `/clutchperms nodes remove <node>` | `clutchperms.admin.nodes.remove` | Removes a manually known permission node. | Built-in and platform-discovered nodes are visible but not removable. |
+
+Argument notes:
+
 - `<target>` resolves exact online player name first, then exact stored last-known name, then UUID.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
-- Console and remote console can run commands for bootstrap.
-- Players need the effective command permission for the command they run. Use `clutchperms.admin.*` for a full ClutchPerms admin grant.
-- Command permission categories follow the command tree, such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and exact leaves such as `clutchperms.admin.user.set`.
-- `clutchperms.admin` is only the namespace root and does not grant command access.
-- Non-player/non-console sources are denied where the platform can distinguish them.
 - Permission nodes may be exact nodes, `*`, or terminal wildcard nodes like `example.*`. Mid-node wildcards such as `example.*.edit` are rejected.
 - Known permission node registry entries must be exact nodes. Wildcards are valid assignments but are not valid known-node registry entries.
-- `check` reports the effective value. `explain` also lists matching direct/group/default assignments in resolver order and marks the winner.
+- Node registry commands do not grant permissions by themselves.
 
 Wildcard resolution:
 

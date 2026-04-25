@@ -41,7 +41,6 @@ import me.clutchy.clutchperms.common.subject.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -128,6 +127,44 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms incomplete command branches report contextual usage instead of falling through silently.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void incompleteCommandsReportContextualUsage() throws CommandSyntaxException {
+        TestSource groupRoot = TestSource.console();
+        TestSource groupTarget = TestSource.console();
+        TestSource groupGet = TestSource.console();
+        TestSource userRoot = TestSource.console();
+        TestSource userSet = TestSource.console();
+        TestSource backupRestore = TestSource.console();
+        TestSource nodesRoot = TestSource.console();
+
+        assertEquals(0, dispatcher.execute("clutchperms group", groupRoot));
+        assertEquals(groupRootUsageMessages(), groupRoot.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms group test", groupTarget));
+        assertEquals(groupTargetUsageMessages("test"), groupTarget.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms group test get", groupGet));
+        assertEquals(List.of("Missing permission node.", "Choose the group permission node to read.", "Try:", "/clutchperms group test get <node>"), groupGet.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms user", userRoot));
+        assertEquals(userRootUsageMessages(), userRoot.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms user Target set", userSet));
+        assertEquals(List.of("Missing permission assignment.", "Set a node to true or false.", "Try:", "/clutchperms user Target set <node> <true|false>"), userSet.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms backup restore permissions", backupRestore));
+        assertEquals(List.of("Missing backup file.", "Pick a backup file for permissions.", "Try:", "/clutchperms backup restore permissions <backup-file>"),
+                backupRestore.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms nodes", nodesRoot));
+        assertEquals(nodesUsageMessages(), nodesRoot.messages());
+    }
+
+    /**
      * Confirms the explicit status subcommand returns the same diagnostics with the current subject count.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -166,12 +203,10 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
         environment.failReload(new PermissionStorageException("bad permissions file"));
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+        assertCommandFails("clutchperms reload", console, "Failed to reload ClutchPerms storage: bad permissions file");
 
-        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage: bad permissions file"));
         assertEquals(0, environment.reloads());
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of(), console.messages());
     }
 
     /**
@@ -199,13 +234,11 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
         environment.failValidation(new PermissionStorageException("bad groups file"));
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms validate", console));
+        assertCommandFails("clutchperms validate", console, "Failed to validate ClutchPerms storage: bad groups file");
 
-        assertTrue(exception.getMessage().contains("Failed to validate ClutchPerms storage: bad groups file"));
         assertEquals(0, environment.validations());
         assertEquals(0, environment.reloads());
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of(), console.messages());
     }
 
     /**
@@ -263,14 +296,12 @@ class ClutchPermsCommandsTest {
         environment.failReload(new PermissionStorageException("bad restored permissions"));
         TestSource console = TestSource.console();
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class,
-                () -> dispatcher.execute("clutchperms backup restore permissions permissions-20260424-120000000.json", console));
+        assertCommandFails("clutchperms backup restore permissions permissions-20260424-120000000.json", console,
+                "Backup operation failed: Failed to apply restored permissions backup permissions-20260424-120000000.json");
 
-        assertTrue(exception.getMessage().contains("Backup operation failed: Failed to apply restored permissions backup permissions-20260424-120000000.json"));
         assertEquals("current", Files.readString(liveFile));
         assertEquals(0, environment.reloads());
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of(), console.messages());
     }
 
     /**
@@ -280,7 +311,7 @@ class ClutchPermsCommandsTest {
     void playerWithoutAdminPermissionCannotUseBackupCommands() {
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms backup list", player));
+        assertCommandFails("clutchperms backup list", player, "You do not have permission to use ClutchPerms commands.");
     }
 
     /**
@@ -327,7 +358,7 @@ class ClutchPermsCommandsTest {
     void playerWithoutAdminPermissionIsDenied() {
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms", player));
+        assertCommandFails("clutchperms", player, "You do not have permission to use ClutchPerms commands.");
     }
 
     /**
@@ -338,7 +369,7 @@ class ClutchPermsCommandsTest {
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN, PermissionValue.TRUE);
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms status", player));
+        assertCommandFails("clutchperms status", player, "You do not have permission to use ClutchPerms commands.");
     }
 
     /**
@@ -353,7 +384,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms status", player);
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", player));
+        assertCommandFails("clutchperms reload", player, "You do not have permission to use ClutchPerms commands.");
     }
 
     /**
@@ -420,7 +451,7 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms user Target set example.node false", player);
 
         assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group list", player));
+        assertCommandFails("clutchperms group list", player, "You do not have permission to use ClutchPerms commands.");
     }
 
     /**
@@ -436,7 +467,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms user Target get example.node", player);
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Target set example.node false", player));
+        assertCommandFails("clutchperms user Target set example.node false", player, "You do not have permission to use ClutchPerms commands.");
     }
 
     /**
@@ -603,13 +634,9 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms group staff create", console);
         dispatcher.execute("clutchperms group admin parent add staff", console);
 
-        CommandSyntaxException unknown = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group admin parent add missing", console));
-        CommandSyntaxException self = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group admin parent add admin", console));
-        CommandSyntaxException cycle = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group staff parent add admin", console));
-
-        assertTrue(unknown.getMessage().contains("Group operation failed: unknown group: missing"));
-        assertTrue(self.getMessage().contains("Group operation failed: group cannot inherit itself: admin"));
-        assertTrue(cycle.getMessage().contains("Group operation failed: group inheritance cycle detected"));
+        assertCommandFails("clutchperms group admin parent add missing", console, "Group operation failed: unknown group: missing");
+        assertCommandFails("clutchperms group admin parent add admin", console, "Group operation failed: group cannot inherit itself: admin");
+        assertCommandFails("clutchperms group staff parent add admin", console, "Group operation failed: group inheritance cycle detected");
     }
 
     /**
@@ -641,9 +668,7 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
         dispatcher.execute("clutchperms group default create", console);
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Target group add default", console));
-
-        assertTrue(exception.getMessage().contains("Group operation failed: default group membership is implicit"));
+        assertCommandFails("clutchperms user Target group add default", console, "Group operation failed: default group membership is implicit");
     }
 
     /**
@@ -721,11 +746,9 @@ class ClutchPermsCommandsTest {
         subjectMetadataService.recordSubject(SECOND_TARGET_ID, "duplicate", SECOND_SEEN);
         TestSource console = TestSource.console();
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Duplicate list", console));
-
-        assertTrue(exception.getMessage().contains("Ambiguous known user Duplicate:"));
-        assertTrue(exception.getMessage().contains("Duplicate (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T12:00:00Z)"));
-        assertTrue(exception.getMessage().contains("duplicate (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T13:00:00Z)"));
+        assertCommandFails("clutchperms user Duplicate list", console, "Ambiguous known user Duplicate:");
+        assertLatestMessageContains(console, "Duplicate (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T12:00:00Z)");
+        assertLatestMessageContains(console, "duplicate (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T13:00:00Z)");
     }
 
     /**
@@ -735,10 +758,10 @@ class ClutchPermsCommandsTest {
     void invalidTargetAndNodeFailExecution() {
         TestSource console = TestSource.console();
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Missing list", console));
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user " + TARGET_ID + " get bad node", console));
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Target set example* true", console));
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group staff set example.*.node true", console));
+        assertCommandFails("clutchperms user Missing list", console, "Unknown online player or invalid UUID: Missing");
+        assertCommandFails("clutchperms user " + TARGET_ID + " get bad node", console, "Invalid permission node: bad node");
+        assertCommandFails("clutchperms user Target set example* true", console, "Invalid permission node: example*");
+        assertCommandFails("clutchperms group staff set example.*.node true", console, "Invalid permission node: example.*.node");
     }
 
     /**
@@ -906,12 +929,10 @@ class ClutchPermsCommandsTest {
         environment.addPlatformNode("platform.node");
         TestSource console = TestSource.console();
 
-        CommandSyntaxException builtInException = assertThrows(CommandSyntaxException.class,
-                () -> dispatcher.execute("clutchperms nodes remove " + PermissionNodes.ADMIN_STATUS, console));
-        CommandSyntaxException platformException = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms nodes remove platform.node", console));
+        assertCommandFails("clutchperms nodes remove " + PermissionNodes.ADMIN_STATUS, console,
+                "known permission node is not manually registered: " + PermissionNodes.ADMIN_STATUS);
+        assertCommandFails("clutchperms nodes remove platform.node", console, "known permission node is not manually registered: platform.node");
 
-        assertTrue(builtInException.getMessage().contains("known permission node is not manually registered: " + PermissionNodes.ADMIN_STATUS));
-        assertTrue(platformException.getMessage().contains("known permission node is not manually registered: platform.node"));
         assertEquals(0, environment.runtimeRefreshes());
     }
 
@@ -924,7 +945,7 @@ class ClutchPermsCommandsTest {
     void nodeRegistryRejectsWildcardsButAssignmentsAllowThem() throws CommandSyntaxException {
         TestSource console = TestSource.console();
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms nodes add example.*", console));
+        assertCommandFails("clutchperms nodes add example.*", console, "Known permission node operation failed: known permission nodes must be exact nodes");
         dispatcher.execute("clutchperms user Target set example.* true", console);
 
         assertEquals(PermissionValue.TRUE, permissionService.getPermission(TARGET_ID, "example.*"));
@@ -932,6 +953,21 @@ class ClutchPermsCommandsTest {
 
     private List<String> suggestionTexts(String command) {
         return dispatcher.getCompletionSuggestions(dispatcher.parse(command, TestSource.console())).join().getList().stream().map(Suggestion::getText).toList();
+    }
+
+    private void assertCommandFails(String command, TestSource source, String expectedMessage) {
+        try {
+            assertEquals(0, dispatcher.execute(command, source));
+        } catch (CommandSyntaxException exception) {
+            throw new AssertionError("Expected styled command failure for " + command, exception);
+        }
+        assertLatestMessageContains(source, expectedMessage);
+    }
+
+    private static void assertLatestMessageContains(TestSource source, String expectedMessage) {
+        List<String> messages = source.messages();
+        assertTrue(!messages.isEmpty(), "Expected command feedback");
+        assertTrue(messages.get(messages.size() - 1).contains(expectedMessage), () -> "Expected latest message to contain <" + expectedMessage + "> but was " + messages);
     }
 
     private void writeBackup(StorageFileKind kind, String fileName, String content) throws IOException {
@@ -958,6 +994,32 @@ class ClutchPermsCommandsTest {
                 "/clutchperms group <group> parents", "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>",
                 "/clutchperms users list", "/clutchperms users search <name>", "/clutchperms nodes list", "/clutchperms nodes search <query>", "/clutchperms nodes add <node>",
                 "/clutchperms nodes add <node> <description>", "/clutchperms nodes remove <node>");
+    }
+
+    private static List<String> groupRootUsageMessages() {
+        return List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try:", "/clutchperms group list", "/clutchperms group <group> create",
+                "/clutchperms group <group> delete", "/clutchperms group <group> list", "/clutchperms group <group> get <node>",
+                "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>", "/clutchperms group <group> parents",
+                "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>");
+    }
+
+    private static List<String> groupTargetUsageMessages(String group) {
+        return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try:", "/clutchperms group " + group + " create",
+                "/clutchperms group " + group + " delete", "/clutchperms group " + group + " list", "/clutchperms group " + group + " get <node>",
+                "/clutchperms group " + group + " set <node> <true|false>", "/clutchperms group " + group + " clear <node>", "/clutchperms group " + group + " parents",
+                "/clutchperms group " + group + " parent add <parent>", "/clutchperms group " + group + " parent remove <parent>");
+    }
+
+    private static List<String> userRootUsageMessages() {
+        return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try:", "/clutchperms user <target> list",
+                "/clutchperms user <target> get <node>", "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>",
+                "/clutchperms user <target> groups", "/clutchperms user <target> group add <group>", "/clutchperms user <target> group remove <group>",
+                "/clutchperms user <target> check <node>", "/clutchperms user <target> explain <node>");
+    }
+
+    private static List<String> nodesUsageMessages() {
+        return List.of("Missing nodes command.", "List, search, add, or remove known permission nodes.", "Try:", "/clutchperms nodes list", "/clutchperms nodes search <query>",
+                "/clutchperms nodes add <node>", "/clutchperms nodes add <node> <description>", "/clutchperms nodes remove <node>");
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {

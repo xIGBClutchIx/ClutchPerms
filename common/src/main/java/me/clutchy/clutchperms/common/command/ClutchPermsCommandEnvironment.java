@@ -144,4 +144,14 @@ public interface ClutchPermsCommandEnvironment<S> {
      * @param message plain text message
      */
     void sendMessage(S source, String message);
+
+    /**
+     * Sends a styled command response to the platform source.
+     *
+     * @param source platform command source
+     * @param message styled command message
+     */
+    default void sendMessage(S source, CommandMessage message) {
+        sendMessage(source, message.plainText());
+    }
 }

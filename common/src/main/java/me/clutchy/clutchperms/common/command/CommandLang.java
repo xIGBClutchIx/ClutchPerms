@@ -1,12 +1,15 @@
 package me.clutchy.clutchperms.common.command;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import me.clutchy.clutchperms.common.command.CommandMessage.Color;
+import me.clutchy.clutchperms.common.command.CommandMessage.Segment;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 
 /**
- * Centralizes shared command feedback text so every platform adapter reports the same messages.
+ * Centralizes shared command feedback so every platform adapter reports the same messages.
  */
 final class CommandLang {
 
@@ -17,6 +20,8 @@ final class CommandLang {
     static final String ERROR_OTHER_SOURCE_DENIED = "Only players and console sources can use ClutchPerms commands.";
 
     private static final String COMMANDS_HEADER = "ClutchPerms commands:";
+
+    private static final String TRY = "Try:";
 
     private static final String STATUS_PERMISSIONS_FILE = "Permissions file: %s";
 
@@ -156,314 +161,359 @@ final class CommandLang {
 
     private static final String PERMISSION_EXPLAIN_NO_MATCHES = "Matches: none.";
 
-    static List<String> commandList(String rootLiteral) {
-        return List.of(COMMANDS_HEADER, command(rootLiteral, "status"), command(rootLiteral, "reload"), command(rootLiteral, "validate"), command(rootLiteral, "backup list"),
-                command(rootLiteral, "backup list <permissions|subjects|groups|nodes>"), command(rootLiteral, "backup restore <permissions|subjects|groups|nodes> <backup-file>"),
-                command(rootLiteral, "user <target> list"), command(rootLiteral, "user <target> get <node>"), command(rootLiteral, "user <target> set <node> <true|false>"),
-                command(rootLiteral, "user <target> clear <node>"), command(rootLiteral, "user <target> groups"), command(rootLiteral, "user <target> group add <group>"),
-                command(rootLiteral, "user <target> group remove <group>"), command(rootLiteral, "user <target> check <node>"),
-                command(rootLiteral, "user <target> explain <node>"), command(rootLiteral, "group list"), command(rootLiteral, "group <group> create"),
-                command(rootLiteral, "group <group> delete"), command(rootLiteral, "group <group> list"), command(rootLiteral, "group <group> get <node>"),
-                command(rootLiteral, "group <group> set <node> <true|false>"), command(rootLiteral, "group <group> clear <node>"), command(rootLiteral, "group <group> parents"),
-                command(rootLiteral, "group <group> parent add <parent>"), command(rootLiteral, "group <group> parent remove <parent>"), command(rootLiteral, "users list"),
-                command(rootLiteral, "users search <name>"), command(rootLiteral, "nodes list"), command(rootLiteral, "nodes search <query>"),
-                command(rootLiteral, "nodes add <node>"), command(rootLiteral, "nodes add <node> <description>"), command(rootLiteral, "nodes remove <node>"));
+    static List<CommandMessage> commandList(String rootLiteral) {
+        return List.of(heading(COMMANDS_HEADER), usage(rootLiteral, "status"), usage(rootLiteral, "reload"), usage(rootLiteral, "validate"), usage(rootLiteral, "backup list"),
+                usage(rootLiteral, "backup list <permissions|subjects|groups|nodes>"), usage(rootLiteral, "backup restore <permissions|subjects|groups|nodes> <backup-file>"),
+                usage(rootLiteral, "user <target> list"), usage(rootLiteral, "user <target> get <node>"), usage(rootLiteral, "user <target> set <node> <true|false>"),
+                usage(rootLiteral, "user <target> clear <node>"), usage(rootLiteral, "user <target> groups"), usage(rootLiteral, "user <target> group add <group>"),
+                usage(rootLiteral, "user <target> group remove <group>"), usage(rootLiteral, "user <target> check <node>"), usage(rootLiteral, "user <target> explain <node>"),
+                usage(rootLiteral, "group list"), usage(rootLiteral, "group <group> create"), usage(rootLiteral, "group <group> delete"), usage(rootLiteral, "group <group> list"),
+                usage(rootLiteral, "group <group> get <node>"), usage(rootLiteral, "group <group> set <node> <true|false>"), usage(rootLiteral, "group <group> clear <node>"),
+                usage(rootLiteral, "group <group> parents"), usage(rootLiteral, "group <group> parent add <parent>"), usage(rootLiteral, "group <group> parent remove <parent>"),
+                usage(rootLiteral, "users list"), usage(rootLiteral, "users search <name>"), usage(rootLiteral, "nodes list"), usage(rootLiteral, "nodes search <query>"),
+                usage(rootLiteral, "nodes add <node>"), usage(rootLiteral, "nodes add <node> <description>"), usage(rootLiteral, "nodes remove <node>"));
     }
 
-    static String statusPermissionsFile(String permissionsFile) {
-        return format(STATUS_PERMISSIONS_FILE, permissionsFile);
+    static CommandMessage heading(String message) {
+        return CommandMessage.of(CommandMessage.bold(message, Color.AQUA));
     }
 
-    static String statusSubjectsFile(String subjectsFile) {
-        return format(STATUS_SUBJECTS_FILE, subjectsFile);
+    static CommandMessage error(String message) {
+        return CommandMessage.text(message, Color.RED);
     }
 
-    static String statusGroupsFile(String groupsFile) {
-        return format(STATUS_GROUPS_FILE, groupsFile);
+    static CommandMessage detail(String message) {
+        return CommandMessage.text(message, Color.GRAY);
     }
 
-    static String statusNodesFile(String nodesFile) {
-        return format(STATUS_NODES_FILE, nodesFile);
+    static CommandMessage tryHeader() {
+        return CommandMessage.text(TRY, Color.GRAY);
     }
 
-    static String statusKnownSubjects(int knownSubjects) {
-        return format(STATUS_KNOWN_SUBJECTS, knownSubjects);
+    static CommandMessage usage(String rootLiteral, String command) {
+        return CommandMessage.text(command(rootLiteral, command), Color.WHITE);
     }
 
-    static String statusKnownGroups(int knownGroups) {
-        return format(STATUS_KNOWN_GROUPS, knownGroups);
+    static CommandMessage status() {
+        return heading(STATUS);
     }
 
-    static String statusKnownNodes(int knownNodes) {
-        return format(STATUS_KNOWN_NODES, knownNodes);
+    static CommandMessage statusPermissionsFile(String permissionsFile) {
+        return detail(STATUS_PERMISSIONS_FILE, permissionsFile);
     }
 
-    static String statusResolverCache(int subjects, int nodeResults, int effectiveSnapshots) {
-        return format(STATUS_RESOLVER_CACHE, subjects, nodeResults, effectiveSnapshots);
+    static CommandMessage statusSubjectsFile(String subjectsFile) {
+        return detail(STATUS_SUBJECTS_FILE, subjectsFile);
     }
 
-    static String statusRuntimeBridge(String runtimeBridgeStatus) {
-        return format(STATUS_RUNTIME_BRIDGE, runtimeBridgeStatus);
+    static CommandMessage statusGroupsFile(String groupsFile) {
+        return detail(STATUS_GROUPS_FILE, groupsFile);
     }
 
-    static String reloadSuccess() {
-        return RELOAD_SUCCESS;
+    static CommandMessage statusNodesFile(String nodesFile) {
+        return detail(STATUS_NODES_FILE, nodesFile);
     }
 
-    static String validateSuccess() {
-        return VALIDATE_SUCCESS;
+    static CommandMessage statusKnownSubjects(int knownSubjects) {
+        return detail(STATUS_KNOWN_SUBJECTS, knownSubjects);
     }
 
-    static String unknownTarget(Object target) {
-        return format(ERROR_UNKNOWN_TARGET, target);
+    static CommandMessage statusKnownGroups(int knownGroups) {
+        return detail(STATUS_KNOWN_GROUPS, knownGroups);
     }
 
-    static String ambiguousKnownUser(String target, String matchedSubjects) {
-        return format(ERROR_AMBIGUOUS_KNOWN_USER, target, matchedSubjects);
+    static CommandMessage statusKnownNodes(int knownNodes) {
+        return detail(STATUS_KNOWN_NODES, knownNodes);
     }
 
-    static String invalidNode(Object node) {
-        return format(ERROR_INVALID_NODE, node);
+    static CommandMessage statusResolverCache(int subjects, int nodeResults, int effectiveSnapshots) {
+        return detail(STATUS_RESOLVER_CACHE, subjects, nodeResults, effectiveSnapshots);
     }
 
-    static String invalidValue(Object value) {
-        return format(ERROR_INVALID_VALUE, value);
+    static CommandMessage statusRuntimeBridge(String runtimeBridgeStatus) {
+        return detail(STATUS_RUNTIME_BRIDGE, runtimeBridgeStatus);
     }
 
-    static String reloadFailed(Throwable exception) {
-        String message = exception.getMessage();
-        if (message == null || message.isBlank()) {
-            message = exception.getClass().getSimpleName();
+    static CommandMessage reloadSuccess() {
+        return success(RELOAD_SUCCESS);
+    }
+
+    static CommandMessage validateSuccess() {
+        return success(VALIDATE_SUCCESS);
+    }
+
+    static CommandMessage unknownTarget(Object target) {
+        return error(ERROR_UNKNOWN_TARGET, target);
+    }
+
+    static CommandMessage ambiguousKnownUser(String target, String matchedSubjects) {
+        return error(ERROR_AMBIGUOUS_KNOWN_USER, target, matchedSubjects);
+    }
+
+    static CommandMessage invalidNode(Object node) {
+        return error(ERROR_INVALID_NODE, node);
+    }
+
+    static CommandMessage invalidValue(Object value) {
+        return error(ERROR_INVALID_VALUE, value);
+    }
+
+    static CommandMessage reloadFailed(Throwable exception) {
+        return error(ERROR_RELOAD_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage validateFailed(Throwable exception) {
+        return error(ERROR_VALIDATE_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage groupOperationFailed(Throwable exception) {
+        return error(ERROR_GROUP_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage nodeOperationFailed(Throwable exception) {
+        return error(ERROR_NODE_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage backupOperationFailed(Throwable exception) {
+        return error(ERROR_BACKUP_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage unknownBackupKind(String token) {
+        return error(ERROR_UNKNOWN_BACKUP_KIND, token);
+    }
+
+    static CommandMessage backupsEmpty() {
+        return detail(BACKUPS_EMPTY);
+    }
+
+    static CommandMessage backupsEmpty(String kind) {
+        return detail(BACKUPS_EMPTY_FOR_KIND, kind);
+    }
+
+    static CommandMessage backupsList(String kind, String backups) {
+        return detail(BACKUPS_LIST, kind, backups);
+    }
+
+    static CommandMessage backupRestored(String kind, String backupFileName) {
+        return success(BACKUP_RESTORED, kind, backupFileName);
+    }
+
+    static CommandMessage permissionsEmpty(String subject) {
+        return detail(PERMISSIONS_EMPTY, subject);
+    }
+
+    static CommandMessage permissionsList(String subject, String assignments) {
+        return detail(PERMISSIONS_LIST, subject, assignments);
+    }
+
+    static CommandMessage permissionGet(String subject, String node, PermissionValue value) {
+        return detail(PERMISSION_GET, subject, node, value.name());
+    }
+
+    static CommandMessage permissionSet(String node, String subject, PermissionValue value) {
+        return success(PERMISSION_SET, node, subject, value.name());
+    }
+
+    static CommandMessage permissionClear(String node, String subject) {
+        return success(PERMISSION_CLEAR, node, subject);
+    }
+
+    static CommandMessage usersEmpty() {
+        return detail(USERS_EMPTY);
+    }
+
+    static CommandMessage usersList(String subjects) {
+        return detail(USERS_LIST, subjects);
+    }
+
+    static CommandMessage usersSearchEmpty(String query) {
+        return detail(USERS_SEARCH_EMPTY, query);
+    }
+
+    static CommandMessage usersSearchMatches(String subjects) {
+        return detail(USERS_SEARCH_MATCHES, subjects);
+    }
+
+    static CommandMessage nodesEmpty() {
+        return detail(NODES_EMPTY);
+    }
+
+    static CommandMessage nodesList(String nodes) {
+        return detail(NODES_LIST, nodes);
+    }
+
+    static CommandMessage nodesSearchEmpty(String query) {
+        return detail(NODES_SEARCH_EMPTY, query);
+    }
+
+    static CommandMessage nodesSearchMatches(String nodes) {
+        return detail(NODES_SEARCH_MATCHES, nodes);
+    }
+
+    static CommandMessage nodeAdded(String node) {
+        return success(NODE_ADDED, node);
+    }
+
+    static CommandMessage nodeRemoved(String node) {
+        return success(NODE_REMOVED, node);
+    }
+
+    static CommandMessage groupsEmpty() {
+        return detail(GROUPS_EMPTY);
+    }
+
+    static CommandMessage groupsList(String groups) {
+        return detail(GROUPS_LIST, groups);
+    }
+
+    static CommandMessage groupCreated(String group) {
+        return success(GROUP_CREATED, group);
+    }
+
+    static CommandMessage groupDeleted(String group) {
+        return success(GROUP_DELETED, group);
+    }
+
+    static CommandMessage groupPermissionsEmpty(String group) {
+        return detail(GROUP_PERMISSIONS_EMPTY, group);
+    }
+
+    static CommandMessage groupPermissionsList(String group, String assignments) {
+        return detail(GROUP_PERMISSIONS_LIST, group, assignments);
+    }
+
+    static CommandMessage groupMembersEmpty(String group) {
+        return detail(GROUP_MEMBERS_EMPTY, group);
+    }
+
+    static CommandMessage groupMembersList(String group, String members) {
+        return detail(GROUP_MEMBERS_LIST, group, members);
+    }
+
+    static CommandMessage groupParentsEmpty(String group) {
+        return detail(GROUP_PARENTS_EMPTY, group);
+    }
+
+    static CommandMessage groupParentsList(String group, String parents) {
+        return detail(GROUP_PARENTS_LIST, group, parents);
+    }
+
+    static CommandMessage groupParentAdded(String group, String parent) {
+        return success(GROUP_PARENT_ADDED, parent, group);
+    }
+
+    static CommandMessage groupParentRemoved(String group, String parent) {
+        return success(GROUP_PARENT_REMOVED, parent, group);
+    }
+
+    static CommandMessage groupDefaultImplicit() {
+        return detail(GROUP_DEFAULT_IMPLICIT);
+    }
+
+    static CommandMessage groupPermissionGet(String group, String node, PermissionValue value) {
+        return detail(GROUP_PERMISSION_GET, group, node, value.name());
+    }
+
+    static CommandMessage groupPermissionSet(String node, String group, PermissionValue value) {
+        return success(GROUP_PERMISSION_SET, node, group, value.name());
+    }
+
+    static CommandMessage groupPermissionClear(String node, String group) {
+        return success(GROUP_PERMISSION_CLEAR, node, group);
+    }
+
+    static CommandMessage userGroupsEmpty(String subject) {
+        return detail(USER_GROUPS_EMPTY, subject);
+    }
+
+    static CommandMessage userGroupsList(String subject, String groups) {
+        return detail(USER_GROUPS_LIST, subject, groups);
+    }
+
+    static CommandMessage userGroupAdded(String subject, String group) {
+        return success(USER_GROUP_ADDED, subject, group);
+    }
+
+    static CommandMessage userGroupRemoved(String subject, String group) {
+        return success(USER_GROUP_REMOVED, subject, group);
+    }
+
+    static CommandMessage permissionCheck(String subject, String node, PermissionValue value, String source) {
+        return detail(PERMISSION_CHECK, subject, node, value.name(), source);
+    }
+
+    static CommandMessage permissionCheck(String subject, String node, PermissionValue value, String source, String assignmentNode) {
+        return detail(PERMISSION_CHECK_MATCHED, subject, node, value.name(), source, assignmentNode);
+    }
+
+    static CommandMessage permissionExplainHeader(String subject, String node) {
+        return heading(format(PERMISSION_EXPLAIN_HEADER, subject, node));
+    }
+
+    static CommandMessage permissionExplainResult(PermissionValue value, String source) {
+        return detail(PERMISSION_EXPLAIN_RESULT, value.name(), source);
+    }
+
+    static CommandMessage permissionExplainResult(PermissionValue value, String source, String assignmentNode) {
+        return detail(PERMISSION_EXPLAIN_RESULT_MATCHED, value.name(), source, assignmentNode);
+    }
+
+    static CommandMessage permissionExplainResultUnset() {
+        return detail(PERMISSION_EXPLAIN_RESULT_UNSET);
+    }
+
+    static CommandMessage permissionExplainOrder() {
+        return detail(PERMISSION_EXPLAIN_ORDER);
+    }
+
+    static CommandMessage permissionExplainMatch(String source, String assignmentNode, PermissionValue value, boolean winning) {
+        return detail(PERMISSION_EXPLAIN_MATCH, source, assignmentNode, value.name(), winning ? "winner" : "ignored");
+    }
+
+    static CommandMessage permissionExplainNoMatches() {
+        return detail(PERMISSION_EXPLAIN_NO_MATCHES);
+    }
+
+    private static CommandMessage success(String template, Object... arguments) {
+        return message(Color.GREEN, template, arguments);
+    }
+
+    private static CommandMessage error(String template, Object... arguments) {
+        return message(Color.RED, template, arguments);
+    }
+
+    private static CommandMessage detail(String template, Object... arguments) {
+        return message(Color.GRAY, template, arguments);
+    }
+
+    private static CommandMessage message(Color baseColor, String template, Object... arguments) {
+        if (arguments.length == 0) {
+            return CommandMessage.text(template, baseColor);
         }
-        return format(ERROR_RELOAD_FAILED, message);
-    }
 
-    static String validateFailed(Throwable exception) {
-        String message = exception.getMessage();
-        if (message == null || message.isBlank()) {
-            message = exception.getClass().getSimpleName();
+        List<Segment> segments = new ArrayList<>();
+        int argumentIndex = 0;
+        int start = 0;
+        while (argumentIndex < arguments.length) {
+            int placeholder = template.indexOf("%s", start);
+            if (placeholder < 0) {
+                break;
+            }
+            if (placeholder > start) {
+                segments.add(CommandMessage.segment(template.substring(start, placeholder), baseColor));
+            }
+            segments.add(CommandMessage.segment(String.valueOf(arguments[argumentIndex]), Color.YELLOW));
+            argumentIndex++;
+            start = placeholder + 2;
         }
-        return format(ERROR_VALIDATE_FAILED, message);
-    }
-
-    static String groupOperationFailed(Throwable exception) {
-        String message = exception.getMessage();
-        if (message == null || message.isBlank()) {
-            message = exception.getClass().getSimpleName();
+        if (start < template.length()) {
+            segments.add(CommandMessage.segment(template.substring(start), baseColor));
         }
-        return format(ERROR_GROUP_OPERATION_FAILED, message);
-    }
-
-    static String nodeOperationFailed(Throwable exception) {
-        String message = exception.getMessage();
-        if (message == null || message.isBlank()) {
-            message = exception.getClass().getSimpleName();
+        while (argumentIndex < arguments.length) {
+            segments.add(CommandMessage.segment(String.valueOf(arguments[argumentIndex]), Color.YELLOW));
+            argumentIndex++;
         }
-        return format(ERROR_NODE_OPERATION_FAILED, message);
-    }
-
-    static String backupOperationFailed(Throwable exception) {
-        String message = exception.getMessage();
-        if (message == null || message.isBlank()) {
-            message = exception.getClass().getSimpleName();
-        }
-        return format(ERROR_BACKUP_OPERATION_FAILED, message);
-    }
-
-    static String unknownBackupKind(String token) {
-        return format(ERROR_UNKNOWN_BACKUP_KIND, token);
-    }
-
-    static String backupsEmpty() {
-        return BACKUPS_EMPTY;
-    }
-
-    static String backupsEmpty(String kind) {
-        return format(BACKUPS_EMPTY_FOR_KIND, kind);
-    }
-
-    static String backupsList(String kind, String backups) {
-        return format(BACKUPS_LIST, kind, backups);
-    }
-
-    static String backupRestored(String kind, String backupFileName) {
-        return format(BACKUP_RESTORED, kind, backupFileName);
-    }
-
-    static String permissionsEmpty(String subject) {
-        return format(PERMISSIONS_EMPTY, subject);
-    }
-
-    static String permissionsList(String subject, String assignments) {
-        return format(PERMISSIONS_LIST, subject, assignments);
-    }
-
-    static String permissionGet(String subject, String node, PermissionValue value) {
-        return format(PERMISSION_GET, subject, node, value.name());
-    }
-
-    static String permissionSet(String node, String subject, PermissionValue value) {
-        return format(PERMISSION_SET, node, subject, value.name());
-    }
-
-    static String permissionClear(String node, String subject) {
-        return format(PERMISSION_CLEAR, node, subject);
-    }
-
-    static String usersEmpty() {
-        return USERS_EMPTY;
-    }
-
-    static String usersList(String subjects) {
-        return format(USERS_LIST, subjects);
-    }
-
-    static String usersSearchEmpty(String query) {
-        return format(USERS_SEARCH_EMPTY, query);
-    }
-
-    static String usersSearchMatches(String subjects) {
-        return format(USERS_SEARCH_MATCHES, subjects);
-    }
-
-    static String nodesEmpty() {
-        return NODES_EMPTY;
-    }
-
-    static String nodesList(String nodes) {
-        return format(NODES_LIST, nodes);
-    }
-
-    static String nodesSearchEmpty(String query) {
-        return format(NODES_SEARCH_EMPTY, query);
-    }
-
-    static String nodesSearchMatches(String nodes) {
-        return format(NODES_SEARCH_MATCHES, nodes);
-    }
-
-    static String nodeAdded(String node) {
-        return format(NODE_ADDED, node);
-    }
-
-    static String nodeRemoved(String node) {
-        return format(NODE_REMOVED, node);
-    }
-
-    static String groupsEmpty() {
-        return GROUPS_EMPTY;
-    }
-
-    static String groupsList(String groups) {
-        return format(GROUPS_LIST, groups);
-    }
-
-    static String groupCreated(String group) {
-        return format(GROUP_CREATED, group);
-    }
-
-    static String groupDeleted(String group) {
-        return format(GROUP_DELETED, group);
-    }
-
-    static String groupPermissionsEmpty(String group) {
-        return format(GROUP_PERMISSIONS_EMPTY, group);
-    }
-
-    static String groupPermissionsList(String group, String assignments) {
-        return format(GROUP_PERMISSIONS_LIST, group, assignments);
-    }
-
-    static String groupMembersEmpty(String group) {
-        return format(GROUP_MEMBERS_EMPTY, group);
-    }
-
-    static String groupMembersList(String group, String members) {
-        return format(GROUP_MEMBERS_LIST, group, members);
-    }
-
-    static String groupParentsEmpty(String group) {
-        return format(GROUP_PARENTS_EMPTY, group);
-    }
-
-    static String groupParentsList(String group, String parents) {
-        return format(GROUP_PARENTS_LIST, group, parents);
-    }
-
-    static String groupParentAdded(String group, String parent) {
-        return format(GROUP_PARENT_ADDED, parent, group);
-    }
-
-    static String groupParentRemoved(String group, String parent) {
-        return format(GROUP_PARENT_REMOVED, parent, group);
-    }
-
-    static String groupDefaultImplicit() {
-        return GROUP_DEFAULT_IMPLICIT;
-    }
-
-    static String groupPermissionGet(String group, String node, PermissionValue value) {
-        return format(GROUP_PERMISSION_GET, group, node, value.name());
-    }
-
-    static String groupPermissionSet(String node, String group, PermissionValue value) {
-        return format(GROUP_PERMISSION_SET, node, group, value.name());
-    }
-
-    static String groupPermissionClear(String node, String group) {
-        return format(GROUP_PERMISSION_CLEAR, node, group);
-    }
-
-    static String userGroupsEmpty(String subject) {
-        return format(USER_GROUPS_EMPTY, subject);
-    }
-
-    static String userGroupsList(String subject, String groups) {
-        return format(USER_GROUPS_LIST, subject, groups);
-    }
-
-    static String userGroupAdded(String subject, String group) {
-        return format(USER_GROUP_ADDED, subject, group);
-    }
-
-    static String userGroupRemoved(String subject, String group) {
-        return format(USER_GROUP_REMOVED, subject, group);
-    }
-
-    static String permissionCheck(String subject, String node, PermissionValue value, String source) {
-        return format(PERMISSION_CHECK, subject, node, value.name(), source);
-    }
-
-    static String permissionCheck(String subject, String node, PermissionValue value, String source, String assignmentNode) {
-        return format(PERMISSION_CHECK_MATCHED, subject, node, value.name(), source, assignmentNode);
-    }
-
-    static String permissionExplainHeader(String subject, String node) {
-        return format(PERMISSION_EXPLAIN_HEADER, subject, node);
-    }
-
-    static String permissionExplainResult(PermissionValue value, String source) {
-        return format(PERMISSION_EXPLAIN_RESULT, value.name(), source);
-    }
-
-    static String permissionExplainResult(PermissionValue value, String source, String assignmentNode) {
-        return format(PERMISSION_EXPLAIN_RESULT_MATCHED, value.name(), source, assignmentNode);
-    }
-
-    static String permissionExplainResultUnset() {
-        return PERMISSION_EXPLAIN_RESULT_UNSET;
-    }
-
-    static String permissionExplainOrder() {
-        return PERMISSION_EXPLAIN_ORDER;
-    }
-
-    static String permissionExplainMatch(String source, String assignmentNode, PermissionValue value, boolean winning) {
-        return format(PERMISSION_EXPLAIN_MATCH, source, assignmentNode, value.name(), winning ? "winner" : "ignored");
-    }
-
-    static String permissionExplainNoMatches() {
-        return PERMISSION_EXPLAIN_NO_MATCHES;
+        return CommandMessage.of(segments.toArray(Segment[]::new));
     }
 
     private static String command(String rootLiteral, String command) {
@@ -472,6 +522,14 @@ final class CommandLang {
 
     private static String format(String template, Object... arguments) {
         return String.format(Locale.ROOT, template, arguments);
+    }
+
+    private static String exceptionMessage(Throwable exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = exception.getClass().getSimpleName();
+        }
+        return message;
     }
 
     private CommandLang() {

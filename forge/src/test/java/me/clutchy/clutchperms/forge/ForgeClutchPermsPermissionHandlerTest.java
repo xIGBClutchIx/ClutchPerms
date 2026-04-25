@@ -43,7 +43,6 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.minecraftforge.server.permission.nodes.PermissionNode;
@@ -253,10 +252,9 @@ final class ForgeClutchPermsPermissionHandlerTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class,
-                () -> dispatcher.execute("clutchperms backup restore permissions " + backupFileName, console));
+        assertCommandFails(dispatcher, "clutchperms backup restore permissions " + backupFileName, console,
+                "Backup operation failed: Failed to apply restored permissions backup " + backupFileName);
 
-        assertTrue(exception.getMessage().contains("Backup operation failed: Failed to apply restored permissions backup " + backupFileName));
         assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
         assertEquals(Boolean.TRUE, suppliedHandler.getOfflinePermission(SUBJECT_ID, backupNode));
         assertEquals(0, environment.runtimeRefreshes());
@@ -283,12 +281,10 @@ final class ForgeClutchPermsPermissionHandlerTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+        assertCommandFails(dispatcher, "clutchperms reload", console, "Failed to reload ClutchPerms storage:");
 
-        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
         assertEquals(Boolean.FALSE, suppliedHandler.getOfflinePermission(SUBJECT_ID, booleanNode));
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of(), console.messages());
     }
 
     @Test
@@ -331,12 +327,10 @@ final class ForgeClutchPermsPermissionHandlerTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms validate", console));
+        assertCommandFails(dispatcher, "clutchperms validate", console, "Failed to validate ClutchPerms storage:");
 
-        assertTrue(exception.getMessage().contains("Failed to validate ClutchPerms storage:"));
         assertEquals(Boolean.FALSE, suppliedHandler.getOfflinePermission(SUBJECT_ID, booleanNode));
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of(), console.messages());
     }
 
     @Test
@@ -375,12 +369,10 @@ final class ForgeClutchPermsPermissionHandlerTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+        assertCommandFails(dispatcher, "clutchperms reload", console, "Failed to reload ClutchPerms storage:");
 
-        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
         assertTrue(environment.permissionNodeRegistry().getKnownNode("active.node").isPresent());
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of(), console.messages());
     }
 
     @Test
@@ -412,12 +404,10 @@ final class ForgeClutchPermsPermissionHandlerTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", console));
+        assertCommandFails(dispatcher, "clutchperms reload", console, "Failed to reload ClutchPerms storage:");
 
-        assertTrue(exception.getMessage().contains("Failed to reload ClutchPerms storage:"));
         assertEquals(Boolean.TRUE, suppliedHandler.getOfflinePermission(SUBJECT_ID, groupReloadNode));
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of(), console.messages());
     }
 
     private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, GroupService groupService, PermissionResolver permissionResolver,
@@ -429,6 +419,17 @@ final class ForgeClutchPermsPermissionHandlerTest {
         CommandDispatcher<TestSource> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
         return dispatcher;
+    }
+
+    private static void assertCommandFails(CommandDispatcher<TestSource> dispatcher, String command, TestSource source, String expectedMessage) {
+        try {
+            assertEquals(0, dispatcher.execute(command, source));
+        } catch (CommandSyntaxException exception) {
+            throw new AssertionError("Expected styled command failure for " + command, exception);
+        }
+        assertTrue(!source.messages().isEmpty(), "Expected command feedback");
+        assertTrue(source.messages().get(source.messages().size() - 1).contains(expectedMessage),
+                () -> "Expected latest message to contain <" + expectedMessage + "> but was " + source.messages());
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {

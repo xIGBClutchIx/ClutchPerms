@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
+import me.clutchy.clutchperms.common.command.CommandMessage;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
@@ -18,8 +19,10 @@ import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.rcon.RconConsoleSource;
@@ -139,6 +142,34 @@ final class ForgeClutchPermsCommand {
         @Override
         public void sendMessage(CommandSourceStack source, String message) {
             source.sendSuccess(() -> Component.literal(message), false);
+        }
+
+        @Override
+        public void sendMessage(CommandSourceStack source, CommandMessage message) {
+            source.sendSuccess(() -> toComponent(message), false);
+        }
+
+        private static Component toComponent(CommandMessage message) {
+            MutableComponent component = Component.empty();
+            for (CommandMessage.Segment segment : message.segments()) {
+                MutableComponent part = Component.literal(segment.text()).withStyle(color(segment.color()));
+                if (segment.bold()) {
+                    part = part.withStyle(style -> style.withBold(true));
+                }
+                component.append(part);
+            }
+            return component;
+        }
+
+        private static ChatFormatting color(CommandMessage.Color color) {
+            return switch (color) {
+                case AQUA -> ChatFormatting.AQUA;
+                case GREEN -> ChatFormatting.GREEN;
+                case RED -> ChatFormatting.RED;
+                case YELLOW -> ChatFormatting.YELLOW;
+                case GRAY -> ChatFormatting.GRAY;
+                case WHITE -> ChatFormatting.WHITE;
+            };
         }
     }
 }

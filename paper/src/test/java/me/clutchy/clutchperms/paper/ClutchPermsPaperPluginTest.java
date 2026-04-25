@@ -49,10 +49,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 /**
  * Integration-style tests that verify the Paper plugin bootstrap against MockBukkit.
@@ -199,19 +199,18 @@ class ClutchPermsPaperPluginTest {
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
 
         assertEquals(1, dispatcher.execute("clutchperms status", new TestCommandSourceStack(player)));
-        assertEquals(Component.text(ClutchPermsPaperPlugin.STATUS_MESSAGE), player.nextComponentMessage());
-        assertEquals(Component.text("Permissions file: " + plugin.getDataFolder().toPath().resolve("permissions.json").toAbsolutePath().normalize()),
-                player.nextComponentMessage());
-        assertEquals(Component.text("Subjects file: " + plugin.getDataFolder().toPath().resolve("subjects.json").toAbsolutePath().normalize()), player.nextComponentMessage());
-        assertEquals(Component.text("Groups file: " + plugin.getDataFolder().toPath().resolve("groups.json").toAbsolutePath().normalize()), player.nextComponentMessage());
-        assertEquals(Component.text("Known nodes file: " + plugin.getDataFolder().toPath().resolve("nodes.json").toAbsolutePath().normalize()), player.nextComponentMessage());
-        assertEquals(Component.text("Known subjects: 1"), player.nextComponentMessage());
-        assertEquals(Component.text("Known groups: 0"), player.nextComponentMessage());
-        assertEquals(Component.text("Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size()), player.nextComponentMessage());
+        assertNextMessage(player, ClutchPermsPaperPlugin.STATUS_MESSAGE);
+        assertNextMessage(player, "Permissions file: " + plugin.getDataFolder().toPath().resolve("permissions.json").toAbsolutePath().normalize());
+        assertNextMessage(player, "Subjects file: " + plugin.getDataFolder().toPath().resolve("subjects.json").toAbsolutePath().normalize());
+        assertNextMessage(player, "Groups file: " + plugin.getDataFolder().toPath().resolve("groups.json").toAbsolutePath().normalize());
+        assertNextMessage(player, "Known nodes file: " + plugin.getDataFolder().toPath().resolve("nodes.json").toAbsolutePath().normalize());
+        assertNextMessage(player, "Known subjects: 1");
+        assertNextMessage(player, "Known groups: 0");
+        assertNextMessage(player, "Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size());
         PermissionResolverCacheStats cacheStats = plugin.getPermissionResolver().cacheStats();
-        assertEquals(Component.text("Resolver cache: " + cacheStats.subjects() + " subjects, " + cacheStats.nodeResults() + " node results, " + cacheStats.effectiveSnapshots()
-                + " effective snapshots."), player.nextComponentMessage());
-        assertEquals(Component.text("Runtime bridge: " + plugin.getStatusDiagnostics().runtimeBridgeStatus()), player.nextComponentMessage());
+        assertNextMessage(player, "Resolver cache: " + cacheStats.subjects() + " subjects, " + cacheStats.nodeResults() + " node results, " + cacheStats.effectiveSnapshots()
+                + " effective snapshots.");
+        assertNextMessage(player, "Runtime bridge: " + plugin.getStatusDiagnostics().runtimeBridgeStatus());
     }
 
     /**
@@ -224,7 +223,7 @@ class ClutchPermsPaperPluginTest {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms status", new TestCommandSourceStack(player)));
+        assertCommandFails(dispatcher, "clutchperms status", player, "You do not have permission to use ClutchPerms commands.");
     }
 
     /**
@@ -609,10 +608,9 @@ class ClutchPermsPaperPluginTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class,
-                () -> dispatcher.execute("clutchperms backup restore permissions " + backupFileName, new TestCommandSourceStack(admin)));
+        assertCommandFails(dispatcher, "clutchperms backup restore permissions " + backupFileName, admin,
+                "Backup operation failed: Failed to apply restored permissions backup " + backupFileName);
 
-        assertTrue(exception.getMessage().contains("Backup operation failed: Failed to apply restored permissions backup " + backupFileName));
         assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.backup"));
         assertTrue(target.isPermissionSet("example.backup"));
@@ -652,7 +650,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
 
-        assertEquals(Component.text("Reloaded permissions, subjects, groups, and known nodes from disk."), admin.nextComponentMessage());
+        assertNextMessage(admin, "Reloaded permissions, subjects, groups, and known nodes from disk.");
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
         assertTrue(target.isPermissionSet("example.reload"));
         assertTrue(target.hasPermission("example.reload"));
@@ -691,7 +689,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms validate", new TestCommandSourceStack(admin)));
 
-        assertEquals(Component.text("Validated permissions, subjects, groups, and known nodes from disk."), admin.nextComponentMessage());
+        assertNextMessage(admin, "Validated permissions, subjects, groups, and known nodes from disk.");
         assertSame(activePermissionService, plugin.getPermissionService());
         assertSame(activePermissionResolver, plugin.getPermissionResolver());
         assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
@@ -728,9 +726,8 @@ class ClutchPermsPaperPluginTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        CommandSyntaxException exception = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms validate", new TestCommandSourceStack(admin)));
+        assertCommandFails(dispatcher, "clutchperms validate", admin, "Failed to validate ClutchPerms storage:");
 
-        assertTrue(exception.getMessage().contains("Failed to validate ClutchPerms storage:"));
         assertSame(activePermissionService, plugin.getPermissionService());
         assertSame(activePermissionResolver, plugin.getPermissionResolver());
         assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
@@ -769,7 +766,7 @@ class ClutchPermsPaperPluginTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
+        assertCommandFails(dispatcher, "clutchperms reload", admin, "Failed to reload ClutchPerms storage:");
 
         assertSame(activePermissionService, plugin.getPermissionService());
         assertSame(activeSubjectMetadataService, plugin.getSubjectMetadataService());
@@ -815,7 +812,7 @@ class ClutchPermsPaperPluginTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
+        assertCommandFails(dispatcher, "clutchperms reload", admin, "Failed to reload ClutchPerms storage:");
 
         assertSame(activeGroupService, plugin.getGroupService());
         assertSame(activePermissionResolver, plugin.getPermissionResolver());
@@ -851,7 +848,7 @@ class ClutchPermsPaperPluginTest {
                 }
                 """, StandardCharsets.UTF_8);
 
-        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
+        assertCommandFails(dispatcher, "clutchperms reload", admin, "Failed to reload ClutchPerms storage:");
 
         assertSame(activeManualRegistry, plugin.getManualPermissionNodeRegistry());
         assertSame(activeNodeRegistry, plugin.getPermissionNodeRegistry());
@@ -883,6 +880,24 @@ class ClutchPermsPaperPluginTest {
 
     private static UUID playerId() {
         return UUID.fromString("00000000-0000-0000-0000-000000000001");
+    }
+
+    private static void assertCommandFails(CommandDispatcher<CommandSourceStack> dispatcher, String command, PlayerMock player, String expectedMessage) {
+        try {
+            assertEquals(0, dispatcher.execute(command, new TestCommandSourceStack(player)));
+        } catch (CommandSyntaxException exception) {
+            throw new AssertionError("Expected styled command failure for " + command, exception);
+        }
+        assertNextMessageContains(player, expectedMessage);
+    }
+
+    private static void assertNextMessage(PlayerMock player, String expectedMessage) {
+        assertEquals(expectedMessage, PlainTextComponentSerializer.plainText().serialize(player.nextComponentMessage()));
+    }
+
+    private static void assertNextMessageContains(PlayerMock player, String expectedMessage) {
+        String message = PlainTextComponentSerializer.plainText().serialize(player.nextComponentMessage());
+        assertTrue(message.contains(expectedMessage), () -> "Expected message to contain <" + expectedMessage + "> but was <" + message + ">");
     }
 
     private record TestCommandSourceStack(CommandSender sender) implements CommandSourceStack {

@@ -70,17 +70,19 @@ public final class ClutchPermsCommands {
 
     private static final String BACKUP_FILE_ARGUMENT = "backupFile";
 
+    private static final String UNKNOWN_ARGUMENT = "unknown";
+
     private static final SimpleCommandExceptionType NO_PERMISSION = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_NO_PERMISSION));
 
     private static final SimpleCommandExceptionType OTHER_SOURCE_DENIED = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_OTHER_SOURCE_DENIED));
 
-    private static final DynamicCommandExceptionType UNKNOWN_TARGET = new DynamicCommandExceptionType(target -> new LiteralMessage(CommandLang.unknownTarget(target)));
+    private static final DynamicCommandExceptionType UNKNOWN_TARGET = new DynamicCommandExceptionType(target -> new LiteralMessage(CommandLang.unknownTarget(target).plainText()));
 
     private static final DynamicCommandExceptionType AMBIGUOUS_TARGET = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
-    private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage(CommandLang.invalidNode(node)));
+    private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage(CommandLang.invalidNode(node).plainText()));
 
-    private static final DynamicCommandExceptionType INVALID_VALUE = new DynamicCommandExceptionType(value -> new LiteralMessage(CommandLang.invalidValue(value)));
+    private static final DynamicCommandExceptionType INVALID_VALUE = new DynamicCommandExceptionType(value -> new LiteralMessage(CommandLang.invalidValue(value).plainText()));
 
     private static final DynamicCommandExceptionType RELOAD_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
@@ -136,12 +138,20 @@ public final class ClutchPermsCommands {
 
     private static <S> LiteralArgumentBuilder<S> backupCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("backup")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_BACKUP_LIST, source -> sendBackupUsage(environment, context)))
                 .then(LiteralArgumentBuilder.<S>literal("list")
                         .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_BACKUP_LIST, source -> listBackups(environment, context)))
                         .then(backupKindArgument(environment)
                                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_BACKUP_LIST, source -> listBackups(environment, context)))))
-                .then(LiteralArgumentBuilder.<S>literal("restore").then(backupKindArgument(environment).then(backupFileArgument(environment)
-                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_BACKUP_RESTORE, source -> restoreBackup(environment, context))))));
+                .then(LiteralArgumentBuilder.<S>literal("restore").executes(
+                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_BACKUP_RESTORE, source -> sendBackupRestoreKindUsage(environment, context)))
+                        .then(backupKindArgument(environment)
+                                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_BACKUP_RESTORE,
+                                        source -> sendBackupRestoreFileUsage(environment, context)))
+                                .then(backupFileArgument(environment).executes(
+                                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_BACKUP_RESTORE, source -> restoreBackup(environment, context))))))
+                .then(ClutchPermsCommands.<S>unknownArgument()
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_BACKUP_LIST, source -> sendUnknownBackupUsage(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> userCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -149,8 +159,12 @@ public final class ClutchPermsCommands {
                 .suggests((context, builder) -> suggestOnlineSubjects(environment, context.getSource(), builder));
 
         return LiteralArgumentBuilder.<S>literal("user")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_LIST, source -> sendUserRootUsage(environment, context)))
                 .then(target.then(listCommand(environment)).then(getCommand(environment)).then(setCommand(environment)).then(clearCommand(environment))
-                        .then(userGroupsCommand(environment)).then(userGroupCommand(environment)).then(checkCommand(environment)).then(explainCommand(environment)));
+                        .then(userGroupsCommand(environment)).then(userGroupCommand(environment)).then(checkCommand(environment)).then(explainCommand(environment))
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_LIST, source -> sendUserTargetUsage(environment, context)))
+                        .then(ClutchPermsCommands.<S>unknownArgument().executes(
+                                context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_LIST, source -> sendUnknownUserTargetUsage(environment, context)))));
     }
 
     private static <S> LiteralArgumentBuilder<S> groupRootCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -158,9 +172,10 @@ public final class ClutchPermsCommands {
                 .suggests((context, builder) -> suggestGroups(environment, builder));
 
         return LiteralArgumentBuilder.<S>literal("group")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_LIST, source -> sendGroupRootUsage(environment, context)))
                 .then(LiteralArgumentBuilder.<S>literal("list")
                         .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_LIST, source -> listGroups(environment, context))))
-                .then(group
+                .then(group.executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_VIEW, source -> sendGroupTargetUsage(environment, context)))
                         .then(LiteralArgumentBuilder.<S>literal("create")
                                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_CREATE, source -> createGroup(environment, context))))
                         .then(LiteralArgumentBuilder.<S>literal("delete")
@@ -171,35 +186,55 @@ public final class ClutchPermsCommands {
                                 context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_PARENTS, source -> listGroupParents(environment, context))))
                         .then(groupParentCommand(environment))
                         .then(LiteralArgumentBuilder.<S>literal("get")
+                                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_GET, source -> sendGroupGetUsage(environment, context)))
                                 .then(ClutchPermsCommands.nodeArgument(environment).executes(
                                         context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_GET, source -> getGroupPermission(environment, context)))))
                         .then(LiteralArgumentBuilder.<S>literal("set")
+                                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_SET, source -> sendGroupSetUsage(environment, context)))
                                 .then(ClutchPermsCommands.assignmentArgument(environment).executes(
                                         context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_SET, source -> setGroupPermission(environment, context)))))
-                        .then(LiteralArgumentBuilder.<S>literal("clear").then(ClutchPermsCommands.nodeArgument(environment).executes(
-                                context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_CLEAR, source -> clearGroupPermission(environment, context))))));
+                        .then(LiteralArgumentBuilder.<S>literal("clear")
+                                .executes(
+                                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_CLEAR, source -> sendGroupClearUsage(environment, context)))
+                                .then(ClutchPermsCommands.nodeArgument(environment)
+                                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_CLEAR,
+                                                source -> clearGroupPermission(environment, context)))))
+                        .then(ClutchPermsCommands.<S>unknownArgument().executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_VIEW,
+                                source -> sendUnknownGroupTargetUsage(environment, context)))));
     }
 
     private static <S> LiteralArgumentBuilder<S> usersCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("users")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USERS_LIST, source -> sendUsersUsage(environment, context)))
                 .then(LiteralArgumentBuilder.<S>literal("list")
                         .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USERS_LIST, source -> listSubjects(environment, context))))
-                .then(LiteralArgumentBuilder.<S>literal("search").then(RequiredArgumentBuilder.<S, String>argument(NAME_ARGUMENT, StringArgumentType.word())
-                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USERS_SEARCH, source -> searchSubjects(environment, context)))));
+                .then(LiteralArgumentBuilder.<S>literal("search")
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USERS_SEARCH, source -> sendUsersSearchUsage(environment, context)))
+                        .then(RequiredArgumentBuilder.<S, String>argument(NAME_ARGUMENT, StringArgumentType.word())
+                                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USERS_SEARCH, source -> searchSubjects(environment, context)))))
+                .then(ClutchPermsCommands.<S>unknownArgument()
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USERS_LIST, source -> sendUnknownUsersUsage(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> nodesCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("nodes")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_LIST, source -> sendNodesUsage(environment, context)))
                 .then(LiteralArgumentBuilder.<S>literal("list")
                         .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_LIST, source -> listKnownNodes(environment, context))))
                 .then(LiteralArgumentBuilder.<S>literal("search")
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_SEARCH, source -> sendNodesSearchUsage(environment, context)))
                         .then(RequiredArgumentBuilder.<S, String>argument(QUERY_ARGUMENT, StringArgumentType.word()).executes(
                                 context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_SEARCH, source -> searchKnownNodes(environment, context)))))
                 .then(LiteralArgumentBuilder.<S>literal("add")
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_ADD, source -> sendNodesAddUsage(environment, context)))
                         .then(ClutchPermsCommands.nodeArgument(environment)
                                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_ADD, source -> addKnownNode(environment, context)))))
-                .then(LiteralArgumentBuilder.<S>literal("remove").then(ClutchPermsCommands.nodeArgument(environment)
-                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_REMOVE, source -> removeKnownNode(environment, context)))));
+                .then(LiteralArgumentBuilder.<S>literal("remove")
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_REMOVE, source -> sendNodesRemoveUsage(environment, context)))
+                        .then(ClutchPermsCommands.nodeArgument(environment)
+                                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_REMOVE, source -> removeKnownNode(environment, context)))))
+                .then(ClutchPermsCommands.<S>unknownArgument()
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_NODES_LIST, source -> sendUnknownNodesUsage(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> listCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -208,18 +243,24 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> LiteralArgumentBuilder<S> getCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("get").then(ClutchPermsCommands.nodeArgument(environment)
-                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GET, source -> getPermission(environment, context))));
+        return LiteralArgumentBuilder.<S>literal("get")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GET, source -> sendUserGetUsage(environment, context)))
+                .then(ClutchPermsCommands.nodeArgument(environment)
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GET, source -> getPermission(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> setCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("set").then(ClutchPermsCommands.assignmentArgument(environment)
-                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_SET, source -> setPermission(environment, context))));
+        return LiteralArgumentBuilder.<S>literal("set")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_SET, source -> sendUserSetUsage(environment, context)))
+                .then(ClutchPermsCommands.assignmentArgument(environment)
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_SET, source -> setPermission(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> clearCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("clear").then(ClutchPermsCommands.nodeArgument(environment)
-                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_CLEAR, source -> clearPermission(environment, context))));
+        return LiteralArgumentBuilder.<S>literal("clear")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_CLEAR, source -> sendUserClearUsage(environment, context)))
+                .then(ClutchPermsCommands.nodeArgument(environment)
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_CLEAR, source -> clearPermission(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> userGroupsCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -229,30 +270,47 @@ public final class ClutchPermsCommands {
 
     private static <S> LiteralArgumentBuilder<S> userGroupCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("group")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GROUPS, source -> sendUserGroupUsage(environment, context)))
                 .then(LiteralArgumentBuilder.<S>literal("add")
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GROUP_ADD, source -> sendUserGroupAddUsage(environment, context)))
                         .then(groupArgument(environment).executes(
                                 context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GROUP_ADD, source -> addSubjectGroup(environment, context)))))
-                .then(LiteralArgumentBuilder.<S>literal("remove").then(groupArgument(environment).executes(
-                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, source -> removeSubjectGroup(environment, context)))));
+                .then(LiteralArgumentBuilder.<S>literal("remove").executes(
+                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, source -> sendUserGroupRemoveUsage(environment, context)))
+                        .then(groupArgument(environment).executes(
+                                context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, source -> removeSubjectGroup(environment, context)))))
+                .then(ClutchPermsCommands.<S>unknownArgument().executes(
+                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_GROUPS, source -> sendUnknownUserGroupUsage(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> groupParentCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("parent")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_PARENTS, source -> sendGroupParentUsage(environment, context)))
                 .then(LiteralArgumentBuilder.<S>literal("add")
+                        .executes(
+                                context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_PARENT_ADD, source -> sendGroupParentAddUsage(environment, context)))
                         .then(parentGroupArgument(environment).executes(
                                 context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_PARENT_ADD, source -> addGroupParent(environment, context)))))
-                .then(LiteralArgumentBuilder.<S>literal("remove").then(parentGroupArgument(environment).executes(
-                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_PARENT_REMOVE, source -> removeGroupParent(environment, context)))));
+                .then(LiteralArgumentBuilder.<S>literal("remove").executes(
+                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_PARENT_REMOVE, source -> sendGroupParentRemoveUsage(environment, context)))
+                        .then(parentGroupArgument(environment).executes(
+                                context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_PARENT_REMOVE, source -> removeGroupParent(environment, context)))))
+                .then(ClutchPermsCommands.<S>unknownArgument().executes(
+                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_GROUP_PARENTS, source -> sendUnknownGroupParentUsage(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> checkCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("check").then(ClutchPermsCommands.nodeArgument(environment)
-                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_CHECK, source -> checkPermission(environment, context))));
+        return LiteralArgumentBuilder.<S>literal("check")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_CHECK, source -> sendUserCheckUsage(environment, context)))
+                .then(ClutchPermsCommands.nodeArgument(environment)
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_CHECK, source -> checkPermission(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> explainCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("explain").then(ClutchPermsCommands.nodeArgument(environment)
-                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_EXPLAIN, source -> explainPermission(environment, context))));
+        return LiteralArgumentBuilder.<S>literal("explain")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_EXPLAIN, source -> sendUserExplainUsage(environment, context)))
+                .then(ClutchPermsCommands.nodeArgument(environment)
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_USER_EXPLAIN, source -> explainPermission(environment, context))));
     }
 
     private static <S> RequiredArgumentBuilder<S, String> nodeArgument(ClutchPermsCommandEnvironment<S> environment) {
@@ -284,17 +342,28 @@ public final class ClutchPermsCommands {
                 .suggests((context, builder) -> suggestBackupFiles(environment, context, builder));
     }
 
+    private static <S> RequiredArgumentBuilder<S, String> unknownArgument() {
+        return RequiredArgumentBuilder.argument(UNKNOWN_ARGUMENT, StringArgumentType.greedyString());
+    }
+
     private static <S> int executeAuthorized(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String requiredPermission, CommandAction<S> action)
             throws CommandSyntaxException {
         S source = context.getSource();
         if (!canUse(environment, source, requiredPermission)) {
             if (environment.sourceKind(source) == CommandSourceKind.OTHER) {
-                throw OTHER_SOURCE_DENIED.create();
+                environment.sendMessage(source, CommandLang.error(CommandLang.ERROR_OTHER_SOURCE_DENIED));
+                return 0;
             }
-            throw NO_PERMISSION.create();
+            environment.sendMessage(source, CommandLang.error(CommandLang.ERROR_NO_PERMISSION));
+            return 0;
         }
 
-        return action.run(source);
+        try {
+            return action.run(source);
+        } catch (CommandSyntaxException exception) {
+            environment.sendMessage(source, CommandLang.error(exception.getRawMessage().getString()));
+            return 0;
+        }
     }
 
     private static <S> int sendCommandList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -304,7 +373,7 @@ public final class ClutchPermsCommands {
 
     private static <S> int sendStatus(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         CommandStatusDiagnostics diagnostics = environment.statusDiagnostics();
-        environment.sendMessage(context.getSource(), STATUS_MESSAGE);
+        environment.sendMessage(context.getSource(), CommandLang.status());
         environment.sendMessage(context.getSource(), CommandLang.statusPermissionsFile(diagnostics.permissionsFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusSubjectsFile(diagnostics.subjectsFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusGroupsFile(diagnostics.groupsFile()));
@@ -316,6 +385,219 @@ public final class ClutchPermsCommands {
         environment.sendMessage(context.getSource(), CommandLang.statusResolverCache(cacheStats.subjects(), cacheStats.nodeResults(), cacheStats.effectiveSnapshots()));
         environment.sendMessage(context.getSource(), CommandLang.statusRuntimeBridge(diagnostics.runtimeBridgeStatus()));
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int sendBackupUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing backup command.", "Backups can be listed by storage kind or restored by file name.", backupUsages());
+    }
+
+    private static <S> int sendBackupRestoreKindUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing backup file kind.", "Choose permissions, subjects, groups, or nodes.",
+                List.of("backup restore <permissions|subjects|groups|nodes> <backup-file>"));
+    }
+
+    private static <S> int sendBackupRestoreFileUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        StorageFileKind kind = getBackupKind(context);
+        return sendUsage(environment, context, "Missing backup file.", "Pick a backup file for " + kind.token() + ".",
+                List.of("backup restore " + kind.token() + " <backup-file>"));
+    }
+
+    private static <S> int sendUnknownBackupUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Unknown backup command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT), "Backup supports list and restore commands.",
+                backupUsages());
+    }
+
+    private static <S> int sendUserRootUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing user target.", "Provide an online name, stored last-known name, or UUID.", userRootUsages());
+    }
+
+    private static <S> int sendUserTargetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing user command.", "Choose what to do with " + target + ".", userTargetUsages(target));
+    }
+
+    private static <S> int sendUnknownUserTargetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Unknown user command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "User commands inspect or mutate direct permissions and group membership.", userTargetUsages(target));
+    }
+
+    private static <S> int sendUserGetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing permission node.", "Choose the direct user permission node to read.", List.of("user " + target + " get <node>"));
+    }
+
+    private static <S> int sendUserSetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing permission assignment.", "Set a node to true or false.", List.of("user " + target + " set <node> <true|false>"));
+    }
+
+    private static <S> int sendUserClearUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing permission node.", "Choose the direct user permission node to clear.", List.of("user " + target + " clear <node>"));
+    }
+
+    private static <S> int sendUserCheckUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing permission node.", "Choose the effective permission node to check.", List.of("user " + target + " check <node>"));
+    }
+
+    private static <S> int sendUserExplainUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing permission node.", "Choose the effective permission node to explain.", List.of("user " + target + " explain <node>"));
+    }
+
+    private static <S> int sendUserGroupUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing user group command.", "Add or remove explicit group membership.",
+                List.of("user " + target + " group add <group>", "user " + target + " group remove <group>"));
+    }
+
+    private static <S> int sendUserGroupAddUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing group name.", "Choose the group to add this user to.", List.of("user " + target + " group add <group>"));
+    }
+
+    private static <S> int sendUserGroupRemoveUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing group name.", "Choose the group to remove this user from.", List.of("user " + target + " group remove <group>"));
+    }
+
+    private static <S> int sendUnknownUserGroupUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Unknown user group command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "User group commands add or remove explicit memberships.", List.of("user " + target + " group add <group>", "user " + target + " group remove <group>"));
+    }
+
+    private static <S> int sendGroupRootUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing group command.", "List groups or choose a group to inspect or mutate.", groupRootUsages());
+    }
+
+    private static <S> int sendGroupTargetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing group command.", "Choose what to do with group " + group + ".", groupTargetUsages(group));
+    }
+
+    private static <S> int sendUnknownGroupTargetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Unknown group command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "Group commands manage definitions, permissions, parents, and members.", groupTargetUsages(group));
+    }
+
+    private static <S> int sendGroupGetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing permission node.", "Choose the group permission node to read.", List.of("group " + group + " get <node>"));
+    }
+
+    private static <S> int sendGroupSetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing permission assignment.", "Set a group permission node to true or false.",
+                List.of("group " + group + " set <node> <true|false>"));
+    }
+
+    private static <S> int sendGroupClearUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing permission node.", "Choose the group permission node to clear.", List.of("group " + group + " clear <node>"));
+    }
+
+    private static <S> int sendGroupParentUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing group parent command.", "Add or remove a parent group.",
+                List.of("group " + group + " parent add <parent>", "group " + group + " parent remove <parent>"));
+    }
+
+    private static <S> int sendGroupParentAddUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing parent group.", "Choose the parent group to add.", List.of("group " + group + " parent add <parent>"));
+    }
+
+    private static <S> int sendGroupParentRemoveUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing parent group.", "Choose the parent group to remove.", List.of("group " + group + " parent remove <parent>"));
+    }
+
+    private static <S> int sendUnknownGroupParentUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Unknown group parent command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "Group parent commands add or remove inheritance links.", List.of("group " + group + " parent add <parent>", "group " + group + " parent remove <parent>"));
+    }
+
+    private static <S> int sendUsersUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing users command.", "List known users or search by last-known name.", usersUsages());
+    }
+
+    private static <S> int sendUsersSearchUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing user search query.", "Provide part of a last-known player name.", List.of("users search <name>"));
+    }
+
+    private static <S> int sendUnknownUsersUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Unknown users command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "Users commands list or search stored subject metadata.", usersUsages());
+    }
+
+    private static <S> int sendNodesUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing nodes command.", "List, search, add, or remove known permission nodes.", nodesUsages());
+    }
+
+    private static <S> int sendNodesSearchUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing node search query.", "Provide part of a known node or description.", List.of("nodes search <query>"));
+    }
+
+    private static <S> int sendNodesAddUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing known permission node.", "Add an exact known permission node and optional description.",
+                List.of("nodes add <node>", "nodes add <node> <description>"));
+    }
+
+    private static <S> int sendNodesRemoveUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing known permission node.", "Remove a manually registered known permission node.", List.of("nodes remove <node>"));
+    }
+
+    private static <S> int sendUnknownNodesUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Unknown nodes command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "Node commands manage the manual known-node registry.", nodesUsages());
+    }
+
+    private static <S> int sendUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String error, String detail, List<String> usages) {
+        S source = context.getSource();
+        environment.sendMessage(source, CommandLang.error(error));
+        environment.sendMessage(source, CommandLang.detail(detail));
+        environment.sendMessage(source, CommandLang.tryHeader());
+        usages.forEach(usage -> environment.sendMessage(source, CommandLang.usage(ROOT_LITERAL, usage)));
+        return 0;
+    }
+
+    private static List<String> backupUsages() {
+        return List.of("backup list", "backup list <permissions|subjects|groups|nodes>", "backup restore <permissions|subjects|groups|nodes> <backup-file>");
+    }
+
+    private static List<String> userRootUsages() {
+        return List.of("user <target> list", "user <target> get <node>", "user <target> set <node> <true|false>", "user <target> clear <node>", "user <target> groups",
+                "user <target> group add <group>", "user <target> group remove <group>", "user <target> check <node>", "user <target> explain <node>");
+    }
+
+    private static List<String> userTargetUsages(String target) {
+        return List.of("user " + target + " list", "user " + target + " get <node>", "user " + target + " set <node> <true|false>", "user " + target + " clear <node>",
+                "user " + target + " groups", "user " + target + " group add <group>", "user " + target + " group remove <group>", "user " + target + " check <node>",
+                "user " + target + " explain <node>");
+    }
+
+    private static List<String> groupRootUsages() {
+        return List.of("group list", "group <group> create", "group <group> delete", "group <group> list", "group <group> get <node>", "group <group> set <node> <true|false>",
+                "group <group> clear <node>", "group <group> parents", "group <group> parent add <parent>", "group <group> parent remove <parent>");
+    }
+
+    private static List<String> groupTargetUsages(String group) {
+        return List.of("group " + group + " create", "group " + group + " delete", "group " + group + " list", "group " + group + " get <node>",
+                "group " + group + " set <node> <true|false>", "group " + group + " clear <node>", "group " + group + " parents", "group " + group + " parent add <parent>",
+                "group " + group + " parent remove <parent>");
+    }
+
+    private static List<String> usersUsages() {
+        return List.of("users list", "users search <name>");
+    }
+
+    private static List<String> nodesUsages() {
+        return List.of("nodes list", "nodes search <query>", "nodes add <node>", "nodes add <node> <description>", "nodes remove <node>");
     }
 
     private static <S> int reloadStorage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
