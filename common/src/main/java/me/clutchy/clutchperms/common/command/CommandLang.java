@@ -21,7 +21,7 @@ final class CommandLang {
 
     private static final String COMMANDS_HEADER = "ClutchPerms commands:";
 
-    private static final String TRY = "Try:";
+    private static final String TRY = "Try one:";
 
     private static final String STATUS_PERMISSIONS_FILE = "Permissions file: %s";
 
@@ -162,16 +162,14 @@ final class CommandLang {
     private static final String PERMISSION_EXPLAIN_NO_MATCHES = "Matches: none.";
 
     static List<CommandMessage> commandList(String rootLiteral) {
-        return List.of(heading(COMMANDS_HEADER), usage(rootLiteral, "status"), usage(rootLiteral, "reload"), usage(rootLiteral, "validate"), usage(rootLiteral, "backup list"),
-                usage(rootLiteral, "backup list <permissions|subjects|groups|nodes>"), usage(rootLiteral, "backup restore <permissions|subjects|groups|nodes> <backup-file>"),
-                usage(rootLiteral, "user <target> list"), usage(rootLiteral, "user <target> get <node>"), usage(rootLiteral, "user <target> set <node> <true|false>"),
-                usage(rootLiteral, "user <target> clear <node>"), usage(rootLiteral, "user <target> groups"), usage(rootLiteral, "user <target> group add <group>"),
-                usage(rootLiteral, "user <target> group remove <group>"), usage(rootLiteral, "user <target> check <node>"), usage(rootLiteral, "user <target> explain <node>"),
-                usage(rootLiteral, "group list"), usage(rootLiteral, "group <group> create"), usage(rootLiteral, "group <group> delete"), usage(rootLiteral, "group <group> list"),
-                usage(rootLiteral, "group <group> get <node>"), usage(rootLiteral, "group <group> set <node> <true|false>"), usage(rootLiteral, "group <group> clear <node>"),
-                usage(rootLiteral, "group <group> parents"), usage(rootLiteral, "group <group> parent add <parent>"), usage(rootLiteral, "group <group> parent remove <parent>"),
-                usage(rootLiteral, "users list"), usage(rootLiteral, "users search <name>"), usage(rootLiteral, "nodes list"), usage(rootLiteral, "nodes search <query>"),
-                usage(rootLiteral, "nodes add <node>"), usage(rootLiteral, "nodes add <node> <description>"), usage(rootLiteral, "nodes remove <node>"));
+        return List.of(heading(COMMANDS_HEADER), usage(rootLiteral, "<status|reload|validate>"), usage(rootLiteral, "backup list [permissions|subjects|groups|nodes]"),
+                usage(rootLiteral, "backup restore <permissions|subjects|groups|nodes> <backup-file>"), usage(rootLiteral, "user <target> <list|groups>"),
+                usage(rootLiteral, "user <target> <get|clear|check|explain> <node>"), usage(rootLiteral, "user <target> set <node> <true|false>"),
+                usage(rootLiteral, "user <target> group <add|remove> <group>"), usage(rootLiteral, "group list"), usage(rootLiteral, "group <group> <create|delete|list|parents>"),
+                usage(rootLiteral, "group <group> <get|clear> <node>"), usage(rootLiteral, "group <group> set <node> <true|false>"),
+                usage(rootLiteral, "group <group> parent <add|remove> <parent>"), usage(rootLiteral, "users list"), usage(rootLiteral, "users search <name>"),
+                usage(rootLiteral, "nodes list"), usage(rootLiteral, "nodes search <query>"), usage(rootLiteral, "nodes add <node> [description]"),
+                usage(rootLiteral, "nodes remove <node>"));
     }
 
     static CommandMessage heading(String message) {
@@ -191,7 +189,11 @@ final class CommandLang {
     }
 
     static CommandMessage usage(String rootLiteral, String command) {
-        return CommandMessage.text(command(rootLiteral, command), Color.WHITE);
+        return commandSyntax("", rootLiteral, command);
+    }
+
+    static CommandMessage suggestion(String rootLiteral, String command) {
+        return commandSyntax("  ", rootLiteral, command);
     }
 
     static CommandMessage status() {
@@ -516,8 +518,70 @@ final class CommandLang {
         return CommandMessage.of(segments.toArray(Segment[]::new));
     }
 
-    private static String command(String rootLiteral, String command) {
-        return "/" + rootLiteral + " " + command;
+    private static CommandMessage commandSyntax(String prefix, String rootLiteral, String command) {
+        List<Segment> segments = new ArrayList<>();
+        if (!prefix.isEmpty()) {
+            segments.add(CommandMessage.segment(prefix, Color.GRAY));
+        }
+
+        String fullCommand = "/" + rootLiteral + " " + command;
+        int start = 0;
+        for (int index = 0; index < fullCommand.length(); index++) {
+            char current = fullCommand.charAt(index);
+            char close = current == '<' ? '>' : current == '[' ? ']' : 0;
+            if (close == 0) {
+                continue;
+            }
+
+            if (index > start) {
+                segments.add(CommandMessage.segment(fullCommand.substring(start, index), Color.WHITE));
+            }
+            int end = fullCommand.indexOf(close, index + 1);
+            if (end < 0) {
+                segments.add(CommandMessage.segment(fullCommand.substring(index), Color.YELLOW));
+                return CommandMessage.of(segments.toArray(Segment[]::new));
+            }
+            appendSyntaxArgument(segments, fullCommand.substring(index, end + 1));
+            index = end;
+            start = end + 1;
+        }
+        if (start < fullCommand.length()) {
+            segments.add(CommandMessage.segment(fullCommand.substring(start), Color.WHITE));
+        }
+        return CommandMessage.of(segments.toArray(Segment[]::new));
+    }
+
+    private static void appendSyntaxArgument(List<Segment> segments, String argument) {
+        if (argument.length() < 2) {
+            segments.add(CommandMessage.segment(argument, Color.YELLOW));
+            return;
+        }
+
+        String content = argument.substring(1, argument.length() - 1);
+        segments.add(CommandMessage.segment(argument.substring(0, 1), Color.GRAY));
+        if (content.contains("|")) {
+            appendChoiceSegments(segments, content);
+        } else {
+            segments.add(CommandMessage.segment(content, Color.YELLOW));
+        }
+        segments.add(CommandMessage.segment(argument.substring(argument.length() - 1), Color.GRAY));
+    }
+
+    private static void appendChoiceSegments(List<Segment> segments, String choices) {
+        int start = 0;
+        for (int index = 0; index < choices.length(); index++) {
+            if (choices.charAt(index) != '|') {
+                continue;
+            }
+            if (index > start) {
+                segments.add(CommandMessage.segment(choices.substring(start, index), Color.GREEN));
+            }
+            segments.add(CommandMessage.segment("|", Color.GRAY));
+            start = index + 1;
+        }
+        if (start < choices.length()) {
+            segments.add(CommandMessage.segment(choices.substring(start), Color.GREEN));
+        }
     }
 
     private static String format(String template, Object... arguments) {

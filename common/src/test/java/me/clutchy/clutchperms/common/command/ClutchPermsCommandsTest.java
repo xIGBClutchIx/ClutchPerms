@@ -127,6 +127,22 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms command syntax suggestions keep plain text intact while highlighting arguments separately.
+     */
+    @Test
+    void commandSyntaxSuggestionsHighlightArguments() {
+        CommandMessage message = CommandLang.suggestion("clutchperms", "group admin set <node> <true|false>");
+
+        assertEquals("  /clutchperms group admin set <node> <true|false>", message.plainText());
+        assertEquals(CommandMessage.Color.GRAY, message.segments().getFirst().color());
+        assertTrue(message.segments().stream().anyMatch(segment -> segment.text().equals("/clutchperms group admin set ") && segment.color() == CommandMessage.Color.WHITE));
+        assertTrue(message.segments().stream().anyMatch(segment -> segment.text().equals("node") && segment.color() == CommandMessage.Color.YELLOW));
+        assertTrue(message.segments().stream().anyMatch(segment -> segment.text().equals("true") && segment.color() == CommandMessage.Color.GREEN));
+        assertTrue(message.segments().stream().anyMatch(segment -> segment.text().equals("|") && segment.color() == CommandMessage.Color.GRAY));
+        assertTrue(message.segments().stream().anyMatch(segment -> segment.text().equals("false") && segment.color() == CommandMessage.Color.GREEN));
+    }
+
+    /**
      * Confirms incomplete command branches report contextual usage instead of falling through silently.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -148,16 +164,17 @@ class ClutchPermsCommandsTest {
         assertEquals(groupTargetUsageMessages("test"), groupTarget.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms group test get", groupGet));
-        assertEquals(List.of("Missing permission node.", "Choose the group permission node to read.", "Try:", "/clutchperms group test get <node>"), groupGet.messages());
+        assertEquals(List.of("Missing permission node.", "Choose the group permission node to read.", "Try one:", "  /clutchperms group test get <node>"), groupGet.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms user", userRoot));
         assertEquals(userRootUsageMessages(), userRoot.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms user Target set", userSet));
-        assertEquals(List.of("Missing permission assignment.", "Set a node to true or false.", "Try:", "/clutchperms user Target set <node> <true|false>"), userSet.messages());
+        assertEquals(List.of("Missing permission assignment.", "Set a node to true or false.", "Try one:", "  /clutchperms user Target set <node> <true|false>"),
+                userSet.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms backup restore permissions", backupRestore));
-        assertEquals(List.of("Missing backup file.", "Pick a backup file for permissions.", "Try:", "/clutchperms backup restore permissions <backup-file>"),
+        assertEquals(List.of("Missing backup file.", "Pick a backup file for permissions.", "Try one:", "  /clutchperms backup restore permissions <backup-file>"),
                 backupRestore.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms nodes", nodesRoot));
@@ -984,42 +1001,36 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListMessages() {
-        return List.of("ClutchPerms commands:", "/clutchperms status", "/clutchperms reload", "/clutchperms validate", "/clutchperms backup list",
-                "/clutchperms backup list <permissions|subjects|groups|nodes>", "/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>",
-                "/clutchperms user <target> list", "/clutchperms user <target> get <node>", "/clutchperms user <target> set <node> <true|false>",
-                "/clutchperms user <target> clear <node>", "/clutchperms user <target> groups", "/clutchperms user <target> group add <group>",
-                "/clutchperms user <target> group remove <group>", "/clutchperms user <target> check <node>", "/clutchperms user <target> explain <node>",
-                "/clutchperms group list", "/clutchperms group <group> create", "/clutchperms group <group> delete", "/clutchperms group <group> list",
-                "/clutchperms group <group> get <node>", "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>",
-                "/clutchperms group <group> parents", "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>",
-                "/clutchperms users list", "/clutchperms users search <name>", "/clutchperms nodes list", "/clutchperms nodes search <query>", "/clutchperms nodes add <node>",
-                "/clutchperms nodes add <node> <description>", "/clutchperms nodes remove <node>");
+        return List.of("ClutchPerms commands:", "/clutchperms <status|reload|validate>", "/clutchperms backup list [permissions|subjects|groups|nodes]",
+                "/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>", "/clutchperms user <target> <list|groups>",
+                "/clutchperms user <target> <get|clear|check|explain> <node>", "/clutchperms user <target> set <node> <true|false>",
+                "/clutchperms user <target> group <add|remove> <group>", "/clutchperms group list", "/clutchperms group <group> <create|delete|list|parents>",
+                "/clutchperms group <group> <get|clear> <node>", "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> parent <add|remove> <parent>",
+                "/clutchperms users list", "/clutchperms users search <name>", "/clutchperms nodes list", "/clutchperms nodes search <query>",
+                "/clutchperms nodes add <node> [description]", "/clutchperms nodes remove <node>");
     }
 
     private static List<String> groupRootUsageMessages() {
-        return List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try:", "/clutchperms group list", "/clutchperms group <group> create",
-                "/clutchperms group <group> delete", "/clutchperms group <group> list", "/clutchperms group <group> get <node>",
-                "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> clear <node>", "/clutchperms group <group> parents",
-                "/clutchperms group <group> parent add <parent>", "/clutchperms group <group> parent remove <parent>");
+        return List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /clutchperms group list",
+                "  /clutchperms group <group> <create|delete|list|parents>", "  /clutchperms group <group> <get|clear> <node>",
+                "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> parent <add|remove> <parent>");
     }
 
     private static List<String> groupTargetUsageMessages(String group) {
-        return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try:", "/clutchperms group " + group + " create",
-                "/clutchperms group " + group + " delete", "/clutchperms group " + group + " list", "/clutchperms group " + group + " get <node>",
-                "/clutchperms group " + group + " set <node> <true|false>", "/clutchperms group " + group + " clear <node>", "/clutchperms group " + group + " parents",
-                "/clutchperms group " + group + " parent add <parent>", "/clutchperms group " + group + " parent remove <parent>");
+        return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try one:", "  /clutchperms group " + group + " <create|delete|list|parents>",
+                "  /clutchperms group " + group + " <get|clear> <node>", "  /clutchperms group " + group + " set <node> <true|false>",
+                "  /clutchperms group " + group + " parent <add|remove> <parent>");
     }
 
     private static List<String> userRootUsageMessages() {
-        return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try:", "/clutchperms user <target> list",
-                "/clutchperms user <target> get <node>", "/clutchperms user <target> set <node> <true|false>", "/clutchperms user <target> clear <node>",
-                "/clutchperms user <target> groups", "/clutchperms user <target> group add <group>", "/clutchperms user <target> group remove <group>",
-                "/clutchperms user <target> check <node>", "/clutchperms user <target> explain <node>");
+        return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try one:", "  /clutchperms user <target> <list|groups>",
+                "  /clutchperms user <target> <get|clear|check|explain> <node>", "  /clutchperms user <target> set <node> <true|false>",
+                "  /clutchperms user <target> group <add|remove> <group>");
     }
 
     private static List<String> nodesUsageMessages() {
-        return List.of("Missing nodes command.", "List, search, add, or remove known permission nodes.", "Try:", "/clutchperms nodes list", "/clutchperms nodes search <query>",
-                "/clutchperms nodes add <node>", "/clutchperms nodes add <node> <description>", "/clutchperms nodes remove <node>");
+        return List.of("Missing nodes command.", "List, search, add, or remove known permission nodes.", "Try one:", "  /clutchperms nodes list",
+                "  /clutchperms nodes search <query>", "  /clutchperms nodes add <node> [description]", "  /clutchperms nodes remove <node>");
     }
 
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {

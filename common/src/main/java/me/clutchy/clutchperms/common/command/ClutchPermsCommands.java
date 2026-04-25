@@ -545,7 +545,7 @@ public final class ClutchPermsCommands {
 
     private static <S> int sendNodesAddUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         return sendUsage(environment, context, "Missing known permission node.", "Add an exact known permission node and optional description.",
-                List.of("nodes add <node>", "nodes add <node> <description>"));
+                List.of("nodes add <node> [description]"));
     }
 
     private static <S> int sendNodesRemoveUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -562,34 +562,32 @@ public final class ClutchPermsCommands {
         environment.sendMessage(source, CommandLang.error(error));
         environment.sendMessage(source, CommandLang.detail(detail));
         environment.sendMessage(source, CommandLang.tryHeader());
-        usages.forEach(usage -> environment.sendMessage(source, CommandLang.usage(ROOT_LITERAL, usage)));
+        usages.forEach(usage -> environment.sendMessage(source, CommandLang.suggestion(ROOT_LITERAL, usage)));
         return 0;
     }
 
     private static List<String> backupUsages() {
-        return List.of("backup list", "backup list <permissions|subjects|groups|nodes>", "backup restore <permissions|subjects|groups|nodes> <backup-file>");
+        return List.of("backup list [permissions|subjects|groups|nodes]", "backup restore <permissions|subjects|groups|nodes> <backup-file>");
     }
 
     private static List<String> userRootUsages() {
-        return List.of("user <target> list", "user <target> get <node>", "user <target> set <node> <true|false>", "user <target> clear <node>", "user <target> groups",
-                "user <target> group add <group>", "user <target> group remove <group>", "user <target> check <node>", "user <target> explain <node>");
+        return List.of("user <target> <list|groups>", "user <target> <get|clear|check|explain> <node>", "user <target> set <node> <true|false>",
+                "user <target> group <add|remove> <group>");
     }
 
     private static List<String> userTargetUsages(String target) {
-        return List.of("user " + target + " list", "user " + target + " get <node>", "user " + target + " set <node> <true|false>", "user " + target + " clear <node>",
-                "user " + target + " groups", "user " + target + " group add <group>", "user " + target + " group remove <group>", "user " + target + " check <node>",
-                "user " + target + " explain <node>");
+        return List.of("user " + target + " <list|groups>", "user " + target + " <get|clear|check|explain> <node>", "user " + target + " set <node> <true|false>",
+                "user " + target + " group <add|remove> <group>");
     }
 
     private static List<String> groupRootUsages() {
-        return List.of("group list", "group <group> create", "group <group> delete", "group <group> list", "group <group> get <node>", "group <group> set <node> <true|false>",
-                "group <group> clear <node>", "group <group> parents", "group <group> parent add <parent>", "group <group> parent remove <parent>");
+        return List.of("group list", "group <group> <create|delete|list|parents>", "group <group> <get|clear> <node>", "group <group> set <node> <true|false>",
+                "group <group> parent <add|remove> <parent>");
     }
 
     private static List<String> groupTargetUsages(String group) {
-        return List.of("group " + group + " create", "group " + group + " delete", "group " + group + " list", "group " + group + " get <node>",
-                "group " + group + " set <node> <true|false>", "group " + group + " clear <node>", "group " + group + " parents", "group " + group + " parent add <parent>",
-                "group " + group + " parent remove <parent>");
+        return List.of("group " + group + " <create|delete|list|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
+                "group " + group + " parent <add|remove> <parent>");
     }
 
     private static List<String> usersUsages() {
@@ -597,7 +595,7 @@ public final class ClutchPermsCommands {
     }
 
     private static List<String> nodesUsages() {
-        return List.of("nodes list", "nodes search <query>", "nodes add <node>", "nodes add <node> <description>", "nodes remove <node>");
+        return List.of("nodes list", "nodes search <query>", "nodes add <node> [description]", "nodes remove <node>");
     }
 
     private static <S> int reloadStorage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
