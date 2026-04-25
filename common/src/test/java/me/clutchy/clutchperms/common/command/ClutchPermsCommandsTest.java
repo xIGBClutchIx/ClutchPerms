@@ -1170,6 +1170,41 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms user target suggestions include online players and stored last-known names.
+     */
+    @Test
+    void userTargetSuggestionsIncludeOnlineAndStoredNames() {
+        environment.addOnlineSubject("Builder", UUID_NAMED_PLAYER_ID);
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "OfflineTarget", FIRST_SEEN);
+
+        assertEquals(List.of("Builder", "OfflineTarget", "Target"), suggestionTexts("clutchperms user "));
+    }
+
+    /**
+     * Confirms user target suggestions filter by typed prefix without requiring exact casing.
+     */
+    @Test
+    void userTargetSuggestionsFilterByTypedPrefixCaseInsensitively() {
+        environment.addOnlineSubject("Operator", UUID_NAMED_PLAYER_ID);
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "OfflineTarget", FIRST_SEEN);
+
+        assertEquals(List.of("OfflineTarget", "Operator"), suggestionTexts("clutchperms user o"));
+    }
+
+    /**
+     * Confirms user target suggestions are stable and do not repeat the exact same name.
+     */
+    @Test
+    void userTargetSuggestionsAreDeterministicAndAvoidExactDuplicates() {
+        environment.addOnlineSubject("Alpha", UUID_NAMED_PLAYER_ID);
+        subjectMetadataService.recordSubject(TARGET_ID, "Target", FIRST_SEEN);
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "alpha", SECOND_SEEN);
+
+        assertEquals(List.of("Alpha", "alpha"), suggestionTexts("clutchperms user a"));
+        assertEquals(List.of("Target"), suggestionTexts("clutchperms user t"));
+    }
+
+    /**
      * Confirms unknown group targets show close group matches.
      */
     @Test
@@ -1211,13 +1246,52 @@ class ClutchPermsCommandsTest {
     }
 
     /**
-     * Confirms explicit membership suggestions do not include the implicit default group.
+     * Confirms add suggestions exclude the implicit default group and groups already assigned to the target.
      */
     @Test
-    void userGroupSuggestionsExcludeDefaultGroup() {
+    void userGroupAddSuggestionsExcludeDefaultAndAssignedGroups() {
+        groupService.createGroup("staff");
+        groupService.createGroup("builder");
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+
+        assertEquals(List.of("builder"), suggestionTexts("clutchperms user Target group add "));
+    }
+
+    /**
+     * Confirms remove suggestions include only direct target memberships.
+     */
+    @Test
+    void userGroupRemoveSuggestionsIncludeOnlyDirectMemberships() {
+        groupService.createGroup("staff");
+        groupService.createGroup("builder");
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+
+        assertEquals(List.of("staff"), suggestionTexts("clutchperms user Target group remove "));
+    }
+
+    /**
+     * Confirms remove suggestions do not include the implicit default group.
+     */
+    @Test
+    void userGroupRemoveSuggestionsExcludeImplicitDefaultGroup() {
         groupService.createGroup("staff");
 
-        assertEquals(List.of("staff"), suggestionTexts("clutchperms user Target group add "));
+        assertEquals(List.of(), suggestionTexts("clutchperms user Target group remove "));
+    }
+
+    /**
+     * Confirms unresolved targets fall back to broad add suggestions and empty remove suggestions.
+     */
+    @Test
+    void userGroupSuggestionsHandleUnresolvedTargets() {
+        groupService.createGroup("staff");
+        subjectMetadataService.recordSubject(TARGET_ID, "Ambiguous", FIRST_SEEN);
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "ambiguous", SECOND_SEEN);
+
+        assertEquals(List.of("staff"), suggestionTexts("clutchperms user Missing group add "));
+        assertEquals(List.of(), suggestionTexts("clutchperms user Missing group remove "));
+        assertEquals(List.of("staff"), suggestionTexts("clutchperms user Ambiguous group add "));
+        assertEquals(List.of(), suggestionTexts("clutchperms user Ambiguous group remove "));
     }
 
     /**

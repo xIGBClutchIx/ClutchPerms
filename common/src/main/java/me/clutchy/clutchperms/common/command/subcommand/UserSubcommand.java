@@ -1,27 +1,38 @@
 package me.clutchy.clutchperms.common.command.subcommand;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.context.StringRange;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.Suggestion;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.CommandArguments;
+import me.clutchy.clutchperms.common.command.CommandSubject;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
+import me.clutchy.clutchperms.common.subject.SubjectMetadata;
 
 /**
  * Builds the `/clutchperms user` command branch.
  */
 public final class UserSubcommand {
+
+    private static final Comparator<String> SUGGESTION_ORDER = Comparator.comparing((String value) -> value.toLowerCase(Locale.ROOT)).thenComparing(Comparator.naturalOrder());
 
     /**
      * Handlers for direct user permission and membership command actions.
@@ -96,7 +107,7 @@ public final class UserSubcommand {
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers,
             SuggestionProvider<S> permissionNodes, SuggestionProvider<S> permissionAssignment) {
         RequiredArgumentBuilder<S, String> target = RequiredArgumentBuilder.<S, String>argument(CommandArguments.TARGET, StringArgumentType.word())
-                .suggests((context, builder) -> suggestOnlineSubjects(environment, context.getSource(), builder));
+                .suggests((context, builder) -> suggestUserTargets(environment, context.getSource(), builder));
 
         return LiteralArgumentBuilder.<S>literal("user").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::rootUsage))
                 .then(target.then(listCommand(authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
@@ -149,9 +160,9 @@ public final class UserSubcommand {
     private static <S> LiteralArgumentBuilder<S> groupCommand(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
         return LiteralArgumentBuilder.<S>literal("group").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groupUsage))
                 .then(LiteralArgumentBuilder.<S>literal("add").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_ADD, handlers::groupAddUsage))
-                        .then(groupArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_ADD, handlers::groupAdd))))
+                        .then(groupAddArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_ADD, handlers::groupAdd))))
                 .then(LiteralArgumentBuilder.<S>literal("remove").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, handlers::groupRemoveUsage))
-                        .then(groupArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, handlers::groupRemove))))
+                        .then(groupRemoveArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, handlers::groupRemove))))
                 .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::unknownGroupUsage)));
     }
 
@@ -181,20 +192,72 @@ public final class UserSubcommand {
         return RequiredArgumentBuilder.argument(CommandArguments.PAGE, StringArgumentType.word());
     }
 
-    private static <S> RequiredArgumentBuilder<S, String> groupArgument(ClutchPermsCommandEnvironment<S> environment) {
-        return RequiredArgumentBuilder.<S, String>argument(CommandArguments.GROUP, StringArgumentType.word()).suggests((context, builder) -> suggestGroups(environment, builder));
+    private static <S> RequiredArgumentBuilder<S, String> groupAddArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(CommandArguments.GROUP, StringArgumentType.word())
+                .suggests((context, builder) -> suggestAddGroups(environment, context, builder));
     }
 
-    private static <S> CompletableFuture<Suggestions> suggestOnlineSubjects(ClutchPermsCommandEnvironment<S> environment, S source, SuggestionsBuilder builder) {
-        environment.onlineSubjectNames(source).stream().sorted(Comparator.naturalOrder()).forEach(builder::suggest);
-        return builder.buildFuture();
+    private static <S> RequiredArgumentBuilder<S, String> groupRemoveArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(CommandArguments.GROUP, StringArgumentType.word())
+                .suggests((context, builder) -> suggestRemoveGroups(environment, context, builder));
     }
 
-    private static <S> CompletableFuture<Suggestions> suggestGroups(ClutchPermsCommandEnvironment<S> environment, SuggestionsBuilder builder) {
-        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+    private static <S> CompletableFuture<Suggestions> suggestUserTargets(ClutchPermsCommandEnvironment<S> environment, S source, SuggestionsBuilder builder) {
+        String remaining = builder.getRemainingLowerCase();
+        StringRange range = StringRange.between(builder.getStart(), builder.getInput().length());
+        List<Suggestion> suggestions = Stream
+                .concat(environment.onlineSubjectNames(source).stream(), environment.subjectMetadataService().getSubjects().values().stream().map(SubjectMetadata::lastKnownName))
+                .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(remaining)).sorted(SUGGESTION_ORDER).distinct().filter(name -> !name.equals(builder.getRemaining()))
+                .map(name -> new Suggestion(range, name)).toList();
+        return CompletableFuture.completedFuture(new Suggestions(range, suggestions));
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestAddGroups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {
+        String remaining = builder.getRemainingLowerCase();
+        Set<String> assignedGroups = resolveSuggestionSubjectId(environment, context).map(environment.groupService()::getSubjectGroups).orElse(Set.of());
         environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining))
-                .filter(group -> !GroupService.DEFAULT_GROUP.equals(group)).forEach(builder::suggest);
+                .filter(group -> !GroupService.DEFAULT_GROUP.equals(group)).filter(group -> !assignedGroups.contains(group)).forEach(builder::suggest);
         return builder.buildFuture();
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestRemoveGroups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {
+        Optional<UUID> subjectId = resolveSuggestionSubjectId(environment, context);
+        if (subjectId.isEmpty()) {
+            return builder.buildFuture();
+        }
+
+        String remaining = builder.getRemainingLowerCase();
+        environment.groupService().getSubjectGroups(subjectId.get()).stream().sorted(Comparator.naturalOrder())
+                .filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining)).filter(group -> !GroupService.DEFAULT_GROUP.equals(group)).forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private static <S> Optional<UUID> resolveSuggestionSubjectId(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, CommandArguments.TARGET);
+        Optional<CommandSubject> onlineSubject = environment.findOnlineSubject(context.getSource(), target);
+        if (onlineSubject.isPresent()) {
+            return onlineSubject.map(CommandSubject::id);
+        }
+
+        List<SubjectMetadata> knownSubjects = findKnownSuggestionSubjects(environment, target);
+        if (knownSubjects.size() == 1) {
+            return Optional.of(knownSubjects.getFirst().subjectId());
+        }
+        if (!knownSubjects.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(UUID.fromString(target));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private static <S> List<SubjectMetadata> findKnownSuggestionSubjects(ClutchPermsCommandEnvironment<S> environment, String target) {
+        String normalizedTarget = target.toLowerCase(Locale.ROOT);
+        return environment.subjectMetadataService().getSubjects().values().stream().filter(subject -> subject.lastKnownName().toLowerCase(Locale.ROOT).equals(normalizedTarget))
+                .sorted(Comparator.comparing(SubjectMetadata::lastKnownName, String.CASE_INSENSITIVE_ORDER).thenComparing(SubjectMetadata::subjectId)).toList();
     }
 
     private UserSubcommand() {
