@@ -111,7 +111,7 @@ Useful grants:
 Notes:
 
 - `<target>` resolves exact online name, then exact stored last-known name, then UUID.
-- Config keys are `backups.retentionLimit`, `commands.helpPageSize`, and `commands.resultPageSize`.
+- Config keys are `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, and `chat.enabled`.
 - Config changes apply immediately through save-and-reload. If reload fails, `config.json` is rolled back.
 - Page numbers start at 1. Invalid or out-of-range pages return styled ClutchPerms feedback and a command to try.
 - Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
@@ -129,7 +129,7 @@ ClutchPerms writes one config file and four versioned storage files:
 
 | File | Purpose |
 | --- | --- |
-| `config.json` | Runtime settings for backup retention and command page sizes |
+| `config.json` | Runtime settings for backup retention, command page sizes, and chat formatting |
 | `permissions.json` | Direct user permission assignments |
 | `groups.json` | Group definitions, permissions, display values, parent links, and memberships |
 | `subjects.json` | Last-known subject names, last-seen timestamps, and direct user display values |
@@ -146,6 +146,9 @@ Default `config.json`:
   "commands": {
     "helpPageSize": 7,
     "resultPageSize": 8
+  },
+  "chat": {
+    "enabled": true
   }
 }
 ```
@@ -158,7 +161,7 @@ Display values are stored as ampersand-formatted strings. Direct user display va
 
 Effective prefix and suffix are resolved independently: direct user value first, then the nearest explicit group hierarchy, then the nearest `default` group hierarchy. If multiple groups at the same depth provide a value, the alphabetically first group name wins.
 
-Chat display is active by default on all supported platforms and renders as `prefix name suffix: message`. When no prefix or suffix is set, the output stays close to vanilla chat. Because ClutchPerms formats the full chat line, some loaders or clients may treat the line as modified or unsigned.
+Chat display is active by default on all supported platforms, can be toggled with `chat.enabled`, and renders as `prefix name suffix: message`. When no prefix or suffix is set, the output stays close to vanilla chat. Because ClutchPerms formats the full chat line, some loaders or clients may treat the line as modified or unsigned.
 
 Backups are created before replacing an existing live JSON file. The first save of a missing file does not create a backup.
 
@@ -174,7 +177,7 @@ backups/
   nodes/nodes-YYYYMMDD-HHMMSSSSS.json
 ```
 
-By default, ClutchPerms keeps the newest 10 backups per file kind. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups per kind.
+By default, ClutchPerms keeps the newest 10 backups per file kind. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups per kind. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally.
 
 ## Forge And NeoForge
 

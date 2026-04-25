@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfigs;
@@ -140,10 +141,11 @@ class ClutchPermsRuntimeTest {
         runtime.reload();
         ClutchPermsRuntimeServices activeServices = runtime.services();
 
-        ClutchPermsRuntimeServices previousServices = runtime.updateConfig(config -> new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5)));
+        ClutchPermsRuntimeServices previousServices = runtime
+                .updateConfig(config -> new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false)));
 
         assertSame(activeServices, previousServices);
-        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5)), runtime.config());
+        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false)), runtime.config());
         assertEquals(runtime.config(), ClutchPermsConfigs.jsonFile(storagePaths.configFile()));
     }
 
@@ -167,6 +169,24 @@ class ClutchPermsRuntimeTest {
         assertEquals(ClutchPermsConfig.defaults(), runtime.config());
         assertEquals(configBefore, Files.readString(storagePaths.configFile()));
         assertEquals(ClutchPermsConfig.defaults(), ClutchPermsConfigs.jsonFile(storagePaths.configFile()));
+    }
+
+    /**
+     * Confirms reload picks up chat formatting changes from config.json.
+     *
+     * @throws IOException if the config file cannot be written
+     */
+    @Test
+    void reloadUpdatesChatConfigFromDisk() throws IOException {
+        ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
+        ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, ClutchPermsRuntimeHooks.noop());
+        runtime.reload();
+
+        Files.writeString(storagePaths.configFile(), customConfig(10, 7, 8, false));
+
+        runtime.reload();
+
+        assertEquals(false, runtime.config().chat().enabled());
     }
 
     /**
@@ -255,5 +275,23 @@ class ClutchPermsRuntimeTest {
                   }
                 }
                 """.formatted(retentionLimit, helpPageSize, resultPageSize);
+    }
+
+    private static String customConfig(int retentionLimit, int helpPageSize, int resultPageSize, boolean chatEnabled) {
+        return """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": %s
+                  },
+                  "commands": {
+                    "helpPageSize": %s,
+                    "resultPageSize": %s
+                  },
+                  "chat": {
+                    "enabled": %s
+                  }
+                }
+                """.formatted(retentionLimit, helpPageSize, resultPageSize, chatEnabled);
     }
 }

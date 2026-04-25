@@ -22,6 +22,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestion;
 
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupChangeListener;
@@ -284,13 +285,14 @@ class ClutchPermsCommandsTest {
      */
     @Test
     void statusSubcommandReportsActiveConfig() throws CommandSyntaxException {
-        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5)));
+        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false)));
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms status", console);
 
         assertTrue(console.messages().contains("Backup retention: newest 3 per storage kind."));
         assertTrue(console.messages().contains("Command page sizes: help 4, lists 5."));
+        assertTrue(console.messages().contains("Chat formatting: disabled."));
     }
 
     /**
@@ -300,15 +302,17 @@ class ClutchPermsCommandsTest {
      */
     @Test
     void configCommandsListAndGetValues() throws CommandSyntaxException {
-        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5)));
+        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false)));
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms config", console);
         dispatcher.execute("clutchperms config get commands.helpPageSize", console);
+        dispatcher.execute("clutchperms config get chat.enabled", console);
 
         assertEquals(List.of("ClutchPerms config:", "backups.retentionLimit = 3 (newest backups kept per storage kind; range 1-1000)",
                 "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)", "commands.resultPageSize = 5 (rows shown per list-result page; range 1-50)",
-                "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)"), console.messages());
+                "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)", "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)",
+                "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)"), console.messages());
     }
 
     /**
@@ -323,13 +327,15 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms config set backups.retentionLimit 3", console);
         dispatcher.execute("clutchperms config set commands.helpPageSize 3", console);
         dispatcher.execute("clutchperms config set commands.resultPageSize 2", console);
+        dispatcher.execute("clutchperms config set chat.enabled off", console);
 
-        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(3, 2)), environment.config());
-        assertEquals(3, environment.configUpdates());
-        assertEquals(3, environment.runtimeRefreshes());
+        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(3, 2), new ClutchPermsChatConfig(false)), environment.config());
+        assertEquals(4, environment.configUpdates());
+        assertEquals(4, environment.runtimeRefreshes());
         assertTrue(console.messages().contains("Updated config backups.retentionLimit: 10 -> 3. Runtime reloaded."));
         assertTrue(console.messages().contains("Updated config commands.helpPageSize: 7 -> 3. Runtime reloaded."));
         assertTrue(console.messages().contains("Updated config commands.resultPageSize: 8 -> 2. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config chat.enabled: true -> false. Runtime reloaded."));
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
@@ -350,7 +356,7 @@ class ClutchPermsCommandsTest {
      */
     @Test
     void configResetRestoresDefaults() throws CommandSyntaxException {
-        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5)));
+        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false)));
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms config reset backups.retentionLimit", console);
@@ -372,12 +378,13 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms config set backups.retentionLimit 10", console);
+        dispatcher.execute("clutchperms config set chat.enabled on", console);
         dispatcher.execute("clutchperms config reset all", console);
 
         assertEquals(ClutchPermsConfig.defaults(), environment.config());
         assertEquals(0, environment.configUpdates());
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of("Config backups.retentionLimit is already 10.", "Config already matches defaults."), console.messages());
+        assertEquals(List.of("Config backups.retentionLimit is already 10.", "Config chat.enabled is already true.", "Config already matches defaults."), console.messages());
     }
 
     /**
@@ -390,6 +397,7 @@ class ClutchPermsCommandsTest {
         assertCommandFails("clutchperms config get commands.help", console, "Unknown config key: commands.help");
         assertCommandFails("clutchperms config set commands.helpPageSize nope", console, "Invalid config value for commands.helpPageSize: nope");
         assertCommandFails("clutchperms config set commands.helpPageSize 51", console, "commands.helpPageSize must be an integer between 1 and 50.");
+        assertCommandFails("clutchperms config set chat.enabled maybe", console, "chat.enabled must be true/false or on/off.");
 
         environment.failConfigUpdate(new PermissionStorageException("disk blocked"));
         assertCommandFails("clutchperms config set backups.retentionLimit 3", console, "Config operation failed: disk blocked");
@@ -1625,8 +1633,8 @@ class ClutchPermsCommandsTest {
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
                 "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Config file: " + STATUS_DIAGNOSTICS.configFile(),
-                "Backup retention: newest 10 per storage kind.", "Command page sizes: help 7, lists 8.", "Known subjects: " + knownSubjects, "Known groups: 1",
-                "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
+                "Backup retention: newest 10 per storage kind.", "Command page sizes: help 7, lists 8.", "Chat formatting: enabled.", "Known subjects: " + knownSubjects,
+                "Known groups: 1", "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
                 "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 

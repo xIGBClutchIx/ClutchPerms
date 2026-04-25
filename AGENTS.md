@@ -97,7 +97,7 @@ Do not add contexts, priorities, imports, migrations, or LuckPerms bridges unles
 
 Current persisted files:
 
-- `config.json` for runtime settings such as backup retention and command page sizes
+- `config.json` for runtime settings such as backup retention, command page sizes, and chat formatting
 - `permissions.json` for direct user permission assignments
 - `groups.json` for group definitions, group permissions, prefix/suffix display values, parent links, and memberships
 - `subjects.json` for subject metadata and direct user prefix/suffix display values
@@ -124,7 +124,7 @@ Storage expectations:
 - If a mutation save fails, keep the previous in-memory state, resolver cache notifications, runtime bridge notifications, and live JSON file unchanged.
 - The first save of a missing live file must not create a backup.
 - Keep backup retention controlled by `config.json` `backups.retentionLimit`, defaulting to 10 newest files per storage kind.
-- In-game config management only covers `backups.retentionLimit`, `commands.helpPageSize`, and `commands.resultPageSize` until chat settings are added deliberately.
+- In-game config management covers `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, and `chat.enabled`.
 - Backup layout is `backups/<kind>/<kind>-YYYYMMDD-HHMMSSSSS.json`, where kind is `permissions`, `subjects`, `groups`, or `nodes`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
 - Fail startup, validate, or reload on malformed JSON, unsupported versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
@@ -144,13 +144,13 @@ Storage expectations:
 - Paper expands ClutchPerms wildcard assignments onto exact known permission nodes from built-ins, manual `nodes.json`, and Paper's permission registry.
 - Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary unregistered wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without `Permissible` injection or another deeper Paper-specific bridge.
 - Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
-- Paper formats chat through `AsyncChatEvent` renderers as `prefix name suffix: message` using native Adventure components.
+- Paper formats chat through `AsyncChatEvent` renderers as `prefix name suffix: message` using native Adventure components when `chat.enabled` is true.
 - Fabric exposes effective permissions through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
-- Fabric formats server chat through a server-side mixin that broadcasts the full formatted line as a native Minecraft component.
+- Fabric formats server chat through a server-side mixin that broadcasts the full formatted line as a native Minecraft component when `chat.enabled` is true.
 - Forge and NeoForge expose effective permissions through native Boolean permission handlers registered as `clutchperms:direct`.
-- Forge and NeoForge format chat through `ServerChatEvent` by replacing the full chat line with native Minecraft components.
+- Forge and NeoForge format chat through `ServerChatEvent` by replacing the full chat line with native Minecraft components when `chat.enabled` is true.
 - Forge and NeoForge only affect mods that use the platform permission APIs and only when server config selects `clutchperms:direct`.
-- Prefix/suffix chat formatting is active by default and intentionally takes priority over vanilla signed-chat presentation; do not claim that formatted chat remains vanilla-signed on every loader/client.
+- Prefix/suffix chat formatting is active by default and intentionally takes priority over vanilla signed-chat presentation while `chat.enabled` is true; do not claim that formatted chat remains vanilla-signed on every loader/client.
 - Keep bridge code thin. Shared behavior belongs in `common`; platform code should adapt lifecycle/source/runtime APIs.
 
 ## Commands

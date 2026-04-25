@@ -85,7 +85,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         registerServices();
         getServer().getPluginManager().registerEvents(runtimePermissionBridge, this);
         getServer().getPluginManager().registerEvents(subjectMetadataListener, this);
-        getServer().getPluginManager().registerEvents(new PaperChatDisplayListener(this::getDisplayResolver), this);
+        getServer().getPluginManager().registerEvents(new PaperChatDisplayListener(this::getClutchPermsConfig, this::getDisplayResolver), this);
         runtimePermissionBridge.refreshOnlinePlayers();
         subjectMetadataListener.recordOnlinePlayers(getServer().getOnlinePlayers());
 

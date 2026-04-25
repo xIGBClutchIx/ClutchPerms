@@ -115,6 +115,9 @@ public final class ClutchPermsForgeMod {
     }
 
     private boolean onServerChat(ServerChatEvent event) {
+        if (!getRuntime().config().chat().enabled()) {
+            return false;
+        }
         Component formattedMessage = ForgeDisplayComponents.chatLine(event.getPlayer().getUUID(), Component.literal(event.getUsername()), event.getMessage(),
                 getRuntime().displayResolver());
         event.getPlayer().level().getServer().getPlayerList().broadcastSystemMessage(formattedMessage, false);

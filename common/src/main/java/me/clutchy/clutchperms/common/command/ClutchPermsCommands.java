@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.ToIntFunction;
 
 import com.mojang.brigadier.Command;
@@ -37,6 +38,7 @@ import me.clutchy.clutchperms.common.command.subcommand.NodesSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UserSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UsersSubcommand;
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.display.DisplayResolution;
@@ -134,15 +136,17 @@ public final class ClutchPermsCommands {
     private static final DynamicCommandExceptionType DISPLAY_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final List<ConfigEntry> CONFIG_ENTRIES = List.of(
-            new ConfigEntry("backups.retentionLimit", "newest backups kept per storage kind", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT,
+            integerConfig("backups.retentionLimit", "newest backups kept per storage kind", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT,
                     ClutchPermsBackupConfig.MAX_RETENTION_LIMIT, ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(),
-                    (config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value), config.commands())),
-            new ConfigEntry("commands.helpPageSize", "command rows shown per help page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
+                    (config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value), config.commands(), config.chat())),
+            integerConfig("commands.helpPageSize", "command rows shown per help page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
                     ClutchPermsCommandConfig.DEFAULT_HELP_PAGE_SIZE, config -> config.commands().helpPageSize(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(value, config.commands().resultPageSize()))),
-            new ConfigEntry("commands.resultPageSize", "rows shown per list-result page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
+                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(value, config.commands().resultPageSize()), config.chat())),
+            integerConfig("commands.resultPageSize", "rows shown per list-result page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
                     ClutchPermsCommandConfig.DEFAULT_RESULT_PAGE_SIZE, config -> config.commands().resultPageSize(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(config.commands().helpPageSize(), value))));
+                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(config.commands().helpPageSize(), value), config.chat())),
+            booleanConfig("chat.enabled", "prefix and suffix chat formatting", ClutchPermsChatConfig.DEFAULT_ENABLED, config -> config.chat().enabled(),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), config.commands(), new ClutchPermsChatConfig(value))));
 
     private static final List<String> CONFIG_KEYS = CONFIG_ENTRIES.stream().map(ConfigEntry::key).toList();
 
@@ -812,6 +816,7 @@ public final class ClutchPermsCommands {
         environment.sendMessage(context.getSource(), CommandLang.statusBackupRetention(environment.config().backups().retentionLimit()));
         environment.sendMessage(context.getSource(),
                 CommandLang.statusCommandPageSizes(environment.config().commands().helpPageSize(), environment.config().commands().resultPageSize()));
+        environment.sendMessage(context.getSource(), CommandLang.statusChatFormatting(environment.config().chat().enabled()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownSubjects(environment.subjectMetadataService().getSubjects().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownGroups(environment.groupService().getGroups().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownNodes(environment.permissionNodeRegistry().getKnownNodes().size()));
@@ -839,8 +844,7 @@ public final class ClutchPermsCommands {
 
     private static <S> int sendConfigSetValueUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         ConfigEntry entry = getConfigEntry(context);
-        return sendUsage(environment, context, "Missing config value.", "Set " + entry.key() + " to an integer from " + entry.minimum() + " to " + entry.maximum() + ".",
-                List.of("config set " + entry.key() + " <value>"));
+        return sendUsage(environment, context, "Missing config value.", "Set " + entry.key() + " to " + entry.inputHint() + ".", List.of("config set " + entry.key() + " <value>"));
     }
 
     private static <S> int sendConfigResetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -1187,23 +1191,23 @@ public final class ClutchPermsCommands {
     private static <S> int listConfig(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         ClutchPermsConfig config = environment.config();
         environment.sendMessage(context.getSource(), CommandLang.configHeader());
-        CONFIG_ENTRIES.forEach(entry -> environment.sendMessage(context.getSource(),
-                CommandLang.configRow(entry.key(), entry.value(config), entry.description(), entry.minimum(), entry.maximum())));
+        CONFIG_ENTRIES
+                .forEach(entry -> environment.sendMessage(context.getSource(), CommandLang.configRow(entry.key(), entry.value(config), entry.description(), entry.displayHint())));
         return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int getConfig(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         ConfigEntry entry = getConfigEntry(context);
-        environment.sendMessage(context.getSource(), CommandLang.configGet(entry.key(), entry.value(environment.config()), entry.description(), entry.minimum(), entry.maximum()));
+        environment.sendMessage(context.getSource(), CommandLang.configGet(entry.key(), entry.value(environment.config()), entry.description(), entry.displayHint()));
         return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int setConfig(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         ConfigEntry entry = getConfigEntry(context);
         String rawValue = StringArgumentType.getString(context, CONFIG_VALUE_ARGUMENT);
-        int newValue = parseConfigValue(context, entry, rawValue);
-        int oldValue = entry.value(environment.config());
-        if (oldValue == newValue) {
+        String newValue = parseConfigValue(context, entry, rawValue);
+        String oldValue = entry.value(environment.config());
+        if (oldValue.equals(newValue)) {
             environment.sendMessage(context.getSource(), CommandLang.configAlreadySet(entry.key(), oldValue));
             return Command.SINGLE_SUCCESS;
         }
@@ -1226,9 +1230,9 @@ public final class ClutchPermsCommands {
         }
 
         ConfigEntry entry = getConfigEntry(context);
-        int oldValue = entry.value(environment.config());
-        int defaultValue = entry.defaultValue();
-        if (oldValue == defaultValue) {
+        String oldValue = entry.value(environment.config());
+        String defaultValue = entry.defaultValue();
+        if (oldValue.equals(defaultValue)) {
             environment.sendMessage(context.getSource(), CommandLang.configAlreadySet(entry.key(), oldValue));
             return Command.SINGLE_SUCCESS;
         }
@@ -1915,17 +1919,12 @@ public final class ClutchPermsCommands {
         return CONFIG_ENTRIES.stream().filter(entry -> entry.key().toLowerCase(Locale.ROOT).equals(normalizedKey)).findFirst();
     }
 
-    private static <S> int parseConfigValue(CommandContext<S> context, ConfigEntry entry, String rawValue) throws CommandSyntaxException {
-        int value;
+    private static <S> String parseConfigValue(CommandContext<S> context, ConfigEntry entry, String rawValue) throws CommandSyntaxException {
         try {
-            value = Integer.parseInt(rawValue);
-        } catch (NumberFormatException exception) {
+            return entry.normalizeValue(rawValue);
+        } catch (IllegalArgumentException exception) {
             throw invalidConfigValueFeedback(context, entry, rawValue);
         }
-        if (value < entry.minimum() || value > entry.maximum()) {
-            throw invalidConfigValueFeedback(context, entry, rawValue);
-        }
-        return value;
     }
 
     private static <S> String getNode(CommandContext<S> context) throws CommandSyntaxException {
@@ -2173,8 +2172,8 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> CommandFeedbackException invalidConfigValueFeedback(CommandContext<S> context, ConfigEntry entry, String rawValue) {
-        return feedback(List.of(CommandLang.invalidConfigValue(entry.key(), rawValue), CommandLang.configValueRange(entry.key(), entry.minimum(), entry.maximum()),
-                CommandLang.tryHeader(), CommandLang.suggestion(rootLiteral(context), "config set " + entry.key() + " <value>")));
+        return feedback(List.of(CommandLang.invalidConfigValue(entry.key(), rawValue), CommandLang.configValueRequirement(entry.key(), entry.errorHint()), CommandLang.tryHeader(),
+                CommandLang.suggestion(rootLiteral(context), "config set " + entry.key() + " <value>")));
     }
 
     private static CommandFeedbackException feedback(List<CommandMessage> messages) {
@@ -2472,16 +2471,71 @@ public final class ClutchPermsCommands {
     private record CommandHelpEntry(String syntax, String permission, String description) {
     }
 
-    private record ConfigEntry(String key, String description, int minimum, int maximum, int defaultValue, ToIntFunction<ClutchPermsConfig> valueGetter,
+    private static ConfigEntry integerConfig(String key, String description, int minimum, int maximum, int defaultValue, ToIntFunction<ClutchPermsConfig> valueGetter,
             BiFunction<ClutchPermsConfig, Integer, ClutchPermsConfig> valueSetter) {
+        return new ConfigEntry(key, description, "range " + minimum + "-" + maximum, "an integer from " + minimum + " to " + maximum,
+                "must be an integer between " + minimum + " and " + maximum + ".", Integer.toString(defaultValue), config -> Integer.toString(valueGetter.applyAsInt(config)),
+                rawValue -> {
+                    int value;
+                    try {
+                        value = Integer.parseInt(rawValue);
+                    } catch (NumberFormatException exception) {
+                        throw new IllegalArgumentException("config value must be an integer", exception);
+                    }
+                    if (value < minimum || value > maximum) {
+                        throw new IllegalArgumentException("config value is out of range");
+                    }
+                    return Integer.toString(value);
+                }, (config, value) -> valueSetter.apply(config, Integer.parseInt(value)));
+    }
 
-        private int value(ClutchPermsConfig config) {
-            return valueGetter.applyAsInt(config);
+    private static ConfigEntry booleanConfig(String key, String description, boolean defaultValue, Function<ClutchPermsConfig, Boolean> valueGetter,
+            BooleanConfigValueSetter valueSetter) {
+        return new ConfigEntry(key, description, "values true/false or on/off", "true or false", "must be true/false or on/off.", Boolean.toString(defaultValue),
+                config -> Boolean.toString(valueGetter.apply(config)), ClutchPermsCommands::parseBooleanConfigValue,
+                (config, value) -> valueSetter.apply(config, Boolean.parseBoolean(value)));
+    }
+
+    private static String parseBooleanConfigValue(String rawValue) {
+        return switch (rawValue.trim().toLowerCase(Locale.ROOT)) {
+            case "true", "on", "yes", "enabled" -> "true";
+            case "false", "off", "no", "disabled" -> "false";
+            default -> throw new IllegalArgumentException("config value must be a boolean");
+        };
+    }
+
+    private record ConfigEntry(String key, String description, String displayHint, String inputHint, String errorHint, String defaultValue,
+            Function<ClutchPermsConfig, String> valueGetter, ConfigValueParser valueParser, ConfigValueSetter valueSetter) {
+
+        private String value(ClutchPermsConfig config) {
+            return valueGetter.apply(config);
         }
 
-        private ClutchPermsConfig withValue(ClutchPermsConfig config, int value) {
+        private String normalizeValue(String rawValue) {
+            return valueParser.parse(rawValue.trim());
+        }
+
+        private ClutchPermsConfig withValue(ClutchPermsConfig config, String value) {
             return valueSetter.apply(config, value);
         }
+    }
+
+    @FunctionalInterface
+    private interface ConfigValueParser {
+
+        String parse(String rawValue);
+    }
+
+    @FunctionalInterface
+    private interface ConfigValueSetter {
+
+        ClutchPermsConfig apply(ClutchPermsConfig config, String value);
+    }
+
+    @FunctionalInterface
+    private interface BooleanConfigValueSetter {
+
+        ClutchPermsConfig apply(ClutchPermsConfig config, boolean value);
     }
 
     private record PagedRow(String text, String command) {

@@ -116,6 +116,9 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private void onServerChat(ServerChatEvent event) {
+        if (!getRuntime().config().chat().enabled()) {
+            return;
+        }
         Component formattedMessage = NeoForgeDisplayComponents.chatLine(event.getPlayer().getUUID(), Component.literal(event.getUsername()), event.getMessage(),
                 getRuntime().displayResolver());
         event.getPlayer().level().getServer().getPlayerList().broadcastSystemMessage(formattedMessage, false);

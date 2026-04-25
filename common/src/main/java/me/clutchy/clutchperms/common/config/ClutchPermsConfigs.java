@@ -27,11 +27,13 @@ public final class ClutchPermsConfigs {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    private static final Set<String> ROOT_KEYS = Set.of("version", "backups", "commands");
+    private static final Set<String> ROOT_KEYS = Set.of("version", "backups", "commands", "chat");
 
     private static final Set<String> BACKUP_KEYS = Set.of("retentionLimit");
 
     private static final Set<String> COMMAND_KEYS = Set.of("helpPageSize", "resultPageSize");
+
+    private static final Set<String> CHAT_KEYS = Set.of("enabled");
 
     /**
      * Loads runtime configuration from disk, returning defaults when the file is missing.
@@ -142,6 +144,10 @@ public final class ClutchPermsConfigs {
         commands.addProperty("resultPageSize", config.commands().resultPageSize());
         root.add("commands", commands);
 
+        JsonObject chat = new JsonObject();
+        chat.addProperty("enabled", config.chat().enabled());
+        root.add("chat", chat);
+
         return root;
     }
 
@@ -161,14 +167,32 @@ public final class ClutchPermsConfigs {
         rejectUnknownKeys("backups", backups, BACKUP_KEYS);
         JsonObject commands = readObject(root, "commands", "commands");
         rejectUnknownKeys("commands", commands, COMMAND_KEYS);
+        ClutchPermsChatConfig chatConfig = ClutchPermsChatConfig.defaults();
+        JsonObject chat = readOptionalObject(root, "chat", "chat");
+        if (chat != null) {
+            rejectUnknownKeys("chat", chat, CHAT_KEYS);
+            chatConfig = new ClutchPermsChatConfig(readBoolean(chat, "enabled", "chat.enabled"));
+        }
 
         return new ClutchPermsConfig(new ClutchPermsBackupConfig(readInteger(backups, "retentionLimit", "backups.retentionLimit")),
-                new ClutchPermsCommandConfig(readInteger(commands, "helpPageSize", "commands.helpPageSize"), readInteger(commands, "resultPageSize", "commands.resultPageSize")));
+                new ClutchPermsCommandConfig(readInteger(commands, "helpPageSize", "commands.helpPageSize"), readInteger(commands, "resultPageSize", "commands.resultPageSize")),
+                chatConfig);
     }
 
     private static JsonObject readObject(JsonObject object, String key, String path) {
         JsonElement element = object.get(key);
         if (element == null || !element.isJsonObject()) {
+            throw new IllegalArgumentException(path + " must be an object");
+        }
+        return element.getAsJsonObject();
+    }
+
+    private static JsonObject readOptionalObject(JsonObject object, String key, String path) {
+        JsonElement element = object.get(key);
+        if (element == null) {
+            return null;
+        }
+        if (!element.isJsonObject()) {
             throw new IllegalArgumentException(path + " must be an object");
         }
         return element.getAsJsonObject();
@@ -190,6 +214,19 @@ public final class ClutchPermsConfigs {
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException(path + " must be an integer", exception);
         }
+    }
+
+    private static boolean readBoolean(JsonObject object, String key, String path) {
+        JsonElement element = object.get(key);
+        if (element == null || !element.isJsonPrimitive()) {
+            throw new IllegalArgumentException(path + " must be a boolean");
+        }
+
+        JsonPrimitive primitive = element.getAsJsonPrimitive();
+        if (!primitive.isBoolean()) {
+            throw new IllegalArgumentException(path + " must be a boolean");
+        }
+        return primitive.getAsBoolean();
     }
 
     private static void rejectUnknownKeys(String path, JsonObject object, Set<String> allowedKeys) {

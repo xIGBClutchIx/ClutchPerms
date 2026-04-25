@@ -52,6 +52,8 @@ class ClutchPermsConfigsTest {
         assertTrue(content.contains("\"retentionLimit\": 10"));
         assertTrue(content.contains("\"helpPageSize\": 7"));
         assertTrue(content.contains("\"resultPageSize\": 8"));
+        assertTrue(content.contains("\"chat\""));
+        assertTrue(content.contains("\"enabled\": true"));
     }
 
     /**
@@ -60,7 +62,7 @@ class ClutchPermsConfigsTest {
     @Test
     void writeConfigReplacesConfigFile() {
         Path configFile = temporaryDirectory.resolve("config.json");
-        ClutchPermsConfig config = new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5));
+        ClutchPermsConfig config = new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false));
 
         ClutchPermsConfigs.write(configFile, config);
 
@@ -84,6 +86,9 @@ class ClutchPermsConfigsTest {
                   "commands": {
                     "helpPageSize": 4,
                     "resultPageSize": 5
+                  },
+                  "chat": {
+                    "enabled": false
                   }
                 }
                 """);
@@ -93,6 +98,33 @@ class ClutchPermsConfigsTest {
         assertEquals(3, config.backups().retentionLimit());
         assertEquals(4, config.commands().helpPageSize());
         assertEquals(5, config.commands().resultPageSize());
+        assertEquals(false, config.chat().enabled());
+    }
+
+    /**
+     * Confirms configs from before chat settings load with chat formatting enabled.
+     *
+     * @throws IOException when test setup fails
+     */
+    @Test
+    void missingChatConfigLoadsDefaultEnabled() throws IOException {
+        Path configFile = temporaryDirectory.resolve("legacy-config.json");
+        Files.writeString(configFile, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """);
+
+        ClutchPermsConfig config = ClutchPermsConfigs.jsonFile(configFile);
+
+        assertEquals(true, config.chat().enabled());
     }
 
     /**
@@ -199,6 +231,59 @@ class ClutchPermsConfigsTest {
                   "commands": {
                     "helpPageSize": 7,
                     "resultPageSize": 0
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  },
+                  "chat": {
+                    "enabled": true,
+                    "unknown": true
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  },
+                  "chat": true
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  },
+                  "chat": {}
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  },
+                  "chat": {
+                    "enabled": "true"
                   }
                 }
                 """);

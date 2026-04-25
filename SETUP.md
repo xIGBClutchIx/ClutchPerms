@@ -59,7 +59,7 @@ subjects.json
 nodes.json
 ```
 
-`config.json` is created with defaults for backup retention and command page sizes. You can manage these values in-game with `clutchperms config`, or edit the file manually and run `clutchperms validate` before `clutchperms reload`.
+`config.json` is created with defaults for backup retention, command page sizes, and chat formatting. You can manage these values in-game with `clutchperms config`, or edit the file manually and run `clutchperms validate` before `clutchperms reload`.
 
 Direct user prefixes/suffixes are stored in `subjects.json`. Group prefixes/suffixes are stored in `groups.json`.
 
@@ -167,7 +167,7 @@ clutchperms group staff list
 
 Effective prefix and suffix resolve independently: direct user value first, then the nearest explicit group hierarchy, then the nearest `default` group hierarchy. If multiple groups at the same depth provide a value, the alphabetically first group name wins.
 
-Chat display is active by default on Paper, Fabric, NeoForge, and Forge and renders as `prefix name suffix: message`. Without a configured prefix or suffix, chat remains close to vanilla output. Some loaders or clients may mark formatted chat as modified or unsigned.
+Chat display is active by default on Paper, Fabric, NeoForge, and Forge, can be toggled with `chat.enabled`, and renders as `prefix name suffix: message`. Without a configured prefix or suffix, chat remains close to vanilla output. Some loaders or clients may mark formatted chat as modified or unsigned.
 
 Clear display values with:
 
@@ -229,6 +229,7 @@ View or change config from console or in-game:
 clutchperms config list
 clutchperms config get commands.resultPageSize
 clutchperms config set commands.resultPageSize 12
+clutchperms config set chat.enabled off
 clutchperms config reset commands.resultPageSize
 ```
 

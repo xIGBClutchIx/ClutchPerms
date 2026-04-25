@@ -220,6 +220,7 @@ class ClutchPermsPaperPluginTest {
         assertNextMessage(player, "Config file: " + plugin.getDataFolder().toPath().resolve("config.json").toAbsolutePath().normalize());
         assertNextMessage(player, "Backup retention: newest 10 per storage kind.");
         assertNextMessage(player, "Command page sizes: help 7, lists 8.");
+        assertNextMessage(player, "Chat formatting: enabled.");
         assertNextMessage(player, "Known subjects: 1");
         assertNextMessage(player, "Known groups: 1");
         assertNextMessage(player, "Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size());
@@ -762,10 +763,10 @@ class ClutchPermsPaperPluginTest {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
 
-        assertEquals(1, dispatcher.execute("clutchperms config set backups.retentionLimit 3", new TestCommandSourceStack(admin)));
+        assertEquals(1, dispatcher.execute("clutchperms config set chat.enabled false", new TestCommandSourceStack(admin)));
 
-        assertNextMessage(admin, "Updated config backups.retentionLimit: 10 -> 3. Runtime reloaded.");
-        assertEquals(3, plugin.getClutchPermsConfig().backups().retentionLimit());
+        assertNextMessage(admin, "Updated config chat.enabled: true -> false. Runtime reloaded.");
+        assertEquals(false, plugin.getClutchPermsConfig().chat().enabled());
         assertNotSame(activePermissionService, plugin.getPermissionService());
         assertSame(plugin.getPermissionService(), server.getServicesManager().getRegistration(PermissionService.class).getProvider());
         assertTrue(target.isPermissionSet("example.configset"));

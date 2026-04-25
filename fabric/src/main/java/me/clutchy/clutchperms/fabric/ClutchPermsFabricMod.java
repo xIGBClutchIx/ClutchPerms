@@ -151,7 +151,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
      * @return formatted chat component, or empty when ClutchPerms runtime is not active
      */
     public static Optional<Component> formatChatMessage(ServerPlayer player, Component message) {
-        if (runtime == null) {
+        if (runtime == null || !getRuntime().config().chat().enabled()) {
             return Optional.empty();
         }
         Component displayName = Component.literal(player.getGameProfile().name());

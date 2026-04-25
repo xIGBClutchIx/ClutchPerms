@@ -57,6 +57,8 @@ final class CommandLang {
 
     private static final String STATUS_COMMAND_PAGE_SIZES = "Command page sizes: help %s, lists %s.";
 
+    private static final String STATUS_CHAT_FORMATTING = "Chat formatting: %s.";
+
     private static final String STATUS_KNOWN_SUBJECTS = "Known subjects: %s";
 
     private static final String STATUS_KNOWN_GROUPS = "Known groups: %s";
@@ -117,9 +119,9 @@ final class CommandLang {
 
     private static final String CONFIG_HEADER = "ClutchPerms config:";
 
-    private static final String CONFIG_ROW = "%s = %s (%s; range %s-%s)";
+    private static final String CONFIG_ROW = "%s = %s (%s; %s)";
 
-    private static final String CONFIG_GET = "%s = %s (%s; range %s-%s)";
+    private static final String CONFIG_GET = "%s = %s (%s; %s)";
 
     private static final String CONFIG_UPDATED = "Updated config %s: %s -> %s. Runtime reloaded.";
 
@@ -139,7 +141,7 @@ final class CommandLang {
 
     private static final String ERROR_INVALID_CONFIG_VALUE = "Invalid config value for %s: %s";
 
-    private static final String CONFIG_VALUE_RANGE = "%s must be an integer between %s and %s.";
+    private static final String CONFIG_VALUE_REQUIREMENT = "%s %s";
 
     private static final String ERROR_UNKNOWN_BACKUP_KIND = "Unknown backup file kind: %s";
 
@@ -387,6 +389,10 @@ final class CommandLang {
         return detail(STATUS_COMMAND_PAGE_SIZES, helpPageSize, resultPageSize);
     }
 
+    static CommandMessage statusChatFormatting(boolean enabled) {
+        return detail(STATUS_CHAT_FORMATTING, enabled ? "enabled" : "disabled");
+    }
+
     static CommandMessage statusKnownSubjects(int knownSubjects) {
         return detail(STATUS_KNOWN_SUBJECTS, knownSubjects);
     }
@@ -507,19 +513,19 @@ final class CommandLang {
         return heading(CONFIG_HEADER);
     }
 
-    static CommandMessage configRow(String key, int value, String description, int minimum, int maximum) {
-        return detail(CONFIG_ROW, key, value, description, minimum, maximum);
+    static CommandMessage configRow(String key, String value, String description, String valueHint) {
+        return detail(CONFIG_ROW, key, value, description, valueHint);
     }
 
-    static CommandMessage configGet(String key, int value, String description, int minimum, int maximum) {
-        return detail(CONFIG_GET, key, value, description, minimum, maximum);
+    static CommandMessage configGet(String key, String value, String description, String valueHint) {
+        return detail(CONFIG_GET, key, value, description, valueHint);
     }
 
-    static CommandMessage configUpdated(String key, int oldValue, int newValue) {
+    static CommandMessage configUpdated(String key, String oldValue, String newValue) {
         return success(CONFIG_UPDATED, key, oldValue, newValue);
     }
 
-    static CommandMessage configReset(String key, int oldValue, int newValue) {
+    static CommandMessage configReset(String key, String oldValue, String newValue) {
         return success(CONFIG_RESET, key, oldValue, newValue);
     }
 
@@ -527,7 +533,7 @@ final class CommandLang {
         return success(CONFIG_RESET_ALL);
     }
 
-    static CommandMessage configAlreadySet(String key, int value) {
+    static CommandMessage configAlreadySet(String key, String value) {
         return success(CONFIG_ALREADY_SET, key, value);
     }
 
@@ -551,8 +557,8 @@ final class CommandLang {
         return error(ERROR_INVALID_CONFIG_VALUE, key, value);
     }
 
-    static CommandMessage configValueRange(String key, int minimum, int maximum) {
-        return detail(CONFIG_VALUE_RANGE, key, minimum, maximum);
+    static CommandMessage configValueRequirement(String key, String requirement) {
+        return detail(CONFIG_VALUE_REQUIREMENT, key, requirement);
     }
 
     static CommandMessage unknownBackupKind(String token) {
