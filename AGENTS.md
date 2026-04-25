@@ -116,7 +116,7 @@ Storage expectations:
 - Keep backup retention at the newest 10 files per storage kind until a runtime config exists.
 - Backup layout is `backups/<kind>/<kind>-YYYYMMDD-HHMMSSSSS.json`, where kind is `permissions`, `subjects`, `groups`, or `nodes`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
-- Fail startup, validate, or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- Fail startup, validate, or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
 - `/clutchperms validate` should parse all persisted files without replacing active services, refreshing runtime bridges, or mutating storage.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
 - Successful reload should replace active services and the active resolver cache; failed reload should leave the old resolver and its cache in place.

@@ -265,6 +265,20 @@ class GroupServicesTest {
                   "groups": {
                     "admin": {
                       "permissions": {
+                        "Example.Node": "TRUE",
+                        " example.node ": "FALSE"
+                      }
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {
                         "example.node": "UNSET"
                       }
                     }

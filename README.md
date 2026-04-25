@@ -106,7 +106,7 @@ ClutchPerms writes four versioned JSON files:
 
 Missing files load as empty state and are materialized after successful startup or reload.
 
-Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names or nodes, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
+Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
 
 Backups are created before replacing an existing live JSON file. The first save of a missing file does not create a backup.
 

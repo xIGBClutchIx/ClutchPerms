@@ -156,6 +156,17 @@ class PermissionServicesTest {
                   "version": 1,
                   "subjects": {
                     "00000000-0000-0000-0000-000000000001": {
+                      "Example.Node": "TRUE",
+                      " example.node ": "FALSE"
+                    }
+                  }
+                }
+                """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "subjects": {
+                    "00000000-0000-0000-0000-000000000001": {
                       "example.node": "UNSET"
                     }
                   }

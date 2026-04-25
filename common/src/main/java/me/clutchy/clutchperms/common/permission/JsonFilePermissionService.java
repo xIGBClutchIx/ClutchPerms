@@ -171,6 +171,9 @@ final class JsonFilePermissionService implements PermissionService {
         Map<String, PermissionValue> subjectPermissions = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> permissionEntry : subjectPermissionsElement.entrySet()) {
             String normalizedNode = PermissionNodes.normalize(permissionEntry.getKey());
+            if (subjectPermissions.containsKey(normalizedNode)) {
+                throw new IllegalArgumentException("duplicate normalized permission " + normalizedNode + " for subject " + subjectId);
+            }
             PermissionValue value = parsePermissionValue(subjectId, normalizedNode, permissionEntry.getValue());
             subjectPermissions.put(normalizedNode, value);
         }

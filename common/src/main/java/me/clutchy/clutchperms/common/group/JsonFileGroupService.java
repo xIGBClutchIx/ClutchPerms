@@ -242,6 +242,9 @@ final class JsonFileGroupService implements GroupService {
         Map<String, PermissionValue> permissions = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> permissionEntry : permissionsElement.entrySet()) {
             String normalizedNode = PermissionNodes.normalize(permissionEntry.getKey());
+            if (permissions.containsKey(normalizedNode)) {
+                throw new IllegalArgumentException("duplicate normalized permission " + normalizedNode + " for group " + groupName);
+            }
             permissions.put(normalizedNode, parsePermissionValue(groupName, normalizedNode, permissionEntry.getValue()));
         }
         return permissions;
