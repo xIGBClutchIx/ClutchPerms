@@ -21,6 +21,8 @@ class InMemoryPermissionServiceTest {
      */
     private final UUID subjectId = UUID.randomUUID();
 
+    private final UUID otherSubjectId = UUID.randomUUID();
+
     /**
      * Service instance recreated before each test to keep cases independent.
      */
@@ -84,5 +86,21 @@ class InMemoryPermissionServiceTest {
         assertEquals(PermissionValue.UNSET, permissionService.getPermission(subjectId, PermissionNodes.ADMIN));
         assertFalse(permissionService.hasPermission(subjectId, PermissionNodes.ADMIN));
         assertEquals(Map.of(), permissionService.getPermissions(subjectId));
+    }
+
+    /**
+     * Confirms clearing all permissions removes only the selected subject's explicit assignments.
+     */
+    @Test
+    void clearingAllPermissionsReturnsRemovedCountAndLeavesOtherSubjects() {
+        permissionService.setPermission(subjectId, "example.node", PermissionValue.TRUE);
+        permissionService.setPermission(subjectId, "example.*", PermissionValue.FALSE);
+        permissionService.setPermission(otherSubjectId, "other.node", PermissionValue.TRUE);
+
+        assertEquals(2, permissionService.clearPermissions(subjectId));
+        assertEquals(0, permissionService.clearPermissions(subjectId));
+
+        assertEquals(Map.of(), permissionService.getPermissions(subjectId));
+        assertEquals(Map.of("other.node", PermissionValue.TRUE), permissionService.getPermissions(otherSubjectId));
     }
 }

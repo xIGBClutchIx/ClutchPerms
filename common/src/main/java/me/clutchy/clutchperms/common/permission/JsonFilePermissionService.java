@@ -86,6 +86,22 @@ final class JsonFilePermissionService implements PermissionService {
         delegate = candidate;
     }
 
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public synchronized int clearPermissions(UUID subjectId) {
+        InMemoryPermissionService candidate = copyDelegate();
+        int removedPermissions = candidate.clearPermissions(subjectId);
+        if (removedPermissions == 0) {
+            return 0;
+        }
+
+        savePermissions(candidate.snapshot());
+        delegate = candidate;
+        return removedPermissions;
+    }
+
     private InMemoryPermissionService copyDelegate() {
         return new InMemoryPermissionService(delegate.snapshot());
     }

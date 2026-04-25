@@ -150,11 +150,10 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("perms group", perms);
 
         assertEquals(commandListPageOneMessages("cperms"), cperms.messages());
-        assertEquals(
-                List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
-                        "  /perms group <group> <create|delete|info|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
-                        "  /perms group <group> rename <new-group>", "  /perms group <group> parent <add|remove> <parent>", "  /perms group <group> <prefix|suffix> get|set|clear"),
-                perms.messages());
+        assertEquals(List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
+                "  /perms group <group> <create|delete|info|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
+                "  /perms group <group> clear-all", "  /perms group <group> rename <new-group>", "  /perms group <group> parent <add|remove> <parent>",
+                "  /perms group <group> <prefix|suffix> get|set|clear"), perms.messages());
         assertSuggests(perms.commandMessages().get(3), "/perms group list");
     }
 
@@ -189,7 +188,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(List.of("ClutchPerms commands (page 1/14):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/14 | Next >"),
+        assertEquals(List.of("ClutchPerms commands (page 1/15):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/15 | Next >"),
                 console.messages());
         assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
     }
@@ -208,7 +207,7 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("Invalid page: nope", "Pages start at 1.", "Try one:", "  /clutchperms help 1"), invalid.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms help 99", outOfRange));
-        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-6.", "Try one:", "  /clutchperms help 6"), outOfRange.messages());
+        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-7.", "Try one:", "  /clutchperms help 7"), outOfRange.messages());
     }
 
     /**
@@ -348,7 +347,7 @@ class ClutchPermsCommandsTest {
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
-        assertEquals(List.of("ClutchPerms commands (page 1/14):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/14 | Next >"), help.messages());
+        assertEquals(List.of("ClutchPerms commands (page 1/15):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/15 | Next >"), help.messages());
 
         permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
         permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
@@ -684,6 +683,69 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms bulk clear commands remove only direct permission assignments.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanBulkClearUserAndGroupPermissions() throws CommandSyntaxException {
+        permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "example.*", PermissionValue.FALSE);
+        subjectMetadataService.setSubjectPrefix(TARGET_ID, DisplayText.parse("&a[Target]"));
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "group.node", PermissionValue.TRUE);
+        groupService.setGroupPermission("staff", "group.*", PermissionValue.FALSE);
+        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target clear-all", console);
+        dispatcher.execute("clutchperms group staff clear-all", console);
+
+        assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
+        assertEquals("&a[Target]", subjectMetadataService.getSubjectDisplay(TARGET_ID).prefix().orElseThrow().rawText());
+        assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
+        assertEquals("&7[Staff]", groupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
+        assertEquals(Set.of("staff"), groupService.getSubjectGroups(TARGET_ID));
+        assertEquals(List.of("Cleared 2 direct permissions for Target (00000000-0000-0000-0000-000000000002).", "Cleared 2 direct permissions for group staff."),
+                console.messages());
+    }
+
+    /**
+     * Confirms bulk clear no-ops reuse the existing empty-permissions feedback.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void bulkClearReportsNoDirectPermissionsWhenAlreadyEmpty() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target clear-all", console);
+        dispatcher.execute("clutchperms group staff clear-all", console);
+
+        assertEquals(List.of("No permissions set for Target (00000000-0000-0000-0000-000000000002).", "No permissions set for group staff."), console.messages());
+    }
+
+    /**
+     * Confirms default group permissions can be bulk-cleared without removing the built-in group.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void bulkClearSupportsDefaultGroupPermissions() throws CommandSyntaxException {
+        groupService.setGroupPermission(GroupService.DEFAULT_GROUP, "default.node", PermissionValue.FALSE);
+        groupService.setGroupPermission(GroupService.DEFAULT_GROUP, "default.*", PermissionValue.TRUE);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group default clear-all", console);
+
+        assertTrue(groupService.hasGroup(GroupService.DEFAULT_GROUP));
+        assertEquals(Map.of(), groupService.getGroupPermissions(GroupService.DEFAULT_GROUP));
+        assertEquals(List.of("Cleared 2 direct permissions for group default."), console.messages());
+    }
+
+    /**
      * Confirms user and group display commands manage prefixes and suffixes with effective feedback.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -984,6 +1046,34 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms exact bulk clear permissions authorize only the matching bulk clear commands.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void playerWithBulkClearPermissionsCanUseBulkClearOnly() throws CommandSyntaxException {
+        permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "group.node", PermissionValue.TRUE);
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertCommandFails("clutchperms user Target clear-all", player, "You do not have permission to use ClutchPerms commands.");
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_USER_CLEAR_ALL, PermissionValue.TRUE);
+        dispatcher.execute("clutchperms user Target clear-all", player);
+
+        assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
+        assertCommandFails("clutchperms user Target clear example.node", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandFails("clutchperms group staff clear-all", player, "You do not have permission to use ClutchPerms commands.");
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_CLEAR_ALL, PermissionValue.TRUE);
+        dispatcher.execute("clutchperms group staff clear-all", player);
+
+        assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
+        assertCommandFails("clutchperms group staff clear group.node", player, "You do not have permission to use ClutchPerms commands.");
+    }
+
+    /**
      * Confirms wildcard admin permissions authorize command execution through the shared resolver.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -991,13 +1081,22 @@ class ClutchPermsCommandsTest {
     @Test
     void playerWithCategoryWildcardCanUseMatchingCommandsOnly() throws CommandSyntaxException {
         permissionService.setPermission(ADMIN_ID, "clutchperms.admin.user.*", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "example.bulk", PermissionValue.TRUE);
         TestSource player = TestSource.player(ADMIN_ID);
 
         dispatcher.execute("clutchperms user Target info", player);
         dispatcher.execute("clutchperms user Target set example.node false", player);
+        dispatcher.execute("clutchperms user Target clear-all", player);
 
-        assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
+        assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
         assertCommandFails("clutchperms group list", player, "You do not have permission to use ClutchPerms commands.");
+
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "group.bulk", PermissionValue.TRUE);
+        permissionService.setPermission(ADMIN_ID, "clutchperms.admin.group.*", PermissionValue.TRUE);
+        dispatcher.execute("clutchperms group staff clear-all", player);
+
+        assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
     }
 
     /**
@@ -1385,6 +1484,21 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms bulk clear commands reuse existing closest-match feedback for unknown targets.
+     */
+    @Test
+    void bulkClearCommandsUseExistingClosestMatchFeedback() {
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms user Targt clear-all", console, "Unknown user target: Targt");
+        assertMessageContains(console, "Closest online players: Target");
+
+        assertCommandFails("clutchperms group staf clear-all", console, "Unknown group: staf");
+        assertMessageContains(console, "Closest groups: staff");
+    }
+
+    /**
      * Confirms unknown user targets without close matches suggest the users search command.
      */
     @Test
@@ -1594,6 +1708,10 @@ class ClutchPermsCommandsTest {
 
         console.messages().clear();
         assertEquals(0, dispatcher.execute("clutchperms user Target clear example.node", console));
+        assertEquals(List.of("Permission operation failed: save blocked"), console.messages());
+
+        console.messages().clear();
+        assertEquals(0, dispatcher.execute("clutchperms user Target clear-all", console));
         assertEquals(List.of("Permission operation failed: save blocked"), console.messages());
     }
 
@@ -1969,9 +2087,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageOneMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 1/6):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
+        return List.of("ClutchPerms commands (page 1/7):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
                 "/" + rootLiteral + " validate", "/" + rootLiteral + " config list", "/" + rootLiteral + " config get <key>", "/" + rootLiteral + " config set <key> <value>",
-                "Page 1/6 | Next >");
+                "Page 1/7 | Next >");
     }
 
     private static List<String> commandListPageTwoMessages() {
@@ -1979,28 +2097,28 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageTwoMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 2/6):", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup list [kind] [page]",
+        return List.of("ClutchPerms commands (page 2/7):", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup list [kind] [page]",
                 "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup restore <kind> <backup-file>", "/" + rootLiteral + " user <target> info",
-                "/" + rootLiteral + " user <target> list [page]", "/" + rootLiteral + " user <target> get <node>", "< Prev | Page 2/6 | Next >");
+                "/" + rootLiteral + " user <target> list [page]", "/" + rootLiteral + " user <target> get <node>", "< Prev | Page 2/7 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {
         return List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /clutchperms group list",
                 "  /clutchperms group <group> <create|delete|info|list|parents>", "  /clutchperms group <group> <get|clear> <node>",
-                "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> rename <new-group>",
+                "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> clear-all", "  /clutchperms group <group> rename <new-group>",
                 "  /clutchperms group <group> parent <add|remove> <parent>", "  /clutchperms group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsageMessages(String group) {
         return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try one:", "  /clutchperms group " + group + " <create|delete|info|list|parents>",
                 "  /clutchperms group " + group + " <get|clear> <node>", "  /clutchperms group " + group + " set <node> <true|false>",
-                "  /clutchperms group " + group + " rename <new-group>", "  /clutchperms group " + group + " parent <add|remove> <parent>",
-                "  /clutchperms group " + group + " <prefix|suffix> get|set|clear");
+                "  /clutchperms group " + group + " clear-all", "  /clutchperms group " + group + " rename <new-group>",
+                "  /clutchperms group " + group + " parent <add|remove> <parent>", "  /clutchperms group " + group + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userRootUsageMessages() {
         return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try one:", "  /clutchperms user <target> <info|list|groups>",
-                "  /clutchperms user <target> <get|clear|check|explain> <node>", "  /clutchperms user <target> set <node> <true|false>",
+                "  /clutchperms user <target> <get|clear|check|explain> <node>", "  /clutchperms user <target> set <node> <true|false>", "  /clutchperms user <target> clear-all",
                 "  /clutchperms user <target> group <add|remove> <group>", "  /clutchperms user <target> <prefix|suffix> get|set|clear");
     }
 
@@ -2034,6 +2152,11 @@ class ClutchPermsCommandsTest {
 
         @Override
         public void clearPermission(UUID subjectId, String node) {
+            throw failure;
+        }
+
+        @Override
+        public int clearPermissions(UUID subjectId) {
             throw failure;
         }
     }

@@ -104,6 +104,16 @@ public final class InMemoryPermissionService implements PermissionService {
     }
 
     /**
+     * {@inheritDoc}
+     */
+    @Override
+    public int clearPermissions(UUID subjectId) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        Map<String, PermissionValue> removedPermissions = permissions.remove(subjectId);
+        return removedPermissions == null ? 0 : removedPermissions.size();
+    }
+
+    /**
      * Normalizes permission nodes into the storage format used by this implementation.
      *
      * @param node raw permission node supplied by the caller

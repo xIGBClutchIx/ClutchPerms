@@ -206,6 +206,18 @@ public final class InMemoryGroupService implements GroupService {
      * {@inheritDoc}
      */
     @Override
+    public int clearGroupPermissions(String groupName) {
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        Map<String, PermissionValue> permissions = groupPermissions.get(normalizedGroupName);
+        int removedPermissions = permissions.size();
+        permissions.clear();
+        return removedPermissions;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public DisplayProfile getGroupDisplay(String groupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         return groupDisplays.getOrDefault(normalizedGroupName, DisplayProfile.empty());

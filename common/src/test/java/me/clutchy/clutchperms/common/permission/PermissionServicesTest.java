@@ -43,6 +43,7 @@ class PermissionServicesTest {
 
         assertEquals(PermissionValue.UNSET, permissionService.getPermission(FIRST_SUBJECT, PermissionNodes.ADMIN));
         assertEquals(Map.of(), permissionService.getPermissions(FIRST_SUBJECT));
+        assertEquals(0, permissionService.clearPermissions(FIRST_SUBJECT));
         assertFalse(Files.exists(permissionsFile));
     }
 
@@ -90,6 +91,26 @@ class PermissionServicesTest {
     }
 
     /**
+     * Confirms bulk clears remove every direct assignment for one subject and persist the result.
+     */
+    @Test
+    void clearPermissionsRemovesOnlySelectedSubjectAndPersists() {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        PermissionService permissionService = PermissionServices.jsonFile(permissionsFile);
+
+        permissionService.setPermission(FIRST_SUBJECT, "first.node", PermissionValue.TRUE);
+        permissionService.setPermission(FIRST_SUBJECT, "first.*", PermissionValue.FALSE);
+        permissionService.setPermission(SECOND_SUBJECT, "second.node", PermissionValue.TRUE);
+
+        assertEquals(2, permissionService.clearPermissions(FIRST_SUBJECT));
+        assertEquals(0, permissionService.clearPermissions(FIRST_SUBJECT));
+
+        PermissionService reloadedPermissionService = PermissionServices.jsonFile(permissionsFile);
+        assertEquals(Map.of(), reloadedPermissionService.getPermissions(FIRST_SUBJECT));
+        assertEquals(Map.of("second.node", PermissionValue.TRUE), reloadedPermissionService.getPermissions(SECOND_SUBJECT));
+    }
+
+    /**
      * Confirms failed JSON saves leave both runtime state and persisted state unchanged.
      *
      * @throws IOException if test storage setup cannot be written or read
@@ -116,6 +137,9 @@ class PermissionServicesTest {
         assertPermissionStatePreserved(permissionService, permissionsFile, persistedJson);
 
         assertThrows(PermissionStorageException.class, () -> permissionService.clearPermission(FIRST_SUBJECT, "clear.node"));
+        assertPermissionStatePreserved(permissionService, permissionsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> permissionService.clearPermissions(FIRST_SUBJECT));
         assertPermissionStatePreserved(permissionService, permissionsFile, persistedJson);
     }
 
@@ -248,10 +272,13 @@ class PermissionServicesTest {
         permissionService.setPermission(FIRST_SUBJECT, "Example.Node", PermissionValue.TRUE);
         permissionService.setPermission(FIRST_SUBJECT, "Example.Node", PermissionValue.UNSET);
         permissionService.clearPermission(SECOND_SUBJECT, "Other.Node");
+        permissionService.setPermission(SECOND_SUBJECT, "Other.Node", PermissionValue.TRUE);
+        assertEquals(1, permissionService.clearPermissions(SECOND_SUBJECT));
+        assertEquals(0, permissionService.clearPermissions(SECOND_SUBJECT));
 
         assertEquals(PermissionValue.UNSET, permissionService.getPermission(FIRST_SUBJECT, "example.node"));
         assertEquals(Map.of(), permissionService.getPermissions(FIRST_SUBJECT));
-        assertEquals(List.of(FIRST_SUBJECT, FIRST_SUBJECT, SECOND_SUBJECT), changedSubjects);
+        assertEquals(List.of(FIRST_SUBJECT, FIRST_SUBJECT, SECOND_SUBJECT, SECOND_SUBJECT, SECOND_SUBJECT), changedSubjects);
     }
 
     /**
@@ -264,6 +291,7 @@ class PermissionServicesTest {
 
         assertThrows(IllegalArgumentException.class, () -> permissionService.setPermission(FIRST_SUBJECT, "   ", PermissionValue.TRUE));
         assertThrows(NullPointerException.class, () -> permissionService.clearPermission(null, "example.node"));
+        assertThrows(NullPointerException.class, () -> permissionService.clearPermissions(null));
 
         assertEquals(List.of(), changedSubjects);
     }

@@ -173,6 +173,8 @@ final class CommandLang {
 
     private static final String PERMISSION_CLEAR = "Cleared %s for %s.";
 
+    private static final String PERMISSIONS_CLEAR_ALL = "Cleared %s direct permissions for %s.";
+
     private static final String USER_DISPLAY_DIRECT = "%s direct %s = %s.";
 
     private static final String USER_DISPLAY_DIRECT_UNSET = "%s direct %s is unset.";
@@ -248,6 +250,8 @@ final class CommandLang {
     private static final String GROUP_PERMISSION_SET = "Set %s for group %s to %s.";
 
     private static final String GROUP_PERMISSION_CLEAR = "Cleared %s for group %s.";
+
+    private static final String GROUP_PERMISSIONS_CLEAR_ALL = "Cleared %s direct permissions for group %s.";
 
     private static final String GROUP_DISPLAY_GET = "Group %s %s = %s.";
 
@@ -623,6 +627,10 @@ final class CommandLang {
         return success(PERMISSION_CLEAR, node, subject);
     }
 
+    static CommandMessage permissionsClearAll(String subject, int removedPermissions) {
+        return success(PERMISSIONS_CLEAR_ALL, removedPermissions, subject);
+    }
+
     static CommandMessage userDisplayDirect(String subject, String slot, String value) {
         return detail(USER_DISPLAY_DIRECT, subject, slot, value);
     }
@@ -777,6 +785,10 @@ final class CommandLang {
 
     static CommandMessage groupPermissionClear(String node, String group) {
         return success(GROUP_PERMISSION_CLEAR, node, group);
+    }
+
+    static CommandMessage groupPermissionsClearAll(String group, int removedPermissions) {
+        return success(GROUP_PERMISSIONS_CLEAR_ALL, removedPermissions, group);
     }
 
     static CommandMessage groupDisplayGet(String group, String slot, String value) {

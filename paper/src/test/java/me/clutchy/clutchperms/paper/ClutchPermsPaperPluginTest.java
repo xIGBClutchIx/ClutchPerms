@@ -263,7 +263,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
 
-        assertNextMessage(player, "ClutchPerms commands (page 1/6):");
+        assertNextMessage(player, "ClutchPerms commands (page 1/7):");
         Component firstCommand = player.nextComponentMessage();
         assertEquals("/clutchperms help [page]", PlainTextComponentSerializer.plainText().serialize(firstCommand));
         assertComponentClick(firstCommand, ClickEvent.Action.SUGGEST_COMMAND, "/clutchperms help [page]");
@@ -273,7 +273,7 @@ class ClutchPermsPaperPluginTest {
             player.nextComponentMessage();
         }
         Component navigation = player.nextComponentMessage();
-        assertEquals("Page 1/6 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
+        assertEquals("Page 1/7 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
         assertComponentClick(navigation, ClickEvent.Action.RUN_COMMAND, "/clutchperms help 2");
         assertComponentHover(navigation);
     }

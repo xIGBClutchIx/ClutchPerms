@@ -76,6 +76,8 @@ public final class GroupSubcommand {
 
         int clear(CommandContext<S> context) throws CommandSyntaxException;
 
+        int clearAll(CommandContext<S> context) throws CommandSyntaxException;
+
         int prefixUsage(CommandContext<S> context) throws CommandSyntaxException;
 
         int prefixGet(CommandContext<S> context) throws CommandSyntaxException;
@@ -108,7 +110,7 @@ public final class GroupSubcommand {
                 .then(LiteralArgumentBuilder.<S>literal("parents").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents))
                         .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents))))
                 .then(parentCommand(environment, authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
-                .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
+                .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes)).then(clearAllCommand(authorized, handlers))
                 .then(displayCommand("prefix", authorized, handlers, true)).then(displayCommand("suffix", authorized, handlers, false))
                 .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::unknownTargetUsage)));
 
@@ -150,6 +152,10 @@ public final class GroupSubcommand {
     private static <S> LiteralArgumentBuilder<S> clearCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
         return LiteralArgumentBuilder.<S>literal("clear").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CLEAR, handlers::clearUsage))
                 .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CLEAR, handlers::clear)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> clearAllCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
+        return LiteralArgumentBuilder.<S>literal("clear-all").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CLEAR_ALL, handlers::clearAll));
     }
 
     private static <S> LiteralArgumentBuilder<S> displayCommand(String literal, AuthorizedCommand<S> authorized, Handlers<S> handlers, boolean prefix) {

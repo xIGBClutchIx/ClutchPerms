@@ -112,6 +112,18 @@ final class JsonFileGroupService implements GroupService {
     }
 
     @Override
+    public synchronized int clearGroupPermissions(String groupName) {
+        InMemoryGroupService candidate = copyDelegate();
+        int removedPermissions = candidate.clearGroupPermissions(groupName);
+        if (removedPermissions == 0) {
+            return 0;
+        }
+
+        commit(candidate);
+        return removedPermissions;
+    }
+
+    @Override
     public synchronized DisplayProfile getGroupDisplay(String groupName) {
         return delegate.getGroupDisplay(groupName);
     }

@@ -90,6 +90,14 @@ public interface GroupService {
     void clearGroupPermission(String groupName, String node);
 
     /**
+     * Clears every explicit permission assignment from one group.
+     *
+     * @param groupName group name to update
+     * @return number of explicit assignments removed
+     */
+    int clearGroupPermissions(String groupName);
+
+    /**
      * Looks up direct display values for a group.
      *
      * @param groupName group name to inspect

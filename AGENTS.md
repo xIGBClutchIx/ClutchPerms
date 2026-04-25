@@ -190,6 +190,7 @@ Current command surface:
 - `/clutchperms user <target> info`
 - `/clutchperms user <target> list [page]`
 - `/clutchperms user <target> get|set|clear|check|explain`
+- `/clutchperms user <target> clear-all`
 - `/clutchperms user <target> groups [page]`
 - `/clutchperms user <target> group add|remove <group>`
 - `/clutchperms user <target> prefix get|set|clear`
@@ -199,6 +200,7 @@ Current command surface:
 - `/clutchperms group <group> info`
 - `/clutchperms group <group> rename <new-group>`
 - `/clutchperms group <group> list [page]`
+- `/clutchperms group <group> clear-all`
 - `/clutchperms group <group> prefix get|set|clear`
 - `/clutchperms group <group> suffix get|set|clear`
 - `/clutchperms group <group> parents [page]`

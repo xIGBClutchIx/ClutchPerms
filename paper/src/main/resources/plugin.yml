@@ -52,6 +52,9 @@ permissions:
   clutchperms.admin.user.clear:
     description: Allows clearing direct user permissions.
     default: false
+  clutchperms.admin.user.clear-all:
+    description: Allows clearing all direct user permissions.
+    default: false
   clutchperms.admin.user.check:
     description: Allows checking effective user permissions.
     default: false
@@ -102,6 +105,9 @@ permissions:
     default: false
   clutchperms.admin.group.clear:
     description: Allows clearing group permissions.
+    default: false
+  clutchperms.admin.group.clear-all:
+    description: Allows clearing all direct group permissions.
     default: false
   clutchperms.admin.group.parents:
     description: Allows listing group parents.

@@ -51,4 +51,16 @@ final class ObservingPermissionService implements PermissionService {
         delegate.clearPermission(subjectId, node);
         listener.permissionChanged(subjectId);
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public int clearPermissions(UUID subjectId) {
+        int removedPermissions = delegate.clearPermissions(subjectId);
+        if (removedPermissions > 0) {
+            listener.permissionChanged(subjectId);
+        }
+        return removedPermissions;
+    }
 }

@@ -170,6 +170,7 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("user <target> get <node>", PermissionNodes.ADMIN_USER_GET, "Shows one direct user permission."),
             new CommandHelpEntry("user <target> set <node> <true|false>", PermissionNodes.ADMIN_USER_SET, "Sets one direct user permission."),
             new CommandHelpEntry("user <target> clear <node>", PermissionNodes.ADMIN_USER_CLEAR, "Clears one direct user permission."),
+            new CommandHelpEntry("user <target> clear-all", PermissionNodes.ADMIN_USER_CLEAR_ALL, "Clears every direct user permission."),
             new CommandHelpEntry("user <target> check <node>", PermissionNodes.ADMIN_USER_CHECK, "Shows the effective permission result."),
             new CommandHelpEntry("user <target> explain <node>", PermissionNodes.ADMIN_USER_EXPLAIN, "Explains matching assignments and the winner."),
             new CommandHelpEntry("user <target> groups [page]", PermissionNodes.ADMIN_USER_GROUPS, "Lists explicit and implicit groups for a user."),
@@ -185,6 +186,7 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("group <group> parents [page]", PermissionNodes.ADMIN_GROUP_PARENTS, "Lists parent groups."),
             new CommandHelpEntry("group <group> <get|clear> <node>", PermissionNodes.ADMIN_GROUP_GET, "Reads or clears one group permission."),
             new CommandHelpEntry("group <group> set <node> <true|false>", PermissionNodes.ADMIN_GROUP_SET, "Sets one group permission."),
+            new CommandHelpEntry("group <group> clear-all", PermissionNodes.ADMIN_GROUP_CLEAR_ALL, "Clears every direct group permission."),
             new CommandHelpEntry("group <group> parent <add|remove> <parent>", PermissionNodes.ADMIN_GROUP_PARENTS, "Changes group inheritance."),
             new CommandHelpEntry("group <group> <prefix|suffix> get", PermissionNodes.ADMIN_GROUP_DISPLAY_VIEW, "Shows group chat display values."),
             new CommandHelpEntry("group <group> <prefix|suffix> set <text>", PermissionNodes.ADMIN_GROUP_DISPLAY_SET, "Sets group chat display text."),
@@ -439,6 +441,11 @@ public final class ClutchPermsCommands {
             }
 
             @Override
+            public int clearAll(CommandContext<S> context) throws CommandSyntaxException {
+                return clearAllPermissions(environment, context);
+            }
+
+            @Override
             public int groups(CommandContext<S> context) throws CommandSyntaxException {
                 return listSubjectGroups(environment, context);
             }
@@ -661,6 +668,11 @@ public final class ClutchPermsCommands {
             @Override
             public int clear(CommandContext<S> context) throws CommandSyntaxException {
                 return clearGroupPermission(environment, context);
+            }
+
+            @Override
+            public int clearAll(CommandContext<S> context) throws CommandSyntaxException {
+                return clearAllGroupPermissions(environment, context);
             }
 
             @Override
@@ -1175,23 +1187,24 @@ public final class ClutchPermsCommands {
     }
 
     private static List<String> userRootUsages() {
-        return List.of("user <target> <info|list|groups>", "user <target> <get|clear|check|explain> <node>", "user <target> set <node> <true|false>",
+        return List.of("user <target> <info|list|groups>", "user <target> <get|clear|check|explain> <node>", "user <target> set <node> <true|false>", "user <target> clear-all",
                 "user <target> group <add|remove> <group>", "user <target> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userTargetUsages(String target) {
         return List.of("user " + target + " <info|list|groups>", "user " + target + " <get|clear|check|explain> <node>", "user " + target + " set <node> <true|false>",
-                "user " + target + " group <add|remove> <group>", "user " + target + " <prefix|suffix> get|set|clear");
+                "user " + target + " clear-all", "user " + target + " group <add|remove> <group>", "user " + target + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupRootUsages() {
         return List.of("group list", "group <group> <create|delete|info|list|parents>", "group <group> <get|clear> <node>", "group <group> set <node> <true|false>",
-                "group <group> rename <new-group>", "group <group> parent <add|remove> <parent>", "group <group> <prefix|suffix> get|set|clear");
+                "group <group> clear-all", "group <group> rename <new-group>", "group <group> parent <add|remove> <parent>", "group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsages(String group) {
         return List.of("group " + group + " <create|delete|info|list|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
-                "group " + group + " rename <new-group>", "group " + group + " parent <add|remove> <parent>", "group " + group + " <prefix|suffix> get|set|clear");
+                "group " + group + " clear-all", "group " + group + " rename <new-group>", "group " + group + " parent <add|remove> <parent>",
+                "group " + group + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> usersUsages() {
@@ -1451,6 +1464,23 @@ public final class ClutchPermsCommands {
             throw PERMISSION_OPERATION_FAILED.create(CommandLang.permissionOperationFailed(exception));
         }
         environment.sendMessage(context.getSource(), CommandLang.permissionClear(node, formatSubject(subject)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int clearAllPermissions(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        int removedPermissions;
+        try {
+            removedPermissions = environment.permissionService().clearPermissions(subject.id());
+        } catch (RuntimeException exception) {
+            throw PERMISSION_OPERATION_FAILED.create(CommandLang.permissionOperationFailed(exception));
+        }
+
+        if (removedPermissions == 0) {
+            environment.sendMessage(context.getSource(), CommandLang.permissionsEmpty(formatSubject(subject)));
+        } else {
+            environment.sendMessage(context.getSource(), CommandLang.permissionsClearAll(formatSubject(subject), removedPermissions));
+        }
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1804,6 +1834,24 @@ public final class ClutchPermsCommands {
         }
 
         environment.sendMessage(context.getSource(), CommandLang.groupPermissionClear(node, normalizeGroupName(groupName)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int clearAllGroupPermissions(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        int removedPermissions;
+        try {
+            removedPermissions = environment.groupService().clearGroupPermissions(groupName);
+        } catch (RuntimeException exception) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
+        }
+
+        String normalizedGroupName = normalizeGroupName(groupName);
+        if (removedPermissions == 0) {
+            environment.sendMessage(context.getSource(), CommandLang.groupPermissionsEmpty(normalizedGroupName));
+        } else {
+            environment.sendMessage(context.getSource(), CommandLang.groupPermissionsClearAll(normalizedGroupName, removedPermissions));
+        }
         return Command.SINGLE_SUCCESS;
     }
 

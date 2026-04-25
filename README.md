@@ -94,6 +94,7 @@ Useful grants:
 | `/clutchperms user <target> get <node>` | `clutchperms.admin.user.get` | Shows one direct user permission. |
 | `/clutchperms user <target> set <node> <true\|false>` | `clutchperms.admin.user.set` | Sets one direct user permission. |
 | `/clutchperms user <target> clear <node>` | `clutchperms.admin.user.clear` | Removes one direct user permission. |
+| `/clutchperms user <target> clear-all` | `clutchperms.admin.user.clear-all` | Removes every direct user permission. |
 | `/clutchperms user <target> check <node>` | `clutchperms.admin.user.check` | Shows the effective permission result. |
 | `/clutchperms user <target> explain <node>` | `clutchperms.admin.user.explain` | Explains matching assignments and the winner. |
 | `/clutchperms user <target> groups [page]` | `clutchperms.admin.user.groups` | Lists explicit group memberships and the implicit `default` group. |
@@ -121,6 +122,7 @@ The built-in `default` group always exists, applies implicitly to every subject,
 | `/clutchperms group <group> get <node>` | `clutchperms.admin.group.get` | Shows one direct group permission. |
 | `/clutchperms group <group> set <node> <true\|false>` | `clutchperms.admin.group.set` | Sets one direct group permission. |
 | `/clutchperms group <group> clear <node>` | `clutchperms.admin.group.clear` | Removes one direct group permission. |
+| `/clutchperms group <group> clear-all` | `clutchperms.admin.group.clear-all` | Removes every direct group permission. |
 | `/clutchperms group <group> prefix get` | `clutchperms.admin.group.display.view` | Shows a group prefix. |
 | `/clutchperms group <group> prefix set <text>` | `clutchperms.admin.group.display.set` | Sets a group prefix. |
 | `/clutchperms group <group> prefix clear` | `clutchperms.admin.group.display.clear` | Clears a group prefix. |

@@ -48,6 +48,7 @@ class GroupServicesTest {
 
         assertEquals(Set.of("default"), groupService.getGroups());
         assertTrue(groupService.hasGroup("default"));
+        assertEquals(0, groupService.clearGroupPermissions("default"));
         assertFalse(Files.exists(groupsFile));
     }
 
@@ -116,6 +117,60 @@ class GroupServicesTest {
         assertEquals(Set.of("moderator"), reloadedGroupService.getGroupParents("child"));
         assertEquals(Set.of("moderator"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
         assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("moderator"));
+    }
+
+    /**
+     * Confirms bulk group permission clears preserve group metadata, parents, and memberships.
+     */
+    @Test
+    void clearGroupPermissionsRemovesOnlyDirectPermissionsAndPersists() {
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
+        GroupService groupService = GroupServices.jsonFile(groupsFile);
+
+        groupService.createGroup("base");
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "staff.node", PermissionValue.TRUE);
+        groupService.setGroupPermission("staff", "staff.*", PermissionValue.FALSE);
+        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+        groupService.addGroupParent("staff", "base");
+        groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
+        groupService.setGroupPermission("base", "base.node", PermissionValue.TRUE);
+
+        assertEquals(2, groupService.clearGroupPermissions("staff"));
+        assertEquals(0, groupService.clearGroupPermissions("staff"));
+
+        GroupService reloadedGroupService = GroupServices.jsonFile(groupsFile);
+        assertEquals(Map.of(), reloadedGroupService.getGroupPermissions("staff"));
+        assertEquals(Map.of("base.node", PermissionValue.TRUE), reloadedGroupService.getGroupPermissions("base"));
+        assertEquals("&7[Staff]", reloadedGroupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
+        assertEquals(Set.of("base"), reloadedGroupService.getGroupParents("staff"));
+        assertEquals(Set.of("staff"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
+    }
+
+    /**
+     * Confirms in-memory bulk group clears remove only direct permission assignments.
+     */
+    @Test
+    void inMemoryClearGroupPermissionsRemovesOnlyDirectPermissions() {
+        GroupService groupService = new InMemoryGroupService();
+
+        groupService.createGroup("base");
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "staff.node", PermissionValue.TRUE);
+        groupService.setGroupPermission("staff", "staff.*", PermissionValue.FALSE);
+        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+        groupService.addGroupParent("staff", "base");
+        groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
+        groupService.setGroupPermission("base", "base.node", PermissionValue.TRUE);
+
+        assertEquals(2, groupService.clearGroupPermissions("staff"));
+        assertEquals(0, groupService.clearGroupPermissions("staff"));
+
+        assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
+        assertEquals(Map.of("base.node", PermissionValue.TRUE), groupService.getGroupPermissions("base"));
+        assertEquals("&7[Staff]", groupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
+        assertEquals(Set.of("base"), groupService.getGroupParents("staff"));
+        assertEquals(Set.of("staff"), groupService.getSubjectGroups(FIRST_SUBJECT));
     }
 
     /**
@@ -269,6 +324,9 @@ class GroupServicesTest {
         assertGroupStatePreserved(groupService, groupsFile, persistedJson);
 
         assertThrows(PermissionStorageException.class, () -> groupService.clearGroupPermission("staff", "old.node"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.clearGroupPermissions("staff"));
         assertGroupStatePreserved(groupService, groupsFile, persistedJson);
 
         assertThrows(PermissionStorageException.class, () -> groupService.setGroupPrefix("staff", DisplayText.parse("&c[New]")));
@@ -735,6 +793,8 @@ class GroupServicesTest {
 
         groupService.createGroup("admin");
         groupService.setGroupPermission("admin", "example.node", PermissionValue.TRUE);
+        assertEquals(1, groupService.clearGroupPermissions("admin"));
+        assertEquals(0, groupService.clearGroupPermissions("admin"));
         groupService.setGroupPrefix("admin", DisplayText.parse("&7[Admin]"));
         groupService.clearGroupPrefix("admin");
         groupService.createGroup("base");
@@ -746,8 +806,9 @@ class GroupServicesTest {
         assertThrows(IllegalArgumentException.class, () -> groupService.addSubjectGroup(FIRST_SUBJECT, "missing"));
         assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("owner", "missing"));
         assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("missing", "other"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.clearGroupPermissions("missing"));
 
-        assertEquals(List.of("all", "all", "all", "all", "all", "all", "all", "all"), fullRefreshes);
+        assertEquals(List.of("all", "all", "all", "all", "all", "all", "all", "all", "all"), fullRefreshes);
         assertEquals(List.of(FIRST_SUBJECT, FIRST_SUBJECT), subjectRefreshes);
     }
 

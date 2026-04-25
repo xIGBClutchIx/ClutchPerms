@@ -63,6 +63,8 @@ public final class UserSubcommand {
 
         int clear(CommandContext<S> context) throws CommandSyntaxException;
 
+        int clearAll(CommandContext<S> context) throws CommandSyntaxException;
+
         int groups(CommandContext<S> context) throws CommandSyntaxException;
 
         int prefixUsage(CommandContext<S> context) throws CommandSyntaxException;
@@ -114,7 +116,7 @@ public final class UserSubcommand {
         return LiteralArgumentBuilder.<S>literal("user").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::rootUsage))
                 .then(target.then(infoCommand(authorized, handlers)).then(listCommand(authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
                         .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
-                        .then(groupsCommand(authorized, handlers)).then(displayCommand("prefix", authorized, handlers, true))
+                        .then(clearAllCommand(authorized, handlers)).then(groupsCommand(authorized, handlers)).then(displayCommand("prefix", authorized, handlers, true))
                         .then(displayCommand("suffix", authorized, handlers, false)).then(groupCommand(environment, authorized, handlers))
                         .then(checkCommand(authorized, handlers, permissionNodes)).then(explainCommand(authorized, handlers, permissionNodes))
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::targetUsage))
@@ -143,6 +145,10 @@ public final class UserSubcommand {
     private static <S> LiteralArgumentBuilder<S> clearCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
         return LiteralArgumentBuilder.<S>literal("clear").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CLEAR, handlers::clearUsage))
                 .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CLEAR, handlers::clear)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> clearAllCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
+        return LiteralArgumentBuilder.<S>literal("clear-all").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CLEAR_ALL, handlers::clearAll));
     }
 
     private static <S> LiteralArgumentBuilder<S> groupsCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {

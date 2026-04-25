@@ -58,4 +58,12 @@ public interface PermissionService {
      * @param node permission node to clear
      */
     void clearPermission(UUID subjectId, String node);
+
+    /**
+     * Removes every explicit permission assignment for one subject.
+     *
+     * @param subjectId unique identifier for the subject being modified
+     * @return number of explicit assignments removed
+     */
+    int clearPermissions(UUID subjectId);
 }

@@ -74,6 +74,15 @@ final class ObservingGroupService implements GroupService {
     }
 
     @Override
+    public int clearGroupPermissions(String groupName) {
+        int removedPermissions = delegate.clearGroupPermissions(groupName);
+        if (removedPermissions > 0) {
+            listener.groupsChanged();
+        }
+        return removedPermissions;
+    }
+
+    @Override
     public DisplayProfile getGroupDisplay(String groupName) {
         return delegate.getGroupDisplay(groupName);
     }
