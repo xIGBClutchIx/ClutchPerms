@@ -3,6 +3,8 @@ package me.clutchy.clutchperms.common.permission;
 import java.nio.file.Path;
 import java.util.Objects;
 
+import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
+
 /**
  * Creates shared permission service implementations used by platform entrypoints.
  */
@@ -20,7 +22,20 @@ public final class PermissionServices {
      * @throws PermissionStorageException if existing permission data cannot be loaded
      */
     public static PermissionService jsonFile(Path permissionsFile) {
-        return new JsonFilePermissionService(Objects.requireNonNull(permissionsFile, "permissionsFile"));
+        return jsonFile(permissionsFile, StorageWriteOptions.defaults());
+    }
+
+    /**
+     * Creates a permission service backed by a JSON file.
+     *
+     * @param permissionsFile JSON file used to store direct permission assignments
+     * @param writeOptions storage write options used for future mutations
+     * @return permission service backed by the supplied JSON file
+     * @throws NullPointerException if {@code permissionsFile} is {@code null}
+     * @throws PermissionStorageException if existing permission data cannot be loaded
+     */
+    public static PermissionService jsonFile(Path permissionsFile, StorageWriteOptions writeOptions) {
+        return new JsonFilePermissionService(Objects.requireNonNull(permissionsFile, "permissionsFile"), StorageWriteOptions.defaultIfNull(writeOptions));
     }
 
     /**

@@ -26,6 +26,7 @@ import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.storage.StorageFiles;
+import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
 
 /**
  * JSON-backed {@link GroupService} that persists basic group definitions and direct subject memberships after every mutation.
@@ -38,10 +39,17 @@ final class JsonFileGroupService implements GroupService {
 
     private final Path groupsFile;
 
+    private final StorageWriteOptions writeOptions;
+
     private InMemoryGroupService delegate;
 
     JsonFileGroupService(Path groupsFile) {
+        this(groupsFile, StorageWriteOptions.defaults());
+    }
+
+    JsonFileGroupService(Path groupsFile, StorageWriteOptions writeOptions) {
         this.groupsFile = groupsFile.toAbsolutePath().normalize();
+        this.writeOptions = StorageWriteOptions.defaultIfNull(writeOptions);
         GroupData groupData = loadGroups();
         this.delegate = new InMemoryGroupService(groupData.groupPermissions(), groupData.groupParents(), groupData.memberships());
     }
@@ -164,7 +172,7 @@ final class JsonFileGroupService implements GroupService {
     private void saveGroups(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<String, Set<String>> groupParentsSnapshot,
             Map<UUID, Set<String>> membershipsSnapshot) {
         try {
-            StorageFiles.writeAtomicallyWithBackup(groupsFile, StorageFileKind.GROUPS, writer -> {
+            StorageFiles.writeAtomicallyWithBackup(groupsFile, StorageFileKind.GROUPS, writeOptions, writer -> {
                 GSON.toJson(toJson(groupPermissionsSnapshot, groupParentsSnapshot, membershipsSnapshot), writer);
                 writer.write(System.lineSeparator());
             });

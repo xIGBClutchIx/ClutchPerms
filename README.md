@@ -10,7 +10,7 @@ For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 
 - Shared command tree on Paper, Fabric, NeoForge, and Forge
 - Command aliases: `/clutchperms`, `/cperms`, and `/perms`
-- JSON-backed storage for permissions, groups, subjects, and known nodes
+- JSON-backed config and storage for permissions, groups, subjects, and known nodes
 - Direct user permissions with `TRUE`, `FALSE`, and `UNSET`
 - Named groups with recursive parent inheritance
 - Built-in implicit `default` group
@@ -46,6 +46,7 @@ Useful grants:
 | `clutchperms.admin.*` | Every ClutchPerms admin command |
 | `clutchperms.admin.user.*` | Direct user permissions and user group membership |
 | `clutchperms.admin.group.*` | Group definitions, group permissions, and group parents |
+| `clutchperms.admin.config.*` | Runtime config view, set, and reset |
 | `clutchperms.admin.backup.*` | Backup list and restore |
 | `clutchperms.admin.users.*` | Stored user list and search |
 | `clutchperms.admin.nodes.*` | Known permission node registry |
@@ -56,9 +57,13 @@ Useful grants:
 | --- | --- | --- |
 | `/clutchperms` | `clutchperms.admin.help` | Shows command help page 1. |
 | `/clutchperms help [page]` | `clutchperms.admin.help` | Shows paged command help. |
-| `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, counts, resolver cache counts, and runtime bridge status. |
-| `/clutchperms reload` | `clutchperms.admin.reload` | Reloads all JSON files and refreshes runtime permissions. |
-| `/clutchperms validate` | `clutchperms.admin.validate` | Parses all JSON files without applying them. |
+| `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, config values, counts, resolver cache counts, and runtime bridge status. |
+| `/clutchperms reload` | `clutchperms.admin.reload` | Reloads config and all JSON storage files, then refreshes runtime permissions. |
+| `/clutchperms validate` | `clutchperms.admin.validate` | Parses config and all JSON storage files without applying them. |
+| `/clutchperms config list` | `clutchperms.admin.config.view` | Lists active runtime config values. |
+| `/clutchperms config get <key>` | `clutchperms.admin.config.view` | Shows one config value. |
+| `/clutchperms config set <key> <value>` | `clutchperms.admin.config.set` | Saves one config value, reloads runtime, and rolls back on failure. |
+| `/clutchperms config reset <key\|all>` | `clutchperms.admin.config.reset` | Resets one config value or all values to defaults. |
 | `/clutchperms backup list` | `clutchperms.admin.backup.list` | Lists backups for all files on page 1. |
 | `/clutchperms backup list page <page>` | `clutchperms.admin.backup.list` | Lists all backups on a specific page. |
 | `/clutchperms backup list <kind> [page]` | `clutchperms.admin.backup.list` | Lists backups for one kind: `permissions`, `subjects`, `groups`, or `nodes`. |
@@ -92,6 +97,8 @@ Useful grants:
 Notes:
 
 - `<target>` resolves exact online name, then exact stored last-known name, then UUID.
+- Config keys are `backups.retentionLimit`, `commands.helpPageSize`, and `commands.resultPageSize`.
+- Config changes apply immediately through save-and-reload. If reload fails, `config.json` is rolled back.
 - Page numbers start at 1. Invalid or out-of-range pages return styled ClutchPerms feedback and a command to try.
 - Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
@@ -103,22 +110,38 @@ Notes:
 
 ## Storage
 
-ClutchPerms writes four versioned JSON files:
+ClutchPerms writes one config file and four versioned storage files:
 
 | File | Purpose |
 | --- | --- |
+| `config.json` | Runtime settings for backup retention and command page sizes |
 | `permissions.json` | Direct user permission assignments |
 | `groups.json` | Group definitions, permissions, parent links, and memberships |
 | `subjects.json` | Last-known subject names and last-seen timestamps |
 | `nodes.json` | Manually registered exact known permission nodes |
 
-Missing files load as empty state, except `groups.json` starts with the built-in `default` group. Missing files are materialized after successful startup or reload.
+Default `config.json`:
 
-Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
+```json
+{
+  "version": 1,
+  "backups": {
+    "retentionLimit": 10
+  },
+  "commands": {
+    "helpPageSize": 7,
+    "resultPageSize": 8
+  }
+}
+```
+
+Missing files load as empty state, except `groups.json` starts with the built-in `default` group and missing `config.json` loads defaults. Missing files are materialized after successful startup or reload.
+
+Validation is strict. Malformed JSON, unsupported versions, invalid config keys or values, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
 
 Backups are created before replacing an existing live JSON file. The first save of a missing file does not create a backup.
 
-Backup restore validates the selected backup file before replacing live storage. After replacement, ClutchPerms reloads all storage; if reload fails, it rolls the restored file back.
+Backup restore validates the selected backup file before replacing live storage. After replacement, ClutchPerms reloads config and all storage; if reload fails, it rolls the restored file back. `config.json` is not included in backup restore in this version.
 
 If a JSON-backed mutation cannot save, ClutchPerms leaves both the live file and the in-memory runtime state unchanged.
 
@@ -130,7 +153,7 @@ backups/
   nodes/nodes-YYYYMMDD-HHMMSSSSS.json
 ```
 
-ClutchPerms keeps the newest 10 backups per file kind.
+By default, ClutchPerms keeps the newest 10 backups per file kind. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups per kind.
 
 ## Forge And NeoForge
 

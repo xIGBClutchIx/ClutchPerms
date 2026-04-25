@@ -21,6 +21,7 @@ import com.google.gson.JsonPrimitive;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.storage.StorageFiles;
+import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
 
 /**
  * JSON-backed permission service that persists direct subject permission assignments after every mutation.
@@ -33,10 +34,17 @@ final class JsonFilePermissionService implements PermissionService {
 
     private final Path permissionsFile;
 
+    private final StorageWriteOptions writeOptions;
+
     private InMemoryPermissionService delegate;
 
     JsonFilePermissionService(Path permissionsFile) {
+        this(permissionsFile, StorageWriteOptions.defaults());
+    }
+
+    JsonFilePermissionService(Path permissionsFile, StorageWriteOptions writeOptions) {
         this.permissionsFile = permissionsFile.toAbsolutePath().normalize();
+        this.writeOptions = StorageWriteOptions.defaultIfNull(writeOptions);
         this.delegate = new InMemoryPermissionService(loadPermissions());
     }
 
@@ -99,7 +107,7 @@ final class JsonFilePermissionService implements PermissionService {
 
     private void savePermissions(Map<UUID, Map<String, PermissionValue>> snapshot) {
         try {
-            StorageFiles.writeAtomicallyWithBackup(permissionsFile, StorageFileKind.PERMISSIONS, writer -> {
+            StorageFiles.writeAtomicallyWithBackup(permissionsFile, StorageFileKind.PERMISSIONS, writeOptions, writer -> {
                 GSON.toJson(toJson(snapshot), writer);
                 writer.write(System.lineSeparator());
             });

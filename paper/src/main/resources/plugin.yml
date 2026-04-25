@@ -7,6 +7,9 @@ permissions:
   clutchperms.admin.*:
     description: Allows all ClutchPerms admin commands.
     default: false
+  clutchperms.admin.config.*:
+    description: Allows all ClutchPerms config commands.
+    default: false
   clutchperms.admin.help:
     description: Allows listing ClutchPerms commands.
     default: false
@@ -18,6 +21,15 @@ permissions:
     default: false
   clutchperms.admin.validate:
     description: Allows validating ClutchPerms storage.
+    default: false
+  clutchperms.admin.config.view:
+    description: Allows viewing ClutchPerms runtime config.
+    default: false
+  clutchperms.admin.config.set:
+    description: Allows setting ClutchPerms runtime config.
+    default: false
+  clutchperms.admin.config.reset:
+    description: Allows resetting ClutchPerms runtime config.
     default: false
   clutchperms.admin.backup.list:
     description: Allows listing ClutchPerms backups.

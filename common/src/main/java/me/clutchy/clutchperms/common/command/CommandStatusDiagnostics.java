@@ -10,8 +10,22 @@ import java.util.Objects;
  * @param groupsFile path to the persisted group definitions and memberships
  * @param nodesFile path to the persisted manual known permission node registry
  * @param runtimeBridgeStatus platform runtime permission bridge status
+ * @param configFile path to the runtime config file
  */
-public record CommandStatusDiagnostics(String permissionsFile, String subjectsFile, String groupsFile, String nodesFile, String runtimeBridgeStatus) {
+public record CommandStatusDiagnostics(String permissionsFile, String subjectsFile, String groupsFile, String nodesFile, String runtimeBridgeStatus, String configFile) {
+
+    /**
+     * Creates command status diagnostics without a known config file path.
+     *
+     * @param permissionsFile path to the persisted direct permission assignments
+     * @param subjectsFile path to the persisted subject metadata
+     * @param groupsFile path to the persisted group definitions and memberships
+     * @param nodesFile path to the persisted manual known permission node registry
+     * @param runtimeBridgeStatus platform runtime permission bridge status
+     */
+    public CommandStatusDiagnostics(String permissionsFile, String subjectsFile, String groupsFile, String nodesFile, String runtimeBridgeStatus) {
+        this(permissionsFile, subjectsFile, groupsFile, nodesFile, runtimeBridgeStatus, "unknown");
+    }
 
     /**
      * Creates immutable command status diagnostics.
@@ -24,6 +38,7 @@ public record CommandStatusDiagnostics(String permissionsFile, String subjectsFi
         groupsFile = requireNonBlank(groupsFile, "groupsFile");
         nodesFile = requireNonBlank(nodesFile, "nodesFile");
         runtimeBridgeStatus = requireNonBlank(runtimeBridgeStatus, "runtimeBridgeStatus");
+        configFile = requireNonBlank(configFile, "configFile");
     }
 
     private static String requireNonBlank(String value, String name) {

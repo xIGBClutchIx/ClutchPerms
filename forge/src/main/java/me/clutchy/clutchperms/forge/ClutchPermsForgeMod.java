@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.forge;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.function.UnaryOperator;
 
 import org.slf4j.Logger;
 
@@ -10,6 +11,7 @@ import com.mojang.logging.LogUtils;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
@@ -78,7 +80,8 @@ public final class ClutchPermsForgeMod {
                 .register(ForgeClutchPermsCommand.create(ClutchPermsForgeMod::getPermissionService, ClutchPermsForgeMod::getSubjectMetadataService,
                         ClutchPermsForgeMod::getGroupService, ClutchPermsForgeMod::getPermissionNodeRegistry, ClutchPermsForgeMod::getManualPermissionNodeRegistry,
                         ClutchPermsForgeMod::getPermissionResolver, ClutchPermsForgeMod::getStatusDiagnostics, ClutchPermsForgeMod::reloadStorage,
-                        ClutchPermsForgeMod::validateStorage, ClutchPermsForgeMod::getStorageBackupService, ClutchPermsForgeMod::refreshRuntimePermissions, rootLiteral)));
+                        ClutchPermsForgeMod::validateStorage, ClutchPermsForgeMod::getStorageBackupService, ClutchPermsForgeMod::getClutchPermsConfig,
+                        ClutchPermsForgeMod::updateConfig, ClutchPermsForgeMod::refreshRuntimePermissions, rootLiteral)));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -169,6 +172,24 @@ public final class ClutchPermsForgeMod {
      */
     public static PermissionResolver getPermissionResolver() {
         return getRuntime().permissionResolver();
+    }
+
+    /**
+     * Returns the active runtime config.
+     *
+     * @return runtime config initialized during Forge bootstrap
+     */
+    public static ClutchPermsConfig getClutchPermsConfig() {
+        return getRuntime().config();
+    }
+
+    /**
+     * Updates config through the shared runtime.
+     *
+     * @param updater config updater
+     */
+    public static void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+        getRuntime().updateConfig(updater);
     }
 
     /**

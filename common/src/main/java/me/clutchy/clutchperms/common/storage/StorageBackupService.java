@@ -36,6 +36,8 @@ public final class StorageBackupService {
 
     private final Clock clock;
 
+    private final int retentionLimit;
+
     /**
      * Creates a backup service for a set of live storage files.
      *
@@ -44,13 +46,30 @@ public final class StorageBackupService {
      * @return backup service
      */
     public static StorageBackupService forFiles(Path backupRoot, Map<StorageFileKind, Path> liveFiles) {
-        return new StorageBackupService(backupRoot, liveFiles, Clock.systemUTC());
+        return forFiles(backupRoot, liveFiles, RETENTION_LIMIT);
+    }
+
+    /**
+     * Creates a backup service for a set of live storage files.
+     *
+     * @param backupRoot root directory that contains per-kind backup directories
+     * @param liveFiles live storage files by kind
+     * @param retentionLimit newest backups retained per storage file
+     * @return backup service
+     */
+    public static StorageBackupService forFiles(Path backupRoot, Map<StorageFileKind, Path> liveFiles, int retentionLimit) {
+        return new StorageBackupService(backupRoot, liveFiles, Clock.systemUTC(), retentionLimit);
     }
 
     StorageBackupService(Path backupRoot, Map<StorageFileKind, Path> liveFiles, Clock clock) {
+        this(backupRoot, liveFiles, clock, RETENTION_LIMIT);
+    }
+
+    StorageBackupService(Path backupRoot, Map<StorageFileKind, Path> liveFiles, Clock clock, int retentionLimit) {
         this.backupRoot = Objects.requireNonNull(backupRoot, "backupRoot").toAbsolutePath().normalize();
         this.liveFiles = normalizeLiveFiles(liveFiles);
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.retentionLimit = new StorageWriteOptions(retentionLimit).backupRetentionLimit();
     }
 
     /**
@@ -60,6 +79,15 @@ public final class StorageBackupService {
      */
     public List<StorageFileKind> fileKinds() {
         return List.copyOf(liveFiles.keySet());
+    }
+
+    /**
+     * Returns newest-backup retention for this service.
+     *
+     * @return newest backups retained per storage file
+     */
+    public int retentionLimit() {
+        return retentionLimit;
     }
 
     /**
@@ -197,7 +225,7 @@ public final class StorageBackupService {
 
     private void pruneBackups(StorageFileKind kind) throws IOException {
         List<StorageBackup> backups = new ArrayList<>(listBackups(kind));
-        for (int index = RETENTION_LIMIT; index < backups.size(); index++) {
+        for (int index = retentionLimit; index < backups.size(); index++) {
             Files.deleteIfExists(backups.get(index).path());
         }
     }

@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.paper;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
@@ -17,6 +18,7 @@ import me.clutchy.clutchperms.common.command.CommandMessage;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
@@ -82,6 +84,16 @@ final class PaperClutchPermsCommand {
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
             return plugin.getStatusDiagnostics();
+        }
+
+        @Override
+        public ClutchPermsConfig config() {
+            return plugin.getClutchPermsConfig();
+        }
+
+        @Override
+        public void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+            plugin.updateConfig(updater);
         }
 
         @Override

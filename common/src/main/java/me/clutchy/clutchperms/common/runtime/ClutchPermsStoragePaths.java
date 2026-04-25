@@ -9,7 +9,9 @@ import me.clutchy.clutchperms.common.storage.StorageFileKind;
 /**
  * Platform-neutral ClutchPerms JSON storage paths.
  */
-public record ClutchPermsStoragePaths(Path permissionsFile, Path subjectsFile, Path groupsFile, Path nodesFile, Path backupRoot) {
+public record ClutchPermsStoragePaths(Path configFile, Path permissionsFile, Path subjectsFile, Path groupsFile, Path nodesFile, Path backupRoot) {
+
+    private static final String CONFIG_FILE_NAME = "config.json";
 
     private static final String PERMISSIONS_FILE_NAME = "permissions.json";
 
@@ -27,14 +29,16 @@ public record ClutchPermsStoragePaths(Path permissionsFile, Path subjectsFile, P
      */
     public static ClutchPermsStoragePaths inDirectory(Path storageDirectory) {
         Path normalizedStorageDirectory = Objects.requireNonNull(storageDirectory, "storageDirectory").toAbsolutePath().normalize();
-        return new ClutchPermsStoragePaths(normalizedStorageDirectory.resolve(PERMISSIONS_FILE_NAME), normalizedStorageDirectory.resolve(SUBJECTS_FILE_NAME),
-                normalizedStorageDirectory.resolve(GROUPS_FILE_NAME), normalizedStorageDirectory.resolve(NODES_FILE_NAME), normalizedStorageDirectory.resolve("backups"));
+        return new ClutchPermsStoragePaths(normalizedStorageDirectory.resolve(CONFIG_FILE_NAME), normalizedStorageDirectory.resolve(PERMISSIONS_FILE_NAME),
+                normalizedStorageDirectory.resolve(SUBJECTS_FILE_NAME), normalizedStorageDirectory.resolve(GROUPS_FILE_NAME), normalizedStorageDirectory.resolve(NODES_FILE_NAME),
+                normalizedStorageDirectory.resolve("backups"));
     }
 
     /**
      * Normalizes every storage path.
      */
     public ClutchPermsStoragePaths {
+        configFile = normalize(configFile, "configFile");
         permissionsFile = normalize(permissionsFile, "permissionsFile");
         subjectsFile = normalize(subjectsFile, "subjectsFile");
         groupsFile = normalize(groupsFile, "groupsFile");

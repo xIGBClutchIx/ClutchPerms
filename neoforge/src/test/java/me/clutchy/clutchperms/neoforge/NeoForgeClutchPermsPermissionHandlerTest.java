@@ -317,7 +317,7 @@ final class NeoForgeClutchPermsPermissionHandlerTest {
 
         assertEquals(Boolean.FALSE, suppliedHandler.getOfflinePermission(SUBJECT_ID, booleanNode));
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of("Validated permissions, subjects, groups, and known nodes from disk."), console.messages());
+        assertEquals(List.of("Validated config, permissions, subjects, groups, and known nodes from disk."), console.messages());
     }
 
     @Test

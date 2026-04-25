@@ -5,7 +5,9 @@ import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -80,6 +82,24 @@ public interface ClutchPermsCommandEnvironment<S> {
      * @return active status diagnostics
      */
     CommandStatusDiagnostics statusDiagnostics();
+
+    /**
+     * Returns the active runtime config used by shared commands.
+     *
+     * @return active runtime config
+     */
+    default ClutchPermsConfig config() {
+        return ClutchPermsConfig.defaults();
+    }
+
+    /**
+     * Updates the active runtime config and applies it through the platform storage lifecycle.
+     *
+     * @param updater config updater
+     */
+    default void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+        throw new UnsupportedOperationException("Config updates are not available for this command environment");
+    }
 
     /**
      * Reloads persisted permissions, subject metadata, groups, and known nodes from platform storage.

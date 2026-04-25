@@ -28,6 +28,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -48,6 +49,7 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -107,6 +109,8 @@ class ClutchPermsPaperPluginTest {
         assertTrue(Files.exists(dataFolder.resolve("subjects.json")));
         assertTrue(Files.exists(dataFolder.resolve("groups.json")));
         assertTrue(Files.exists(dataFolder.resolve("nodes.json")));
+        assertTrue(Files.exists(dataFolder.resolve("config.json")));
+        assertEquals(ClutchPermsConfig.defaults(), plugin.getClutchPermsConfig());
         assertFalse(Files.exists(dataFolder.resolve("backups")));
     }
 
@@ -138,7 +142,11 @@ class ClutchPermsPaperPluginTest {
     void paperPermissionMetadataExposesCommandPermissionNodes() {
         assertNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_ALL));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_CONFIG_ALL));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_STATUS));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_CONFIG_VIEW));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_CONFIG_SET));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_CONFIG_RESET));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_SET));
     }
 
@@ -206,6 +214,9 @@ class ClutchPermsPaperPluginTest {
         assertNextMessage(player, "Subjects file: " + plugin.getDataFolder().toPath().resolve("subjects.json").toAbsolutePath().normalize());
         assertNextMessage(player, "Groups file: " + plugin.getDataFolder().toPath().resolve("groups.json").toAbsolutePath().normalize());
         assertNextMessage(player, "Known nodes file: " + plugin.getDataFolder().toPath().resolve("nodes.json").toAbsolutePath().normalize());
+        assertNextMessage(player, "Config file: " + plugin.getDataFolder().toPath().resolve("config.json").toAbsolutePath().normalize());
+        assertNextMessage(player, "Backup retention: newest 10 per storage kind.");
+        assertNextMessage(player, "Command page sizes: help 7, lists 8.");
         assertNextMessage(player, "Known subjects: 1");
         assertNextMessage(player, "Known groups: 1");
         assertNextMessage(player, "Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size());
@@ -248,7 +259,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
 
-        assertNextMessage(player, "ClutchPerms commands (page 1/4):");
+        assertNextMessage(player, "ClutchPerms commands (page 1/5):");
         Component firstCommand = player.nextComponentMessage();
         assertEquals("/clutchperms help [page]", PlainTextComponentSerializer.plainText().serialize(firstCommand));
         assertComponentClick(firstCommand, ClickEvent.Action.SUGGEST_COMMAND, "/clutchperms help [page]");
@@ -258,7 +269,7 @@ class ClutchPermsPaperPluginTest {
             player.nextComponentMessage();
         }
         Component navigation = player.nextComponentMessage();
-        assertEquals("Page 1/4 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
+        assertEquals("Page 1/5 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
         assertComponentClick(navigation, ClickEvent.Action.RUN_COMMAND, "/clutchperms help 2");
         assertComponentHover(navigation);
     }
@@ -617,7 +628,9 @@ class ClutchPermsPaperPluginTest {
         assertEquals(1, dispatcher.execute("clutchperms user Target set example.backup false", adminSource));
         assertFalse(target.hasPermission("example.backup"));
 
-        StorageBackup backup = plugin.getStorageBackupService().listBackups(StorageFileKind.PERMISSIONS).getFirst();
+        StorageBackup backup = plugin.getStorageBackupService().listBackups(StorageFileKind.PERMISSIONS).stream()
+                .filter(candidate -> PermissionServices.jsonFile(candidate.path()).getPermission(target.getUniqueId(), "example.backup") == PermissionValue.TRUE).findFirst()
+                .orElseThrow(() -> new AssertionError("Expected a permissions backup containing example.backup=true"));
         assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(backup.path()).getPermission(target.getUniqueId(), "example.backup"));
 
         assertEquals(1, dispatcher.execute("clutchperms backup restore permissions " + backup.fileName(), adminSource));
@@ -699,7 +712,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
 
-        assertNextMessage(admin, "Reloaded permissions, subjects, groups, and known nodes from disk.");
+        assertNextMessage(admin, "Reloaded config, permissions, subjects, groups, and known nodes from disk.");
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
         assertTrue(target.isPermissionSet("example.reload"));
         assertTrue(target.hasPermission("example.reload"));
@@ -715,6 +728,31 @@ class ClutchPermsPaperPluginTest {
         assertSame(plugin.getPermissionNodeRegistry(), server.getServicesManager().getRegistration(PermissionNodeRegistry.class).getProvider());
         assertSame(plugin.getManualPermissionNodeRegistry(), server.getServicesManager().getRegistration(MutablePermissionNodeRegistry.class).getProvider());
         assertSame(plugin.getPermissionResolver(), server.getServicesManager().getRegistration(PermissionResolver.class).getProvider());
+    }
+
+    /**
+     * Confirms config command updates reload Paper services and active config.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void configSetReloadsStorageAndServiceRegistrations() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.ConfigSet", PermissionValue.TRUE);
+        PermissionService activePermissionService = plugin.getPermissionService();
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+
+        assertEquals(1, dispatcher.execute("clutchperms config set backups.retentionLimit 3", new TestCommandSourceStack(admin)));
+
+        assertNextMessage(admin, "Updated config backups.retentionLimit: 10 -> 3. Runtime reloaded.");
+        assertEquals(3, plugin.getClutchPermsConfig().backups().retentionLimit());
+        assertNotSame(activePermissionService, plugin.getPermissionService());
+        assertSame(plugin.getPermissionService(), server.getServicesManager().getRegistration(PermissionService.class).getProvider());
+        assertTrue(target.isPermissionSet("example.configset"));
+        assertTrue(target.hasPermission("example.configset"));
     }
 
     /**
@@ -738,7 +776,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms validate", new TestCommandSourceStack(admin)));
 
-        assertNextMessage(admin, "Validated permissions, subjects, groups, and known nodes from disk.");
+        assertNextMessage(admin, "Validated config, permissions, subjects, groups, and known nodes from disk.");
         assertSame(activePermissionService, plugin.getPermissionService());
         assertSame(activePermissionResolver, plugin.getPermissionResolver());
         assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
@@ -827,6 +865,36 @@ class ClutchPermsPaperPluginTest {
         assertTrue(target.isPermissionSet("example.reload"));
         assertTrue(target.hasPermission("example.reload"));
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
+    }
+
+    /**
+     * Confirms a malformed config file fails reload without replacing active Paper runtime state.
+     *
+     * @throws Exception when file setup fails unexpectedly
+     */
+    @Test
+    void malformedConfigFileFailsReloadWithoutReplacingRuntimeBridge() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.ConfigReload", PermissionValue.TRUE);
+        PermissionService activePermissionService = plugin.getPermissionService();
+        PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
+        ClutchPermsConfig activeConfig = plugin.getClutchPermsConfig();
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+        Path configFile = plugin.getDataFolder().toPath().resolve("config.json");
+
+        Files.writeString(configFile, "{not-json", StandardCharsets.UTF_8);
+
+        assertCommandFails(dispatcher, "clutchperms reload", admin, "Failed to reload ClutchPerms storage:");
+
+        assertSame(activePermissionService, plugin.getPermissionService());
+        assertSame(activePermissionResolver, plugin.getPermissionResolver());
+        assertEquals(activeConfig, plugin.getClutchPermsConfig());
+        assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
+        assertTrue(target.isPermissionSet("example.configreload"));
+        assertTrue(target.hasPermission("example.configreload"));
     }
 
     /**

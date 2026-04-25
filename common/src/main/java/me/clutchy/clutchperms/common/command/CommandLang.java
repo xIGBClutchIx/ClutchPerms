@@ -51,6 +51,12 @@ final class CommandLang {
 
     private static final String STATUS_NODES_FILE = "Known nodes file: %s";
 
+    private static final String STATUS_CONFIG_FILE = "Config file: %s";
+
+    private static final String STATUS_BACKUP_RETENTION = "Backup retention: newest %s per storage kind.";
+
+    private static final String STATUS_COMMAND_PAGE_SIZES = "Command page sizes: help %s, lists %s.";
+
     private static final String STATUS_KNOWN_SUBJECTS = "Known subjects: %s";
 
     private static final String STATUS_KNOWN_GROUPS = "Known groups: %s";
@@ -61,9 +67,9 @@ final class CommandLang {
 
     private static final String STATUS_RUNTIME_BRIDGE = "Runtime bridge: %s";
 
-    private static final String RELOAD_SUCCESS = "Reloaded permissions, subjects, groups, and known nodes from disk.";
+    private static final String RELOAD_SUCCESS = "Reloaded config, permissions, subjects, groups, and known nodes from disk.";
 
-    private static final String VALIDATE_SUCCESS = "Validated permissions, subjects, groups, and known nodes from disk.";
+    private static final String VALIDATE_SUCCESS = "Validated config, permissions, subjects, groups, and known nodes from disk.";
 
     private static final String ERROR_UNKNOWN_USER_TARGET = "Unknown user target: %s";
 
@@ -104,6 +110,34 @@ final class CommandLang {
     private static final String ERROR_NODE_OPERATION_FAILED = "Known permission node operation failed: %s";
 
     private static final String ERROR_BACKUP_OPERATION_FAILED = "Backup operation failed: %s";
+
+    private static final String ERROR_CONFIG_OPERATION_FAILED = "Config operation failed: %s";
+
+    private static final String CONFIG_HEADER = "ClutchPerms config:";
+
+    private static final String CONFIG_ROW = "%s = %s (%s; range %s-%s)";
+
+    private static final String CONFIG_GET = "%s = %s (%s; range %s-%s)";
+
+    private static final String CONFIG_UPDATED = "Updated config %s: %s -> %s. Runtime reloaded.";
+
+    private static final String CONFIG_RESET = "Reset config %s: %s -> %s. Runtime reloaded.";
+
+    private static final String CONFIG_RESET_ALL = "Reset all config values to defaults. Runtime reloaded.";
+
+    private static final String CONFIG_ALREADY_SET = "Config %s is already %s.";
+
+    private static final String CONFIG_ALREADY_DEFAULTS = "Config already matches defaults.";
+
+    private static final String ERROR_UNKNOWN_CONFIG_KEY = "Unknown config key: %s";
+
+    private static final String VALID_CONFIG_KEYS = "Valid config keys: %s";
+
+    private static final String CLOSEST_CONFIG_KEYS = "Closest config keys: %s";
+
+    private static final String ERROR_INVALID_CONFIG_VALUE = "Invalid config value for %s: %s";
+
+    private static final String CONFIG_VALUE_RANGE = "%s must be an integer between %s and %s.";
 
     private static final String ERROR_UNKNOWN_BACKUP_KIND = "Unknown backup file kind: %s";
 
@@ -319,6 +353,18 @@ final class CommandLang {
         return detail(STATUS_NODES_FILE, nodesFile);
     }
 
+    static CommandMessage statusConfigFile(String configFile) {
+        return detail(STATUS_CONFIG_FILE, configFile);
+    }
+
+    static CommandMessage statusBackupRetention(int retentionLimit) {
+        return detail(STATUS_BACKUP_RETENTION, retentionLimit);
+    }
+
+    static CommandMessage statusCommandPageSizes(int helpPageSize, int resultPageSize) {
+        return detail(STATUS_COMMAND_PAGE_SIZES, helpPageSize, resultPageSize);
+    }
+
     static CommandMessage statusKnownSubjects(int knownSubjects) {
         return detail(STATUS_KNOWN_SUBJECTS, knownSubjects);
     }
@@ -425,6 +471,62 @@ final class CommandLang {
 
     static CommandMessage backupOperationFailed(Throwable exception) {
         return error(ERROR_BACKUP_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage configOperationFailed(Throwable exception) {
+        return error(ERROR_CONFIG_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage configHeader() {
+        return heading(CONFIG_HEADER);
+    }
+
+    static CommandMessage configRow(String key, int value, String description, int minimum, int maximum) {
+        return detail(CONFIG_ROW, key, value, description, minimum, maximum);
+    }
+
+    static CommandMessage configGet(String key, int value, String description, int minimum, int maximum) {
+        return detail(CONFIG_GET, key, value, description, minimum, maximum);
+    }
+
+    static CommandMessage configUpdated(String key, int oldValue, int newValue) {
+        return success(CONFIG_UPDATED, key, oldValue, newValue);
+    }
+
+    static CommandMessage configReset(String key, int oldValue, int newValue) {
+        return success(CONFIG_RESET, key, oldValue, newValue);
+    }
+
+    static CommandMessage configResetAll() {
+        return success(CONFIG_RESET_ALL);
+    }
+
+    static CommandMessage configAlreadySet(String key, int value) {
+        return success(CONFIG_ALREADY_SET, key, value);
+    }
+
+    static CommandMessage configAlreadyDefaults() {
+        return success(CONFIG_ALREADY_DEFAULTS);
+    }
+
+    static CommandMessage unknownConfigKey(String key) {
+        return error(ERROR_UNKNOWN_CONFIG_KEY, key);
+    }
+
+    static CommandMessage validConfigKeys(String keys) {
+        return detail(VALID_CONFIG_KEYS, keys);
+    }
+
+    static CommandMessage closestConfigKeys(String keys) {
+        return detail(CLOSEST_CONFIG_KEYS, keys);
+    }
+
+    static CommandMessage invalidConfigValue(String key, String value) {
+        return error(ERROR_INVALID_CONFIG_VALUE, key, value);
+    }
+
+    static CommandMessage configValueRange(String key, int minimum, int maximum) {
+        return detail(CONFIG_VALUE_RANGE, key, minimum, maximum);
     }
 
     static CommandMessage unknownBackupKind(String token) {

@@ -28,6 +28,14 @@ public final class PermissionNodes {
 
     public static final String ADMIN_VALIDATE = ADMIN + ".validate";
 
+    public static final String ADMIN_CONFIG_ALL = ADMIN + ".config.*";
+
+    public static final String ADMIN_CONFIG_VIEW = ADMIN + ".config.view";
+
+    public static final String ADMIN_CONFIG_SET = ADMIN + ".config.set";
+
+    public static final String ADMIN_CONFIG_RESET = ADMIN + ".config.reset";
+
     public static final String ADMIN_BACKUP_LIST = ADMIN + ".backup.list";
 
     public static final String ADMIN_BACKUP_RESTORE = ADMIN + ".backup.restore";
@@ -82,13 +90,14 @@ public final class PermissionNodes {
 
     public static final String ADMIN_NODES_REMOVE = ADMIN + ".nodes.remove";
 
-    private static final List<String> COMMAND_NODES = List.of(ADMIN_HELP, ADMIN_STATUS, ADMIN_RELOAD, ADMIN_VALIDATE, ADMIN_BACKUP_LIST, ADMIN_BACKUP_RESTORE, ADMIN_USER_LIST,
-            ADMIN_USER_GET, ADMIN_USER_SET, ADMIN_USER_CLEAR, ADMIN_USER_CHECK, ADMIN_USER_EXPLAIN, ADMIN_USER_GROUPS, ADMIN_USER_GROUP_ADD, ADMIN_USER_GROUP_REMOVE,
-            ADMIN_GROUP_LIST, ADMIN_GROUP_CREATE, ADMIN_GROUP_DELETE, ADMIN_GROUP_VIEW, ADMIN_GROUP_GET, ADMIN_GROUP_SET, ADMIN_GROUP_CLEAR, ADMIN_GROUP_PARENTS,
-            ADMIN_GROUP_PARENT_ADD, ADMIN_GROUP_PARENT_REMOVE, ADMIN_USERS_LIST, ADMIN_USERS_SEARCH, ADMIN_NODES_LIST, ADMIN_NODES_SEARCH, ADMIN_NODES_ADD, ADMIN_NODES_REMOVE);
+    private static final List<String> COMMAND_NODES = List.of(ADMIN_HELP, ADMIN_STATUS, ADMIN_RELOAD, ADMIN_VALIDATE, ADMIN_CONFIG_VIEW, ADMIN_CONFIG_SET, ADMIN_CONFIG_RESET,
+            ADMIN_BACKUP_LIST, ADMIN_BACKUP_RESTORE, ADMIN_USER_LIST, ADMIN_USER_GET, ADMIN_USER_SET, ADMIN_USER_CLEAR, ADMIN_USER_CHECK, ADMIN_USER_EXPLAIN, ADMIN_USER_GROUPS,
+            ADMIN_USER_GROUP_ADD, ADMIN_USER_GROUP_REMOVE, ADMIN_GROUP_LIST, ADMIN_GROUP_CREATE, ADMIN_GROUP_DELETE, ADMIN_GROUP_VIEW, ADMIN_GROUP_GET, ADMIN_GROUP_SET,
+            ADMIN_GROUP_CLEAR, ADMIN_GROUP_PARENTS, ADMIN_GROUP_PARENT_ADD, ADMIN_GROUP_PARENT_REMOVE, ADMIN_USERS_LIST, ADMIN_USERS_SEARCH, ADMIN_NODES_LIST, ADMIN_NODES_SEARCH,
+            ADMIN_NODES_ADD, ADMIN_NODES_REMOVE);
 
     private static final List<String> COMMAND_WILDCARD_ASSIGNMENTS = List.of(ADMIN_ALL, ADMIN + ".backup.*", ADMIN + ".user.*", ADMIN + ".user.group.*", ADMIN + ".group.*",
-            ADMIN + ".group.parent.*", ADMIN + ".users.*", ADMIN + ".nodes.*");
+            ADMIN + ".group.parent.*", ADMIN + ".users.*", ADMIN + ".nodes.*", ADMIN_CONFIG_ALL);
 
     /**
      * Lists exact permission nodes required by ClutchPerms admin commands.

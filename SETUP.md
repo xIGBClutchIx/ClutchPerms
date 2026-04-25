@@ -38,7 +38,7 @@ The built jars are copied into `build/` with the same platform-specific names.
 
 ## 2. Start The Server Once
 
-Start the server once with ClutchPerms installed. Missing storage files are treated as empty state and are created with versioned JSON after a successful startup. `groups.json` starts with the built-in `default` group.
+Start the server once with ClutchPerms installed. Missing storage files are treated as empty state and are created with versioned JSON after a successful startup. Missing `config.json` uses defaults, and `groups.json` starts with the built-in `default` group.
 
 Storage locations:
 
@@ -52,11 +52,14 @@ Storage locations:
 Expected storage files:
 
 ```text
+config.json
 permissions.json
 groups.json
 subjects.json
 nodes.json
 ```
+
+`config.json` is created with defaults for backup retention and command page sizes. You can manage these values in-game with `clutchperms config`, or edit the file manually and run `clutchperms validate` before `clutchperms reload`.
 
 The `backups/` directory is created later when ClutchPerms replaces an existing storage file.
 
@@ -66,7 +69,7 @@ Run this from the server console to confirm ClutchPerms loaded:
 clutchperms status
 ```
 
-The status output should show storage paths, subject/group/node counts, resolver cache counts, and runtime bridge status.
+The status output should show storage paths, active config values, subject/group/node counts, resolver cache counts, and runtime bridge status.
 
 ## 3. Bootstrap The First Admin
 
@@ -173,19 +176,30 @@ Paper note: ClutchPerms expands wildcard assignments onto exact known permission
 
 ## 8. Validate, Reload, And Recover
 
-Validate manual JSON edits without applying them:
+Validate manual JSON/config edits without applying them:
 
 ```text
 clutchperms validate
 ```
 
-Reload all storage files after manual edits:
+Reload config and all storage files after manual edits:
 
 ```text
 clutchperms reload
 ```
 
 Reload is atomic from the command perspective. If any file is invalid, ClutchPerms keeps the active runtime state unchanged.
+
+View or change config from console or in-game:
+
+```text
+clutchperms config list
+clutchperms config get commands.resultPageSize
+clutchperms config set commands.resultPageSize 12
+clutchperms config reset commands.resultPageSize
+```
+
+Config command changes save `config.json`, reload runtime immediately, and roll the config file back if reload fails.
 
 List backups:
 
@@ -200,7 +214,7 @@ Restore one file from a backup:
 clutchperms backup restore groups groups-YYYYMMDD-HHMMSSSSS.json
 ```
 
-Restore validates the selected backup before replacing the live file, then reloads all storage immediately. If reload fails after replacement, ClutchPerms rolls the disk file back and keeps the active runtime state unchanged.
+Restore validates the selected backup before replacing the live file, then reloads config and all storage immediately. If reload fails after replacement, ClutchPerms rolls the disk file back and keeps the active runtime state unchanged. `config.json` is not restored by backup commands in this version.
 
 ## 9. Enable Forge And NeoForge Runtime Checks
 
@@ -254,7 +268,7 @@ Target resolution checks exact online player name first, exact stored last-known
 
 Check that the server selected `clutchperms:direct` as the active permission handler. Without that setting, commands and JSON storage still work, but Forge or NeoForge permission checks use the platform default handler.
 
-### A JSON Edit Broke Reload
+### A JSON Or Config Edit Broke Reload
 
 Use:
 
@@ -263,4 +277,4 @@ clutchperms validate
 clutchperms backup list
 ```
 
-Then either fix the JSON and run `clutchperms reload`, or restore a backup for the broken file.
+Then either fix the JSON/config file and run `clutchperms reload`, or restore a backup for the broken storage file.

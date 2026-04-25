@@ -2,6 +2,7 @@ package me.clutchy.clutchperms.common.runtime;
 
 import java.util.Objects;
 
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
@@ -18,9 +19,11 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
  * @param manualPermissionNodeRegistry manual known-node registry
  * @param permissionNodeRegistry merged known-node registry
  * @param permissionResolver effective permission resolver
+ * @param config active runtime config
  */
 public record ClutchPermsRuntimeServices(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService,
-        MutablePermissionNodeRegistry manualPermissionNodeRegistry, PermissionNodeRegistry permissionNodeRegistry, PermissionResolver permissionResolver) {
+        MutablePermissionNodeRegistry manualPermissionNodeRegistry, PermissionNodeRegistry permissionNodeRegistry, PermissionResolver permissionResolver,
+        ClutchPermsConfig config) {
 
     /**
      * Validates active services.
@@ -32,5 +35,6 @@ public record ClutchPermsRuntimeServices(PermissionService permissionService, Su
         manualPermissionNodeRegistry = Objects.requireNonNull(manualPermissionNodeRegistry, "manualPermissionNodeRegistry");
         permissionNodeRegistry = Objects.requireNonNull(permissionNodeRegistry, "permissionNodeRegistry");
         permissionResolver = Objects.requireNonNull(permissionResolver, "permissionResolver");
+        config = Objects.requireNonNull(config, "config");
     }
 }

@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.neoforge;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.function.UnaryOperator;
 
 import org.slf4j.Logger;
 
@@ -10,6 +11,7 @@ import com.mojang.logging.LogUtils;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
@@ -79,7 +81,8 @@ public final class ClutchPermsNeoForgeMod {
                 .register(NeoForgeClutchPermsCommand.create(ClutchPermsNeoForgeMod::getPermissionService, ClutchPermsNeoForgeMod::getSubjectMetadataService,
                         ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getPermissionNodeRegistry, ClutchPermsNeoForgeMod::getManualPermissionNodeRegistry,
                         ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage,
-                        ClutchPermsNeoForgeMod::validateStorage, ClutchPermsNeoForgeMod::getStorageBackupService, ClutchPermsNeoForgeMod::refreshRuntimePermissions, rootLiteral)));
+                        ClutchPermsNeoForgeMod::validateStorage, ClutchPermsNeoForgeMod::getStorageBackupService, ClutchPermsNeoForgeMod::getClutchPermsConfig,
+                        ClutchPermsNeoForgeMod::updateConfig, ClutchPermsNeoForgeMod::refreshRuntimePermissions, rootLiteral)));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -170,6 +173,24 @@ public final class ClutchPermsNeoForgeMod {
      */
     public static PermissionResolver getPermissionResolver() {
         return getRuntime().permissionResolver();
+    }
+
+    /**
+     * Returns the active runtime config.
+     *
+     * @return runtime config initialized during NeoForge bootstrap
+     */
+    public static ClutchPermsConfig getClutchPermsConfig() {
+        return getRuntime().config();
+    }
+
+    /**
+     * Updates config through the shared runtime.
+     *
+     * @param updater config updater
+     */
+    public static void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+        getRuntime().updateConfig(updater);
     }
 
     /**

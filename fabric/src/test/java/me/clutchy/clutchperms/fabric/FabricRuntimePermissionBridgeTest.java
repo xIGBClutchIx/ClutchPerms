@@ -234,7 +234,7 @@ final class FabricRuntimePermissionBridgeTest {
 
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.reload"));
         assertEquals(1, environment.runtimeRefreshes());
-        assertEquals(List.of("Reloaded permissions, subjects, groups, and known nodes from disk."), console.messages());
+        assertEquals(List.of("Reloaded config, permissions, subjects, groups, and known nodes from disk."), console.messages());
     }
 
     @Test
@@ -252,7 +252,7 @@ final class FabricRuntimePermissionBridgeTest {
 
         assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.validate"));
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of("Validated permissions, subjects, groups, and known nodes from disk."), console.messages());
+        assertEquals(List.of("Validated config, permissions, subjects, groups, and known nodes from disk."), console.messages());
     }
 
     @Test

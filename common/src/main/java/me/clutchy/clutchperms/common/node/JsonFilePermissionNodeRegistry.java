@@ -22,6 +22,7 @@ import com.google.gson.JsonPrimitive;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.storage.StorageFiles;
+import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
 
 /**
  * JSON-backed manual known-node registry.
@@ -34,10 +35,17 @@ final class JsonFilePermissionNodeRegistry implements MutablePermissionNodeRegis
 
     private final Path nodesFile;
 
+    private final StorageWriteOptions writeOptions;
+
     private InMemoryPermissionNodeRegistry delegate;
 
     JsonFilePermissionNodeRegistry(Path nodesFile) {
+        this(nodesFile, StorageWriteOptions.defaults());
+    }
+
+    JsonFilePermissionNodeRegistry(Path nodesFile, StorageWriteOptions writeOptions) {
         this.nodesFile = nodesFile.toAbsolutePath().normalize();
+        this.writeOptions = StorageWriteOptions.defaultIfNull(writeOptions);
         this.delegate = new InMemoryPermissionNodeRegistry(loadNodes());
     }
 
@@ -83,7 +91,7 @@ final class JsonFilePermissionNodeRegistry implements MutablePermissionNodeRegis
 
     private void saveNodes(Set<KnownPermissionNode> snapshot) {
         try {
-            StorageFiles.writeAtomicallyWithBackup(nodesFile, StorageFileKind.NODES, writer -> {
+            StorageFiles.writeAtomicallyWithBackup(nodesFile, StorageFileKind.NODES, writeOptions, writer -> {
                 GSON.toJson(toJson(snapshot), writer);
                 writer.write(System.lineSeparator());
             });

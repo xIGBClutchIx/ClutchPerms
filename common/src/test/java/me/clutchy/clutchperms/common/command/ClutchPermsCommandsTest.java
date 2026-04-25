@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,9 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestion;
 
+import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
@@ -168,6 +172,23 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms command help page size follows active config.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void helpCommandUsesConfiguredPageSize() throws CommandSyntaxException {
+        environment.setConfig(new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), new ClutchPermsCommandConfig(3, 8)));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms", console);
+
+        assertEquals(List.of("ClutchPerms commands (page 1/11):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/11 | Next >"),
+                console.messages());
+        assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
+    }
+
+    /**
      * Confirms invalid and out-of-range help pages return styled ClutchPerms feedback.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -181,7 +202,7 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("Invalid page: nope", "Pages start at 1.", "Try one:", "  /clutchperms help 1"), invalid.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms help 99", outOfRange));
-        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-4.", "Try one:", "  /clutchperms help 4"), outOfRange.messages());
+        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-5.", "Try one:", "  /clutchperms help 5"), outOfRange.messages());
     }
 
     /**
@@ -257,6 +278,150 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms status reports active config values.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void statusSubcommandReportsActiveConfig() throws CommandSyntaxException {
+        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5)));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms status", console);
+
+        assertTrue(console.messages().contains("Backup retention: newest 3 per storage kind."));
+        assertTrue(console.messages().contains("Command page sizes: help 4, lists 5."));
+    }
+
+    /**
+     * Confirms config list and get show active runtime config values.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void configCommandsListAndGetValues() throws CommandSyntaxException {
+        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5)));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms config", console);
+        dispatcher.execute("clutchperms config get commands.helpPageSize", console);
+
+        assertEquals(List.of("ClutchPerms config:", "backups.retentionLimit = 3 (newest backups kept per storage kind; range 1-1000)",
+                "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)", "commands.resultPageSize = 5 (rows shown per list-result page; range 1-50)",
+                "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)"), console.messages());
+    }
+
+    /**
+     * Confirms config set applies immediately to active command behavior.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void configSetUpdatesValuesAndReloadsRuntimeConfig() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms config set backups.retentionLimit 3", console);
+        dispatcher.execute("clutchperms config set commands.helpPageSize 3", console);
+        dispatcher.execute("clutchperms config set commands.resultPageSize 2", console);
+
+        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(3, 2)), environment.config());
+        assertEquals(3, environment.configUpdates());
+        assertEquals(3, environment.runtimeRefreshes());
+        assertTrue(console.messages().contains("Updated config backups.retentionLimit: 10 -> 3. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config commands.helpPageSize: 7 -> 3. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config commands.resultPageSize: 8 -> 2. Runtime reloaded."));
+
+        TestSource help = TestSource.console();
+        dispatcher.execute("clutchperms", help);
+        assertEquals(List.of("ClutchPerms commands (page 1/11):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/11 | Next >"), help.messages());
+
+        permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "example.03", PermissionValue.TRUE);
+        TestSource list = TestSource.console();
+        dispatcher.execute("clutchperms user Target list 2", list);
+        assertEquals(List.of("Permissions for Target (00000000-0000-0000-0000-000000000002) (page 2/2):", "  example.03=TRUE", "< Prev | Page 2/2"), list.messages());
+    }
+
+    /**
+     * Confirms config reset supports one key and all keys.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void configResetRestoresDefaults() throws CommandSyntaxException {
+        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5)));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms config reset backups.retentionLimit", console);
+        dispatcher.execute("clutchperms config reset all", console);
+
+        assertEquals(ClutchPermsConfig.defaults(), environment.config());
+        assertEquals(2, environment.configUpdates());
+        assertEquals(2, environment.runtimeRefreshes());
+        assertEquals(List.of("Reset config backups.retentionLimit: 3 -> 10. Runtime reloaded.", "Reset all config values to defaults. Runtime reloaded."), console.messages());
+    }
+
+    /**
+     * Confirms same-value config changes succeed without writing or refreshing runtime state.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void configSameValueChangesAvoidReload() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms config set backups.retentionLimit 10", console);
+        dispatcher.execute("clutchperms config reset all", console);
+
+        assertEquals(ClutchPermsConfig.defaults(), environment.config());
+        assertEquals(0, environment.configUpdates());
+        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(List.of("Config backups.retentionLimit is already 10.", "Config already matches defaults."), console.messages());
+    }
+
+    /**
+     * Confirms config command failures are styled and do not apply changes.
+     */
+    @Test
+    void configCommandsRejectBadKeysValuesAndUpdateFailures() {
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms config get commands.help", console, "Unknown config key: commands.help");
+        assertCommandFails("clutchperms config set commands.helpPageSize nope", console, "Invalid config value for commands.helpPageSize: nope");
+        assertCommandFails("clutchperms config set commands.helpPageSize 51", console, "commands.helpPageSize must be an integer between 1 and 50.");
+
+        environment.failConfigUpdate(new PermissionStorageException("disk blocked"));
+        assertCommandFails("clutchperms config set backups.retentionLimit 3", console, "Config operation failed: disk blocked");
+
+        assertEquals(ClutchPermsConfig.defaults(), environment.config());
+        assertEquals(0, environment.configUpdates());
+        assertEquals(0, environment.runtimeRefreshes());
+    }
+
+    /**
+     * Confirms config view, set, and reset use separate command permissions.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void configCommandsUseGranularPermissions() throws CommandSyntaxException {
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertCommandFails("clutchperms config list", player, "You do not have permission to use ClutchPerms commands.");
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_CONFIG_VIEW, PermissionValue.TRUE);
+        assertEquals(1, dispatcher.execute("clutchperms config list", player));
+        assertCommandFails("clutchperms config set backups.retentionLimit 3", player, "You do not have permission to use ClutchPerms commands.");
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_CONFIG_SET, PermissionValue.TRUE);
+        assertEquals(1, dispatcher.execute("clutchperms config set backups.retentionLimit 3", player));
+        assertCommandFails("clutchperms config reset backups.retentionLimit", player, "You do not have permission to use ClutchPerms commands.");
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_CONFIG_RESET, PermissionValue.TRUE);
+        assertEquals(1, dispatcher.execute("clutchperms config reset backups.retentionLimit", player));
+    }
+
+    /**
      * Confirms reload refreshes storage and runtime bridges in order.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -269,7 +434,7 @@ class ClutchPermsCommandsTest {
 
         assertEquals(1, environment.reloads());
         assertEquals(1, environment.runtimeRefreshes());
-        assertEquals(List.of("Reloaded permissions, subjects, groups, and known nodes from disk."), console.messages());
+        assertEquals(List.of("Reloaded config, permissions, subjects, groups, and known nodes from disk."), console.messages());
     }
 
     /**
@@ -300,7 +465,7 @@ class ClutchPermsCommandsTest {
         assertEquals(1, environment.validations());
         assertEquals(0, environment.reloads());
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of("Validated permissions, subjects, groups, and known nodes from disk."), console.messages());
+        assertEquals(List.of("Validated config, permissions, subjects, groups, and known nodes from disk."), console.messages());
     }
 
     /**
@@ -1250,6 +1415,24 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms list result page size follows active config.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void listCommandsUseConfiguredPageSize() throws CommandSyntaxException {
+        environment.setConfig(new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), new ClutchPermsCommandConfig(7, 2)));
+        permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "example.03", PermissionValue.TRUE);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target list 2", console);
+
+        assertEquals(List.of("Permissions for Target (00000000-0000-0000-0000-000000000002) (page 2/2):", "  example.03=TRUE", "< Prev | Page 2/2"), console.messages());
+    }
+
+    /**
      * Confirms list pages reject invalid page tokens through styled feedback.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -1386,7 +1569,8 @@ class ClutchPermsCommandsTest {
 
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
-                "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Known subjects: " + knownSubjects, "Known groups: 1",
+                "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Config file: " + STATUS_DIAGNOSTICS.configFile(),
+                "Backup retention: newest 10 per storage kind.", "Command page sizes: help 7, lists 8.", "Known subjects: " + knownSubjects, "Known groups: 1",
                 "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
                 "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
@@ -1396,9 +1580,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageOneMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 1/4):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
-                "/" + rootLiteral + " validate", "/" + rootLiteral + " backup list [kind] [page]", "/" + rootLiteral + " backup list page <page>",
-                "/" + rootLiteral + " backup restore <kind> <backup-file>", "Page 1/4 | Next >");
+        return List.of("ClutchPerms commands (page 1/5):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
+                "/" + rootLiteral + " validate", "/" + rootLiteral + " config list", "/" + rootLiteral + " config get <key>", "/" + rootLiteral + " config set <key> <value>",
+                "Page 1/5 | Next >");
     }
 
     private static List<String> commandListPageTwoMessages() {
@@ -1406,9 +1590,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageTwoMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 2/4):", "/" + rootLiteral + " user <target> list [page]", "/" + rootLiteral + " user <target> get <node>",
-                "/" + rootLiteral + " user <target> set <node> <true|false>", "/" + rootLiteral + " user <target> clear <node>", "/" + rootLiteral + " user <target> check <node>",
-                "/" + rootLiteral + " user <target> explain <node>", "/" + rootLiteral + " user <target> groups [page]", "< Prev | Page 2/4 | Next >");
+        return List.of("ClutchPerms commands (page 2/5):", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup list [kind] [page]",
+                "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup restore <kind> <backup-file>", "/" + rootLiteral + " user <target> list [page]",
+                "/" + rootLiteral + " user <target> get <node>", "/" + rootLiteral + " user <target> set <node> <true|false>", "< Prev | Page 2/5 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {
@@ -1481,15 +1665,21 @@ class ClutchPermsCommandsTest {
 
         private StorageBackupService storageBackupService;
 
+        private ClutchPermsConfig config = ClutchPermsConfig.defaults();
+
         private int reloads;
 
         private int validations;
 
         private int runtimeRefreshes;
 
+        private int configUpdates;
+
         private RuntimeException reloadFailure;
 
         private RuntimeException validationFailure;
+
+        private RuntimeException configUpdateFailure;
 
         private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService,
                 MutablePermissionNodeRegistry manualPermissionNodeRegistry, PermissionResolver permissionResolver) {
@@ -1516,8 +1706,16 @@ class ClutchPermsCommandsTest {
             this.validationFailure = validationFailure;
         }
 
+        private void failConfigUpdate(RuntimeException configUpdateFailure) {
+            this.configUpdateFailure = configUpdateFailure;
+        }
+
         private void setStorageBackupService(StorageBackupService storageBackupService) {
             this.storageBackupService = storageBackupService;
+        }
+
+        private void setConfig(ClutchPermsConfig config) {
+            this.config = config;
         }
 
         private int reloads() {
@@ -1530,6 +1728,10 @@ class ClutchPermsCommandsTest {
 
         private int runtimeRefreshes() {
             return runtimeRefreshes;
+        }
+
+        private int configUpdates() {
+            return configUpdates;
         }
 
         @Override
@@ -1566,6 +1768,20 @@ class ClutchPermsCommandsTest {
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
             return STATUS_DIAGNOSTICS;
+        }
+
+        @Override
+        public ClutchPermsConfig config() {
+            return config;
+        }
+
+        @Override
+        public void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+            if (configUpdateFailure != null) {
+                throw configUpdateFailure;
+            }
+            config = updater.apply(config);
+            configUpdates++;
         }
 
         @Override

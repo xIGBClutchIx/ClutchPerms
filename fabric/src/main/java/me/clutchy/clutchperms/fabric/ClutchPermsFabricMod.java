@@ -3,12 +3,14 @@ package me.clutchy.clutchperms.fabric;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.function.UnaryOperator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
@@ -63,11 +65,12 @@ public final class ClutchPermsFabricMod implements ModInitializer {
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> ClutchPermsCommands.ROOT_LITERALS.forEach(
-                rootLiteral -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService,
-                        ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionNodeRegistry, ClutchPermsFabricMod::getManualPermissionNodeRegistry,
-                        ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics, ClutchPermsFabricMod::reloadStorage,
-                        ClutchPermsFabricMod::validateStorage, ClutchPermsFabricMod::getStorageBackupService, ClutchPermsFabricMod::refreshRuntimePermissions, rootLiteral))));
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> ClutchPermsCommands.ROOT_LITERALS
+                .forEach(rootLiteral -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService,
+                        ClutchPermsFabricMod::getSubjectMetadataService, ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionNodeRegistry,
+                        ClutchPermsFabricMod::getManualPermissionNodeRegistry, ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics,
+                        ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::validateStorage, ClutchPermsFabricMod::getStorageBackupService,
+                        ClutchPermsFabricMod::getClutchPermsConfig, ClutchPermsFabricMod::updateConfig, ClutchPermsFabricMod::refreshRuntimePermissions, rootLiteral))));
         FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionResolver);
         runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
@@ -136,6 +139,24 @@ public final class ClutchPermsFabricMod implements ModInitializer {
      */
     public static PermissionResolver getPermissionResolver() {
         return getRuntime().permissionResolver();
+    }
+
+    /**
+     * Returns the active runtime config.
+     *
+     * @return runtime config initialized during Fabric bootstrap
+     */
+    public static ClutchPermsConfig getClutchPermsConfig() {
+        return getRuntime().config();
+    }
+
+    /**
+     * Updates config through the shared runtime.
+     *
+     * @param updater config updater
+     */
+    public static void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+        getRuntime().updateConfig(updater);
     }
 
     /**

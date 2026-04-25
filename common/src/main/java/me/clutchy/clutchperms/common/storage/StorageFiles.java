@@ -33,7 +33,21 @@ public final class StorageFiles {
      * @throws IOException when the file cannot be written or replaced
      */
     public static void writeAtomicallyWithBackup(Path targetFile, StorageFileKind kind, StorageWriter writerAction) throws IOException {
+        writeAtomicallyWithBackup(targetFile, kind, StorageWriteOptions.defaults(), writerAction);
+    }
+
+    /**
+     * Writes a live storage file through a temporary file, backing up the previous live file before replacement.
+     *
+     * @param targetFile live storage file
+     * @param kind storage file kind
+     * @param writeOptions storage write options
+     * @param writerAction action that writes the new file content
+     * @throws IOException when the file cannot be written or replaced
+     */
+    public static void writeAtomicallyWithBackup(Path targetFile, StorageFileKind kind, StorageWriteOptions writeOptions, StorageWriter writerAction) throws IOException {
         Path normalizedTarget = targetFile.toAbsolutePath().normalize();
+        StorageWriteOptions requiredWriteOptions = StorageWriteOptions.defaultIfNull(writeOptions);
         Path parentDirectory = normalizedTarget.getParent();
         if (parentDirectory != null) {
             Files.createDirectories(parentDirectory);
@@ -47,7 +61,7 @@ public final class StorageFiles {
                 writerAction.write(writer);
             }
 
-            StorageBackupService.forFiles(backupRootFor(normalizedTarget), Map.of(kind, normalizedTarget)).backupExistingFile(kind);
+            StorageBackupService.forFiles(backupRootFor(normalizedTarget), Map.of(kind, normalizedTarget), requiredWriteOptions.backupRetentionLimit()).backupExistingFile(kind);
             moveAtomically(temporaryFile, normalizedTarget);
             temporaryFile = null;
         } finally {

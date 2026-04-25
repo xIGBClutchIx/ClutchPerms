@@ -49,6 +49,7 @@ Shared package ownership:
 - `common.group` - group definitions, group permissions, memberships, group storage, and group observers
 - `common.node` - known permission node registry, manual node storage, registry composition, and node observers
 - `common.subject` - last-known subject metadata
+- `common.config` - runtime config parsing, defaults, validation, and materialization
 - `common.storage` - storage exceptions, atomic file writes, backup listing, and restore rollback helpers
 - `common.runtime` - platform-neutral storage paths, active service snapshots, reload/validate/backup wiring, resolver cache invalidation, and runtime refresh hooks
 - `common.command` - shared Brigadier root wiring, command behavior, command messages, and platform command environment contract
@@ -89,6 +90,7 @@ Do not add contexts, priorities, imports, migrations, or LuckPerms bridges unles
 
 Current persisted files:
 
+- `config.json` for runtime settings such as backup retention and command page sizes
 - `permissions.json` for direct user permission assignments
 - `groups.json` for group definitions, group permissions, parent links, and memberships
 - `subjects.json` for subject metadata
@@ -103,8 +105,8 @@ Locations:
 
 Storage expectations:
 
-- Treat missing files as empty state, except group storage starts with the built-in `default` group.
-- After successful startup or reload, materialize missing storage files with versioned JSON so fresh installs have visible files, including `default` in `groups.json`.
+- Treat missing storage files as empty state, except group storage starts with the built-in `default` group. Treat missing `config.json` as default config.
+- After successful startup or reload, materialize missing storage/config files with versioned JSON so fresh installs have visible files, including `default` in `groups.json`.
 - Save mutations immediately.
 - Create parent directories as needed.
 - Use deterministic output.
@@ -114,15 +116,17 @@ Storage expectations:
 - JSON-backed mutations must commit in-memory runtime state only after the replacement file is successfully written.
 - If a mutation save fails, keep the previous in-memory state, resolver cache notifications, runtime bridge notifications, and live JSON file unchanged.
 - The first save of a missing live file must not create a backup.
-- Keep backup retention at the newest 10 files per storage kind until a runtime config exists.
+- Keep backup retention controlled by `config.json` `backups.retentionLimit`, defaulting to 10 newest files per storage kind.
+- In-game config management only covers `backups.retentionLimit`, `commands.helpPageSize`, and `commands.resultPageSize` until chat settings are added deliberately.
 - Backup layout is `backups/<kind>/<kind>-YYYYMMDD-HHMMSSSSS.json`, where kind is `permissions`, `subjects`, `groups`, or `nodes`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
-- Fail startup, validate, or reload on malformed JSON, unsupported versions, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
-- `/clutchperms validate` should parse all persisted files without replacing active services, refreshing runtime bridges, or mutating storage.
+- Fail startup, validate, or reload on malformed JSON, unsupported versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- `/clutchperms validate` should parse config and all persisted files without replacing active services/config, refreshing runtime bridges, or mutating storage.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
-- Successful reload should replace active services and the active resolver cache; failed reload should leave the old resolver and its cache in place.
+- Successful reload should replace active services, active config, and the active resolver cache; failed reload should leave the old config, resolver, and resolver cache in place.
 - Shared storage lifecycle wiring belongs in `common.runtime.ClutchPermsRuntime`; platform modules should provide storage roots, platform known-node suppliers, runtime refresh hooks, service registration, logging, and lifecycle events.
-- `/clutchperms backup restore` validates the selected backup file before replacing live storage, then restores one file, reloads all four persisted files, and refreshes runtime bridges. If pre-restore validation fails, disk and active runtime state must remain unchanged. If reload fails after replacement, it must roll disk back to the previous live file and keep active services/runtime state unchanged.
+- `/clutchperms backup restore` validates the selected backup file before replacing live storage, then restores one file, reloads config plus all four persisted storage files, and refreshes runtime bridges. If pre-restore validation fails, disk and active runtime state must remain unchanged. If reload fails after replacement, it must roll disk back to the previous live file and keep active services/runtime state unchanged.
+- `config.json` is not included in backup list or restore commands in this version.
 - If restore rollback fails, command feedback should report that rollback failure explicitly.
 
 ## Runtime Bridges
@@ -163,6 +167,10 @@ Current command surface:
 - `/clutchperms status`
 - `/clutchperms reload`
 - `/clutchperms validate`
+- `/clutchperms config list`
+- `/clutchperms config get <key>`
+- `/clutchperms config set <key> <value>`
+- `/clutchperms config reset <key|all>`
 - `/clutchperms backup list`
 - `/clutchperms backup list page <page>`
 - `/clutchperms backup list <permissions|subjects|groups|nodes> [page]`
@@ -189,9 +197,11 @@ Authorization:
 - Players need the effective exact command permission for the command they run.
 - Use `clutchperms.admin.*` as the full ClutchPerms admin grant.
 - Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
+- Config command permissions are `clutchperms.admin.config.view`, `clutchperms.admin.config.set`, and `clutchperms.admin.config.reset`; `clutchperms.admin.config.*` should work through wildcard resolution.
 - `clutchperms.admin` is only the namespace root and does not authorize commands.
 - Other source types should be denied where the platform can distinguish them.
 - `status` should include storage paths, subject/group/node counts, resolver cache counts, and platform bridge status.
+- Config command changes should save `config.json`, reload runtime immediately, refresh runtime bridges, and roll `config.json` back if reload fails. Same-value config changes should not write or reload.
 - `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.
 - Bad user, group, parent group, backup kind/file, and manual known-node targets should return styled shared feedback with deterministic closest matches: case-insensitive prefix matches first, then substring matches, then small edit-distance matches, capped at 5 suggestions.
 - Node registry commands mutate only the manual registry. Built-in and platform-discovered known nodes are visible but not removable.

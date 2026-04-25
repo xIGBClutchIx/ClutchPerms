@@ -3,7 +3,9 @@ package me.clutchy.clutchperms.neoforge;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
@@ -11,6 +13,7 @@ import me.clutchy.clutchperms.common.command.CommandMessage;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
@@ -40,7 +43,9 @@ final class NeoForgeClutchPermsCommand {
             Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
             Runnable runtimePermissionRefresher) {
         return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
-                storageReloader, storageValidator, storageBackupService, runtimePermissionRefresher, ClutchPermsCommands.ROOT_LITERAL);
+                storageReloader, storageValidator, storageBackupService, ClutchPermsConfig::defaults, updater -> {
+                    throw new UnsupportedOperationException("Config updates are not available for this command environment");
+                }, runtimePermissionRefresher, ClutchPermsCommands.ROOT_LITERAL);
     }
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
@@ -48,9 +53,22 @@ final class NeoForgeClutchPermsCommand {
             Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
             Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
             Runnable runtimePermissionRefresher, String rootLiteral) {
-        return ClutchPermsCommands.builder(new NeoForgeCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionNodeRegistry,
-                manualPermissionNodeRegistry, permissionResolver, statusDiagnostics, storageReloader, storageValidator, storageBackupService, runtimePermissionRefresher),
-                rootLiteral);
+        return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
+                storageReloader, storageValidator, storageBackupService, ClutchPermsConfig::defaults, updater -> {
+                    throw new UnsupportedOperationException("Config updates are not available for this command environment");
+                }, runtimePermissionRefresher, rootLiteral);
+    }
+
+    static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
+            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
+            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
+            Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater, Runnable runtimePermissionRefresher, String rootLiteral) {
+        return ClutchPermsCommands
+                .builder(
+                        new NeoForgeCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry,
+                                permissionResolver, statusDiagnostics, storageReloader, storageValidator, storageBackupService, config, configUpdater, runtimePermissionRefresher),
+                        rootLiteral);
     }
 
     private NeoForgeClutchPermsCommand() {
@@ -60,7 +78,8 @@ final class NeoForgeClutchPermsCommand {
             Supplier<GroupService> groupServiceSupplier, Supplier<PermissionNodeRegistry> permissionNodeRegistrySupplier,
             Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistrySupplier, Supplier<PermissionResolver> permissionResolverSupplier,
             Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier, Runnable storageReloader, Runnable storageValidator,
-            Supplier<StorageBackupService> storageBackupServiceSupplier, Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
+            Supplier<StorageBackupService> storageBackupServiceSupplier, Supplier<ClutchPermsConfig> configSupplier, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater,
+            Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
 
         @Override
         public PermissionService permissionService() {
@@ -95,6 +114,16 @@ final class NeoForgeClutchPermsCommand {
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
             return statusDiagnosticsSupplier.get();
+        }
+
+        @Override
+        public ClutchPermsConfig config() {
+            return configSupplier.get();
+        }
+
+        @Override
+        public void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+            configUpdater.accept(updater);
         }
 
         @Override

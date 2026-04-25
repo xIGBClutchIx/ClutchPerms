@@ -1,11 +1,17 @@
 package me.clutchy.clutchperms.common.runtime;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfigs;
 import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
@@ -15,8 +21,10 @@ import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
+import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFiles;
+import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
@@ -64,6 +72,7 @@ public final class ClutchPermsRuntime {
     public synchronized ClutchPermsRuntimeServices reload() {
         ClutchPermsRuntimeServices reloadedServices = loadServices();
         StorageFiles.materializeMissingJsonFiles(storagePaths.storageFiles());
+        ClutchPermsConfigs.materializeDefault(storagePaths.configFile());
 
         ClutchPermsRuntimeServices previousServices = services;
         services = reloadedServices;
@@ -71,13 +80,63 @@ public final class ClutchPermsRuntime {
     }
 
     /**
+     * Writes an updated config, reloads all runtime services, and restores the previous config file if reload fails.
+     *
+     * @param updater config updater
+     * @return previously active services, or {@code null} when the updated config is unchanged
+     */
+    public synchronized ClutchPermsRuntimeServices updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+        ClutchPermsConfig currentConfig = config();
+        ClutchPermsConfig updatedConfig = Objects.requireNonNull(Objects.requireNonNull(updater, "updater").apply(currentConfig), "updatedConfig");
+        if (updatedConfig.equals(currentConfig)) {
+            return null;
+        }
+
+        Path configFile = storagePaths.configFile();
+        Path parentDirectory = configFile.getParent();
+        Path rollbackFile = null;
+        boolean configExisted = Files.exists(configFile);
+        try {
+            if (parentDirectory != null) {
+                Files.createDirectories(parentDirectory);
+            }
+            if (configExisted) {
+                rollbackFile = parentDirectory == null
+                        ? Files.createTempFile(configFile.getFileName().toString(), ".rollback")
+                        : Files.createTempFile(parentDirectory, configFile.getFileName().toString(), ".rollback");
+                Files.copy(configFile, rollbackFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            ClutchPermsConfigs.write(configFile, updatedConfig);
+            try {
+                return reload();
+            } catch (RuntimeException exception) {
+                restoreConfigFile(configFile, rollbackFile, configExisted, exception);
+                throw new PermissionStorageException("Failed to apply updated config; restored previous config file", exception);
+            }
+        } catch (IOException exception) {
+            throw new PermissionStorageException("Failed to update config at " + configFile, exception);
+        } finally {
+            if (rollbackFile != null) {
+                try {
+                    Files.deleteIfExists(rollbackFile);
+                } catch (IOException ignored) {
+                    // Best-effort cleanup; update failures are reported above.
+                }
+            }
+        }
+    }
+
+    /**
      * Validates all JSON storage without replacing active services or materializing missing files.
      */
     public void validate() {
-        PermissionServices.jsonFile(storagePaths.permissionsFile());
-        SubjectMetadataServices.jsonFile(storagePaths.subjectsFile());
-        GroupServices.jsonFile(storagePaths.groupsFile());
-        PermissionNodeRegistries.jsonFile(storagePaths.nodesFile());
+        ClutchPermsConfig loadedConfig = ClutchPermsConfigs.jsonFile(storagePaths.configFile());
+        StorageWriteOptions writeOptions = loadedConfig.storageWriteOptions();
+        PermissionServices.jsonFile(storagePaths.permissionsFile(), writeOptions);
+        SubjectMetadataServices.jsonFile(storagePaths.subjectsFile(), writeOptions);
+        GroupServices.jsonFile(storagePaths.groupsFile(), writeOptions);
+        PermissionNodeRegistries.jsonFile(storagePaths.nodesFile(), writeOptions);
     }
 
     /**
@@ -151,12 +210,21 @@ public final class ClutchPermsRuntime {
     }
 
     /**
+     * Returns active runtime config.
+     *
+     * @return active runtime config
+     */
+    public ClutchPermsConfig config() {
+        return activeServices().config();
+    }
+
+    /**
      * Creates the backup service for the active storage path set.
      *
      * @return storage backup service
      */
     public StorageBackupService storageBackupService() {
-        return StorageBackupService.forFiles(storagePaths.backupRoot(), storagePaths.storageFiles());
+        return StorageBackupService.forFiles(storagePaths.backupRoot(), storagePaths.storageFiles(), config().backups().retentionLimit());
     }
 
     /**
@@ -167,7 +235,7 @@ public final class ClutchPermsRuntime {
      */
     public CommandStatusDiagnostics statusDiagnostics(String runtimeBridgeStatus) {
         return new CommandStatusDiagnostics(formatPath(storagePaths.permissionsFile()), formatPath(storagePaths.subjectsFile()), formatPath(storagePaths.groupsFile()),
-                formatPath(storagePaths.nodesFile()), runtimeBridgeStatus);
+                formatPath(storagePaths.nodesFile()), runtimeBridgeStatus, formatPath(storagePaths.configFile()));
     }
 
     /**
@@ -180,10 +248,12 @@ public final class ClutchPermsRuntime {
     }
 
     private ClutchPermsRuntimeServices loadServices() {
-        PermissionService loadedPermissionService = PermissionServices.jsonFile(storagePaths.permissionsFile());
-        SubjectMetadataService loadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storagePaths.subjectsFile());
-        GroupService loadedGroupService = GroupServices.jsonFile(storagePaths.groupsFile());
-        MutablePermissionNodeRegistry loadedManualPermissionNodeRegistry = PermissionNodeRegistries.jsonFile(storagePaths.nodesFile());
+        ClutchPermsConfig loadedConfig = ClutchPermsConfigs.jsonFile(storagePaths.configFile());
+        StorageWriteOptions writeOptions = loadedConfig.storageWriteOptions();
+        PermissionService loadedPermissionService = PermissionServices.jsonFile(storagePaths.permissionsFile(), writeOptions);
+        SubjectMetadataService loadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storagePaths.subjectsFile(), writeOptions);
+        GroupService loadedGroupService = GroupServices.jsonFile(storagePaths.groupsFile(), writeOptions);
+        MutablePermissionNodeRegistry loadedManualPermissionNodeRegistry = PermissionNodeRegistries.jsonFile(storagePaths.nodesFile(), writeOptions);
 
         PermissionService observedPermissionService = PermissionServices.observing(loadedPermissionService, subjectId -> {
             invalidateSubjectCache(subjectId);
@@ -210,7 +280,7 @@ public final class ClutchPermsRuntime {
         PermissionNodeRegistry mergedPermissionNodeRegistry = createPermissionNodeRegistry(observedManualPermissionNodeRegistry);
         PermissionResolver loadedPermissionResolver = new PermissionResolver(observedPermissionService, observedGroupService);
         return new ClutchPermsRuntimeServices(observedPermissionService, loadedSubjectMetadataService, observedGroupService, observedManualPermissionNodeRegistry,
-                mergedPermissionNodeRegistry, loadedPermissionResolver);
+                mergedPermissionNodeRegistry, loadedPermissionResolver, loadedConfig);
     }
 
     private PermissionNodeRegistry createPermissionNodeRegistry(MutablePermissionNodeRegistry manualPermissionNodeRegistry) {
@@ -219,6 +289,23 @@ public final class ClutchPermsRuntime {
             return PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), manualPermissionNodeRegistry);
         }
         return PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), manualPermissionNodeRegistry, platformRegistry);
+    }
+
+    private static void restoreConfigFile(Path configFile, Path rollbackFile, boolean configExisted, RuntimeException reloadFailure) {
+        try {
+            if (configExisted) {
+                if (rollbackFile == null) {
+                    throw new IOException("rollback config file was not created");
+                }
+                StorageFiles.moveAtomically(rollbackFile, configFile);
+            } else {
+                Files.deleteIfExists(configFile);
+            }
+        } catch (IOException rollbackFailure) {
+            PermissionStorageException exception = new PermissionStorageException("Failed to apply updated config and failed to restore previous config file", reloadFailure);
+            exception.addSuppressed(rollbackFailure);
+            throw exception;
+        }
     }
 
     private synchronized ClutchPermsRuntimeServices activeServices() {

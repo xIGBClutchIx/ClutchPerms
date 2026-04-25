@@ -24,6 +24,7 @@ import com.google.gson.JsonPrimitive;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.storage.StorageFiles;
+import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
 
 /**
  * JSON-backed subject metadata service that persists the latest known subject name and last-seen time.
@@ -36,10 +37,17 @@ final class JsonFileSubjectMetadataService implements SubjectMetadataService {
 
     private final Path subjectsFile;
 
+    private final StorageWriteOptions writeOptions;
+
     private InMemorySubjectMetadataService delegate;
 
     JsonFileSubjectMetadataService(Path subjectsFile) {
+        this(subjectsFile, StorageWriteOptions.defaults());
+    }
+
+    JsonFileSubjectMetadataService(Path subjectsFile, StorageWriteOptions writeOptions) {
         this.subjectsFile = subjectsFile.toAbsolutePath().normalize();
+        this.writeOptions = StorageWriteOptions.defaultIfNull(writeOptions);
         this.delegate = new InMemorySubjectMetadataService(loadSubjects());
     }
 
@@ -91,7 +99,7 @@ final class JsonFileSubjectMetadataService implements SubjectMetadataService {
 
     private void saveSubjects(Map<UUID, SubjectMetadata> snapshot) {
         try {
-            StorageFiles.writeAtomicallyWithBackup(subjectsFile, StorageFileKind.SUBJECTS, writer -> {
+            StorageFiles.writeAtomicallyWithBackup(subjectsFile, StorageFileKind.SUBJECTS, writeOptions, writer -> {
                 GSON.toJson(toJson(snapshot), writer);
                 writer.write(System.lineSeparator());
             });

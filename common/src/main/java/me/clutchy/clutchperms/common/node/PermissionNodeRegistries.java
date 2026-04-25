@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
+import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
 
 /**
  * Factory methods for known permission node registries.
@@ -22,7 +23,18 @@ public final class PermissionNodeRegistries {
      * @return mutable registry backed by {@code nodesFile}
      */
     public static MutablePermissionNodeRegistry jsonFile(Path nodesFile) {
-        return new JsonFilePermissionNodeRegistry(Objects.requireNonNull(nodesFile, "nodesFile"));
+        return jsonFile(nodesFile, StorageWriteOptions.defaults());
+    }
+
+    /**
+     * Creates a JSON-backed manual node registry.
+     *
+     * @param nodesFile JSON storage path
+     * @param writeOptions storage write options used for future mutations
+     * @return mutable registry backed by {@code nodesFile}
+     */
+    public static MutablePermissionNodeRegistry jsonFile(Path nodesFile, StorageWriteOptions writeOptions) {
+        return new JsonFilePermissionNodeRegistry(Objects.requireNonNull(nodesFile, "nodesFile"), StorageWriteOptions.defaultIfNull(writeOptions));
     }
 
     /**

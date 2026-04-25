@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import java.util.logging.Level;
 
 import org.bukkit.plugin.ServicePriority;
@@ -13,6 +14,7 @@ import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
+import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.KnownPermissionNode;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -159,6 +161,15 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     }
 
     /**
+     * Exposes the active runtime config for command adapters and tests.
+     *
+     * @return active runtime config
+     */
+    ClutchPermsConfig getClutchPermsConfig() {
+        return getRuntime().config();
+    }
+
+    /**
      * Returns status diagnostics for the shared command tree.
      *
      * @return active command status diagnostics
@@ -180,6 +191,26 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE, "Failed to load ClutchPerms storage from " + getDataFolder(), exception);
+            throw exception;
+        }
+    }
+
+    /**
+     * Updates runtime config and replaces active storage services through the shared runtime.
+     *
+     * @param updater config updater
+     */
+    void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
+        logStorageLoadStart();
+        try {
+            ClutchPermsRuntimeServices previousServices = getRuntime().updateConfig(updater);
+            if (previousServices != null) {
+                unregisterServices(previousServices);
+                registerServices();
+            }
+            logStorageLoadSuccess();
+        } catch (RuntimeException exception) {
+            getLogger().log(Level.SEVERE, "Failed to update ClutchPerms config from " + getDataFolder(), exception);
             throw exception;
         }
     }
