@@ -27,7 +27,7 @@ final class ForgeClutchPermsPermissionHandler implements IPermissionHandler {
 
     static final Identifier IDENTIFIER = Identifier.fromNamespaceAndPath(ClutchPermsForgeMod.MOD_ID, "direct");
 
-    static final PermissionNode<Boolean> ADMIN_NODE = createAdminNode();
+    static final List<PermissionNode<Boolean>> COMMAND_NODES = createCommandNodes();
 
     private final Supplier<PermissionResolver> permissionResolverSupplier;
 
@@ -80,11 +80,24 @@ final class ForgeClutchPermsPermissionHandler implements IPermissionHandler {
         return nodes.stream().filter(node -> node.getType() == PermissionTypes.BOOLEAN).map(PermissionNode::getNodeName).sorted().toList();
     }
 
-    private static PermissionNode<Boolean> createAdminNode() {
-        PermissionNode<Boolean> node = new PermissionNode<>(ClutchPermsForgeMod.MOD_ID, "admin", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.FALSE);
-        node.setInformation(Component.literal("ClutchPerms Admin"), Component.literal("Allows managing ClutchPerms permissions."));
-        if (!PermissionNodes.ADMIN.equals(node.getNodeName())) {
-            throw new IllegalStateException("Forge admin node does not match shared admin node");
+    static PermissionNode<?>[] commandNodes() {
+        return COMMAND_NODES.toArray(PermissionNode<?>[]::new);
+    }
+
+    private static List<PermissionNode<Boolean>> createCommandNodes() {
+        return PermissionNodes.commandNodes().stream().map(ForgeClutchPermsPermissionHandler::createCommandNode).toList();
+    }
+
+    private static PermissionNode<Boolean> createCommandNode(String nodeName) {
+        String prefix = ClutchPermsForgeMod.MOD_ID + ".";
+        if (!nodeName.startsWith(prefix)) {
+            throw new IllegalStateException("Forge command node does not use the ClutchPerms namespace: " + nodeName);
+        }
+        PermissionNode<Boolean> node = new PermissionNode<>(ClutchPermsForgeMod.MOD_ID, nodeName.substring(prefix.length()), PermissionTypes.BOOLEAN,
+                (player, subjectId, context) -> Boolean.FALSE);
+        node.setInformation(Component.literal(nodeName), Component.literal("Allows running the matching ClutchPerms command."));
+        if (!nodeName.equals(node.getNodeName())) {
+            throw new IllegalStateException("Forge command node does not match shared command node: " + nodeName);
         }
         return node;
     }

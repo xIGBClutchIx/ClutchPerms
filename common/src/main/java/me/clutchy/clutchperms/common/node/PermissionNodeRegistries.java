@@ -1,6 +1,7 @@
 package me.clutchy.clutchperms.common.node;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -113,7 +114,11 @@ public final class PermissionNodeRegistries {
      * @return built-in known nodes
      */
     public static PermissionNodeRegistry builtIn() {
-        return staticNodes(List.of(new KnownPermissionNode(PermissionNodes.ADMIN, "Allows managing ClutchPerms permissions.", PermissionNodeSource.BUILT_IN)));
+        List<KnownPermissionNode> nodes = new ArrayList<>();
+        for (String node : PermissionNodes.commandNodes()) {
+            nodes.add(new KnownPermissionNode(node, "Allows the matching ClutchPerms admin command.", PermissionNodeSource.BUILT_IN));
+        }
+        return staticNodes(nodes);
     }
 
     private PermissionNodeRegistries() {

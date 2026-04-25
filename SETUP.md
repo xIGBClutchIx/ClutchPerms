@@ -69,13 +69,13 @@ The status output should show storage paths, subject/group/node counts, resolver
 
 ## 3. Bootstrap The First Admin
 
-Players need effective `clutchperms.admin` to run ClutchPerms commands. Being a Paper op is not enough for ClutchPerms command authorization because commands use the shared ClutchPerms resolver.
+Players need effective ClutchPerms command permissions to run ClutchPerms commands. Use `clutchperms.admin.*` for a full admin grant. Being a Paper op is not enough for ClutchPerms command authorization because commands use the shared ClutchPerms resolver.
 
 Use the server console for the first grant:
 
 ```text
 clutchperms group admin create
-clutchperms group admin set clutchperms.admin true
+clutchperms group admin set clutchperms.admin.* true
 clutchperms user ExamplePlayer group add admin
 ```
 
@@ -94,8 +94,8 @@ clutchperms user 00000000-0000-0000-0000-000000000000 group add admin
 Verify the grant:
 
 ```text
-clutchperms user ExamplePlayer check clutchperms.admin
-clutchperms user ExamplePlayer explain clutchperms.admin
+clutchperms user ExamplePlayer check clutchperms.admin.status
+clutchperms user ExamplePlayer explain clutchperms.admin.status
 ```
 
 After this, that player should be able to run:
@@ -236,8 +236,8 @@ The runtime bridge line should report that the ClutchPerms handler is active.
 Run this from console:
 
 ```text
-clutchperms user ExamplePlayer check clutchperms.admin
-clutchperms user ExamplePlayer explain clutchperms.admin
+clutchperms user ExamplePlayer check clutchperms.admin.status
+clutchperms user ExamplePlayer explain clutchperms.admin.status
 ```
 
 If the result is `UNSET` or `FALSE`, add the player to an admin group:

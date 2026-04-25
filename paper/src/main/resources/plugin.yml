@@ -4,6 +4,99 @@ main: me.clutchy.clutchperms.paper.ClutchPermsPaperPlugin
 description: Shared permission scaffolding for Paper.
 api-version: "26.1.2"
 permissions:
-  clutchperms.admin:
-    description: Allows access to ClutchPerms commands.
-    default: op
+  clutchperms.admin.*:
+    description: Allows all ClutchPerms admin commands.
+    default: false
+  clutchperms.admin.help:
+    description: Allows listing ClutchPerms commands.
+    default: false
+  clutchperms.admin.status:
+    description: Allows viewing ClutchPerms status.
+    default: false
+  clutchperms.admin.reload:
+    description: Allows reloading ClutchPerms storage.
+    default: false
+  clutchperms.admin.validate:
+    description: Allows validating ClutchPerms storage.
+    default: false
+  clutchperms.admin.backup.list:
+    description: Allows listing ClutchPerms backups.
+    default: false
+  clutchperms.admin.backup.restore:
+    description: Allows restoring ClutchPerms backups.
+    default: false
+  clutchperms.admin.user.list:
+    description: Allows listing direct user permissions.
+    default: false
+  clutchperms.admin.user.get:
+    description: Allows reading direct user permissions.
+    default: false
+  clutchperms.admin.user.set:
+    description: Allows setting direct user permissions.
+    default: false
+  clutchperms.admin.user.clear:
+    description: Allows clearing direct user permissions.
+    default: false
+  clutchperms.admin.user.check:
+    description: Allows checking effective user permissions.
+    default: false
+  clutchperms.admin.user.explain:
+    description: Allows explaining effective user permissions.
+    default: false
+  clutchperms.admin.user.groups:
+    description: Allows listing user groups.
+    default: false
+  clutchperms.admin.user.group.add:
+    description: Allows adding users to groups.
+    default: false
+  clutchperms.admin.user.group.remove:
+    description: Allows removing users from groups.
+    default: false
+  clutchperms.admin.group.list:
+    description: Allows listing groups.
+    default: false
+  clutchperms.admin.group.create:
+    description: Allows creating groups.
+    default: false
+  clutchperms.admin.group.delete:
+    description: Allows deleting groups.
+    default: false
+  clutchperms.admin.group.view:
+    description: Allows viewing group details.
+    default: false
+  clutchperms.admin.group.get:
+    description: Allows reading group permissions.
+    default: false
+  clutchperms.admin.group.set:
+    description: Allows setting group permissions.
+    default: false
+  clutchperms.admin.group.clear:
+    description: Allows clearing group permissions.
+    default: false
+  clutchperms.admin.group.parents:
+    description: Allows listing group parents.
+    default: false
+  clutchperms.admin.group.parent.add:
+    description: Allows adding group parents.
+    default: false
+  clutchperms.admin.group.parent.remove:
+    description: Allows removing group parents.
+    default: false
+  clutchperms.admin.users.list:
+    description: Allows listing known users.
+    default: false
+  clutchperms.admin.users.search:
+    description: Allows searching known users.
+    default: false
+  clutchperms.admin.nodes.list:
+    description: Allows listing known permission nodes.
+    default: false
+  clutchperms.admin.nodes.search:
+    description: Allows searching known permission nodes.
+    default: false
+  clutchperms.admin.nodes.add:
+    description: Allows adding known permission nodes.
+    default: false
+  clutchperms.admin.nodes.remove:
+    description: Allows removing known permission nodes.
+    default: false

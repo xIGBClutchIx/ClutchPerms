@@ -90,7 +90,9 @@ Command notes:
 - `<target>` resolves exact online player name first, then exact stored last-known name, then UUID.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
 - Console and remote console can run commands for bootstrap.
-- Players need effective `clutchperms.admin`, either directly or through a group.
+- Players need the effective command permission for the command they run. Use `clutchperms.admin.*` for a full ClutchPerms admin grant.
+- Command permission categories follow the command tree, such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and exact leaves such as `clutchperms.admin.user.set`.
+- `clutchperms.admin` is only the namespace root and does not grant command access.
 - Non-player/non-console sources are denied where the platform can distinguish them.
 - Permission nodes may be exact nodes, `*`, or terminal wildcard nodes like `example.*`. Mid-node wildcards such as `example.*.edit` are rejected.
 - Known permission node registry entries must be exact nodes. Wildcards are valid assignments but are not valid known-node registry entries.
@@ -148,7 +150,7 @@ Group example:
     },
     "admin": {
       "permissions": {
-        "clutchperms.admin": "TRUE"
+        "clutchperms.admin.*": "TRUE"
       },
       "parents": [
         "default"

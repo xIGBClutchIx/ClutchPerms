@@ -137,7 +137,7 @@ public final class ClutchPermsForgeMod {
     }
 
     private void registerPermissionNodes(PermissionGatherEvent.Nodes event) {
-        event.addNodes(ForgeClutchPermsPermissionHandler.ADMIN_NODE);
+        event.addNodes(ForgeClutchPermsPermissionHandler.commandNodes());
     }
 
     private void onServerStarted(ServerStartedEvent event) {

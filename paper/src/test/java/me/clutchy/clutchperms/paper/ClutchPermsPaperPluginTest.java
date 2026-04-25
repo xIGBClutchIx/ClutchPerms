@@ -47,6 +47,7 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -115,6 +116,17 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms Paper metadata exposes the forward command permission nodes.
+     */
+    @Test
+    void paperPermissionMetadataExposesCommandPermissionNodes() {
+        assertNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_ALL));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_STATUS));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_SET));
+    }
+
+    /**
      * Confirms that subject metadata is exposed through Paper's Bukkit-derived service registry.
      */
     @Test
@@ -168,7 +180,7 @@ class ClutchPermsPaperPluginTest {
     @Test
     void clutchPermsCommandRespondsWithStatusDiagnostics() throws Exception {
         PlayerMock player = server.addPlayer("Admin");
-        plugin.getPermissionService().setPermission(player.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(player.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
 
@@ -186,6 +198,19 @@ class ClutchPermsPaperPluginTest {
         assertEquals(Component.text("Resolver cache: " + cacheStats.subjects() + " subjects, " + cacheStats.nodeResults() + " node results, " + cacheStats.effectiveSnapshots()
                 + " effective snapshots."), player.nextComponentMessage());
         assertEquals(Component.text("Runtime bridge: " + plugin.getStatusDiagnostics().runtimeBridgeStatus()), player.nextComponentMessage());
+    }
+
+    /**
+     * Confirms the legacy admin namespace root no longer authorizes Paper commands.
+     */
+    @Test
+    void clutchPermsCommandDeniesLegacyAdminRoot() {
+        PlayerMock player = server.addPlayer("Admin");
+        plugin.getPermissionService().setPermission(player.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms status", new TestCommandSourceStack(player)));
     }
 
     /**
@@ -323,7 +348,7 @@ class ClutchPermsPaperPluginTest {
         PlayerMock target = server.addPlayer("Target");
         plugin.getGroupService().createGroup("admin");
         plugin.getGroupService().createGroup("staff");
-        plugin.getGroupService().setGroupPermission("admin", PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getGroupService().setGroupPermission("admin", PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         plugin.getGroupService().addGroupParent("staff", "admin");
         plugin.getGroupService().addSubjectGroup(admin.getUniqueId(), "staff");
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
@@ -344,12 +369,12 @@ class ClutchPermsPaperPluginTest {
     void wildcardPermissionsAttachAndAuthorizeCommands() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), "clutchperms.*", PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         plugin.getPermissionService().setPermission(target.getUniqueId(), "example.*", PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
 
-        assertTrue(admin.isPermissionSet("clutchperms.*"));
+        assertTrue(admin.isPermissionSet(PermissionNodes.ADMIN_ALL));
         assertTrue(target.isPermissionSet("example.*"));
         assertTrue(target.hasPermission("example.*"));
 
@@ -461,7 +486,7 @@ class ClutchPermsPaperPluginTest {
     void commandMutationPersistsAndRefreshesRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
@@ -519,7 +544,7 @@ class ClutchPermsPaperPluginTest {
     void backupRestoreReloadsStorageAndRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
@@ -550,7 +575,7 @@ class ClutchPermsPaperPluginTest {
     void malformedBackupRestoreRollsBackAndPreservesRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Backup", PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
@@ -590,7 +615,7 @@ class ClutchPermsPaperPluginTest {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
         UUID offlineId = UUID.fromString("00000000-0000-0000-0000-000000000404");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
@@ -640,7 +665,7 @@ class ClutchPermsPaperPluginTest {
     void validateCommandChecksStorageWithoutReplacingRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Validate", PermissionValue.FALSE);
         PermissionService activePermissionService = plugin.getPermissionService();
         PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
@@ -670,7 +695,7 @@ class ClutchPermsPaperPluginTest {
     void malformedPermissionsFileFailsValidateWithoutReplacingRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Validate", PermissionValue.TRUE);
         PermissionService activePermissionService = plugin.getPermissionService();
         PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
@@ -709,7 +734,7 @@ class ClutchPermsPaperPluginTest {
     void malformedPermissionsFileFailsReloadWithoutReplacingRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Reload", PermissionValue.TRUE);
         PermissionService activePermissionService = plugin.getPermissionService();
         SubjectMetadataService activeSubjectMetadataService = plugin.getSubjectMetadataService();
@@ -753,7 +778,7 @@ class ClutchPermsPaperPluginTest {
     void malformedGroupsFileFailsReloadWithoutReplacingRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         plugin.getGroupService().createGroup("staff");
         plugin.getGroupService().setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
         plugin.getGroupService().addSubjectGroup(target.getUniqueId(), "staff");
@@ -794,7 +819,7 @@ class ClutchPermsPaperPluginTest {
     void malformedNodesFileFailsReloadWithoutReplacingRuntimeBridge() throws Exception {
         PlayerMock admin = server.addPlayer("Admin");
         PlayerMock target = server.addPlayer("Target");
-        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.*", PermissionValue.TRUE);
         plugin.getManualPermissionNodeRegistry().addNode("example.active", "Active");
         MutablePermissionNodeRegistry activeManualRegistry = plugin.getManualPermissionNodeRegistry();

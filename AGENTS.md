@@ -160,7 +160,10 @@ Current command surface:
 Authorization:
 
 - Console and remote console can run commands for bootstrap.
-- Players need effective `clutchperms.admin`.
+- Players need the effective exact command permission for the command they run.
+- Use `clutchperms.admin.*` as the full ClutchPerms admin grant.
+- Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
+- `clutchperms.admin` is only the namespace root and does not authorize commands.
 - Other source types should be denied where the platform can distinguish them.
 - `status` should include storage paths, subject/group/node counts, resolver cache counts, and platform bridge status.
 - `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.

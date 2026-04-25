@@ -138,7 +138,7 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private void registerPermissionNodes(PermissionGatherEvent.Nodes event) {
-        event.addNodes(NeoForgeClutchPermsPermissionHandler.ADMIN_NODE);
+        event.addNodes(NeoForgeClutchPermsPermissionHandler.commandNodes());
     }
 
     private void onServerStarted(ServerStartedEvent event) {

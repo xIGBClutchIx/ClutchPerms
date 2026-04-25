@@ -30,6 +30,7 @@ import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.InMemoryPermissionService;
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
@@ -42,7 +43,6 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -145,9 +145,9 @@ final class ForgeClutchPermsPermissionHandlerTest {
     }
 
     @Test
-    void adminNodeMatchesSharedBooleanRegistration() {
-        assertSame(PermissionTypes.BOOLEAN, ForgeClutchPermsPermissionHandler.ADMIN_NODE.getType());
-        assertEquals("clutchperms.admin", ForgeClutchPermsPermissionHandler.ADMIN_NODE.getNodeName());
+    void commandNodesMatchSharedBooleanRegistrations() {
+        assertTrue(ForgeClutchPermsPermissionHandler.COMMAND_NODES.stream().allMatch(node -> node.getType() == PermissionTypes.BOOLEAN));
+        assertEquals(PermissionNodes.commandNodes(), ForgeClutchPermsPermissionHandler.COMMAND_NODES.stream().map(PermissionNode::getNodeName).toList());
     }
 
     @Test

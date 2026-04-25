@@ -331,13 +331,39 @@ class ClutchPermsCommandsTest {
     }
 
     /**
-     * Confirms players with the ClutchPerms admin node can mutate permissions.
+     * Confirms the old namespace root no longer grants command access.
+     */
+    @Test
+    void playerWithLegacyAdminPermissionIsDenied() {
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN, PermissionValue.TRUE);
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms status", player));
+    }
+
+    /**
+     * Confirms one exact command node grants only the matching command.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
      */
     @Test
-    void playerWithAdminPermissionCanMutatePermissions() throws CommandSyntaxException {
-        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN, PermissionValue.TRUE);
+    void playerWithSingleCommandPermissionCanUseOnlyThatCommand() throws CommandSyntaxException {
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_STATUS, PermissionValue.TRUE);
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        dispatcher.execute("clutchperms status", player);
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms reload", player));
+    }
+
+    /**
+     * Confirms players with the ClutchPerms admin wildcard can mutate permissions.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void playerWithAdminWildcardPermissionCanMutatePermissions() throws CommandSyntaxException {
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         TestSource player = TestSource.player(ADMIN_ID);
 
         dispatcher.execute("clutchperms user Target set example.node false", player);
@@ -353,7 +379,7 @@ class ClutchPermsCommandsTest {
     @Test
     void playerWithGroupAdminPermissionCanMutatePermissions() throws CommandSyntaxException {
         groupService.createGroup("staff");
-        groupService.setGroupPermission("staff", PermissionNodes.ADMIN, PermissionValue.TRUE);
+        groupService.setGroupPermission("staff", PermissionNodes.ADMIN_USER_SET, PermissionValue.TRUE);
         groupService.addSubjectGroup(ADMIN_ID, "staff");
         TestSource player = TestSource.player(ADMIN_ID);
 
@@ -371,7 +397,7 @@ class ClutchPermsCommandsTest {
     void playerWithInheritedGroupAdminPermissionCanMutatePermissions() throws CommandSyntaxException {
         groupService.createGroup("admin");
         groupService.createGroup("staff");
-        groupService.setGroupPermission("admin", PermissionNodes.ADMIN, PermissionValue.TRUE);
+        groupService.setGroupPermission("admin", PermissionNodes.ADMIN_USER_SET, PermissionValue.TRUE);
         groupService.addGroupParent("staff", "admin");
         groupService.addSubjectGroup(ADMIN_ID, "staff");
         TestSource player = TestSource.player(ADMIN_ID);
@@ -387,13 +413,30 @@ class ClutchPermsCommandsTest {
      * @throws CommandSyntaxException when command execution fails unexpectedly
      */
     @Test
-    void playerWithWildcardAdminPermissionCanMutatePermissions() throws CommandSyntaxException {
-        permissionService.setPermission(ADMIN_ID, "clutchperms.*", PermissionValue.TRUE);
+    void playerWithCategoryWildcardCanUseMatchingCommandsOnly() throws CommandSyntaxException {
+        permissionService.setPermission(ADMIN_ID, "clutchperms.admin.user.*", PermissionValue.TRUE);
         TestSource player = TestSource.player(ADMIN_ID);
 
         dispatcher.execute("clutchperms user Target set example.node false", player);
 
         assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms group list", player));
+    }
+
+    /**
+     * Confirms exact denies can override category wildcard grants.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void exactCommandDenyOverridesWildcardGrant() throws CommandSyntaxException {
+        permissionService.setPermission(ADMIN_ID, "clutchperms.admin.user.*", PermissionValue.TRUE);
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_USER_SET, PermissionValue.FALSE);
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        dispatcher.execute("clutchperms user Target get example.node", player);
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms user Target set example.node false", player));
     }
 
     /**
@@ -709,7 +752,9 @@ class ClutchPermsCommandsTest {
         permissionService.setPermission(TARGET_ID, "Zeta.Node", PermissionValue.FALSE);
         permissionService.setPermission(UUID_NAMED_PLAYER_ID, "other.node", PermissionValue.TRUE);
 
-        assertEquals(List.of("clutchperms.admin", "example.*", "example.node", "known.node", "zeta.node"), suggestionTexts("clutchperms user Target get "));
+        assertEquals(List.of("example.*", "example.node"), suggestionTexts("clutchperms user Target get ex"));
+        assertTrue(suggestionTexts("clutchperms user Target get clutchperms.admin.user.").contains(PermissionNodes.ADMIN_USER_SET));
+        assertTrue(suggestionTexts("clutchperms user Target get clutchperms.admin.").contains(PermissionNodes.ADMIN_ALL));
     }
 
     /**
@@ -737,7 +782,7 @@ class ClutchPermsCommandsTest {
         groupService.createGroup("default");
         groupService.setGroupPermission("default", "default.node", PermissionValue.TRUE);
 
-        assertEquals(List.of("clutchperms.admin", "default.node", "example.group", "example.inherited"), suggestionTexts("clutchperms user Target check "));
+        assertEquals(List.of("example.group", "example.inherited"), suggestionTexts("clutchperms user Target check ex"));
     }
 
     /**
@@ -748,7 +793,7 @@ class ClutchPermsCommandsTest {
         groupService.createGroup("staff");
         groupService.setGroupPermission("staff", "example.group", PermissionValue.TRUE);
 
-        assertEquals(List.of("clutchperms.admin", "example.group"), suggestionTexts("clutchperms group staff get "));
+        assertEquals(List.of("example.group"), suggestionTexts("clutchperms group staff get ex"));
     }
 
     /**
@@ -842,11 +887,14 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms nodes remove example.fly", console);
         dispatcher.execute("clutchperms nodes search flight", console);
 
-        assertEquals(List.of("Registered known permission node example.fly.", "Registered known permission node example.build.",
-                "Known permission nodes: clutchperms.admin [built-in] - Allows managing ClutchPerms permissions., example.build [manual], "
-                        + "example.fly [manual] - Allows flight",
-                "Matched known permission nodes: example.fly [manual] - Allows flight", "Removed known permission node example.fly.", "No known permission nodes matched flight."),
-                console.messages());
+        assertEquals("Registered known permission node example.fly.", console.messages().get(0));
+        assertEquals("Registered known permission node example.build.", console.messages().get(1));
+        assertTrue(console.messages().get(2).contains(PermissionNodes.ADMIN_STATUS + " [built-in] - Allows the matching ClutchPerms admin command."));
+        assertTrue(console.messages().get(2).contains("example.build [manual]"));
+        assertTrue(console.messages().get(2).contains("example.fly [manual] - Allows flight"));
+        assertEquals("Matched known permission nodes: example.fly [manual] - Allows flight", console.messages().get(3));
+        assertEquals("Removed known permission node example.fly.", console.messages().get(4));
+        assertEquals("No known permission nodes matched flight.", console.messages().get(5));
         assertEquals(3, environment.runtimeRefreshes());
     }
 
@@ -858,10 +906,11 @@ class ClutchPermsCommandsTest {
         environment.addPlatformNode("platform.node");
         TestSource console = TestSource.console();
 
-        CommandSyntaxException builtInException = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms nodes remove clutchperms.admin", console));
+        CommandSyntaxException builtInException = assertThrows(CommandSyntaxException.class,
+                () -> dispatcher.execute("clutchperms nodes remove " + PermissionNodes.ADMIN_STATUS, console));
         CommandSyntaxException platformException = assertThrows(CommandSyntaxException.class, () -> dispatcher.execute("clutchperms nodes remove platform.node", console));
 
-        assertTrue(builtInException.getMessage().contains("known permission node is not manually registered: clutchperms.admin"));
+        assertTrue(builtInException.getMessage().contains("known permission node is not manually registered: " + PermissionNodes.ADMIN_STATUS));
         assertTrue(platformException.getMessage().contains("known permission node is not manually registered: platform.node"));
         assertEquals(0, environment.runtimeRefreshes());
     }
@@ -894,7 +943,8 @@ class ClutchPermsCommandsTest {
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
                 "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Known subjects: " + knownSubjects, "Known groups: 0",
-                "Known permission nodes: 1", "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.", "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
+                "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
+                "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 
     private static List<String> commandListMessages() {

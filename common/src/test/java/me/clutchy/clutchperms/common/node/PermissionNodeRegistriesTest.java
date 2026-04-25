@@ -10,6 +10,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -176,6 +177,18 @@ class PermissionNodeRegistriesTest {
         assertEquals(Set.of(new KnownPermissionNode("clutchperms.admin", "Admin", PermissionNodeSource.BUILT_IN),
                 new KnownPermissionNode("example.node", "Manual", PermissionNodeSource.MANUAL), new KnownPermissionNode("other.node", "", PermissionNodeSource.PLATFORM),
                 new KnownPermissionNode("shared.node", "Manual wins", PermissionNodeSource.MANUAL)), composite.getKnownNodes());
+    }
+
+    /**
+     * Confirms the built-in registry exposes exact command permission nodes, not wildcard assignments.
+     */
+    @Test
+    void builtInRegistryExposesExactCommandPermissionNodes() {
+        Set<String> builtInNodes = PermissionNodeRegistries.builtIn().getKnownNodes().stream().map(KnownPermissionNode::node).collect(java.util.stream.Collectors.toSet());
+
+        assertEquals(Set.copyOf(PermissionNodes.commandNodes()), builtInNodes);
+        assertFalse(builtInNodes.contains(PermissionNodes.ADMIN));
+        assertFalse(builtInNodes.contains(PermissionNodes.ADMIN_ALL));
     }
 
     /**
