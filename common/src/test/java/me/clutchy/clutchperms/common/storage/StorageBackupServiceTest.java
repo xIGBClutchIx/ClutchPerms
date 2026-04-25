@@ -36,6 +36,43 @@ class StorageBackupServiceTest {
     }
 
     /**
+     * Confirms storage bootstrap creates visible empty JSON files for a fresh storage directory.
+     *
+     * @throws IOException when test file inspection fails
+     */
+    @Test
+    void materializeMissingJsonFilesCreatesEmptyStorageFiles(@TempDir Path temporaryDirectory) throws IOException {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        Path subjectsFile = temporaryDirectory.resolve("subjects.json");
+        Path groupsFile = temporaryDirectory.resolve("groups.json");
+        Path nodesFile = temporaryDirectory.resolve("nodes.json");
+
+        StorageFiles.materializeMissingJsonFiles(
+                Map.of(StorageFileKind.PERMISSIONS, permissionsFile, StorageFileKind.SUBJECTS, subjectsFile, StorageFileKind.GROUPS, groupsFile, StorageFileKind.NODES, nodesFile));
+
+        assertTrue(Files.readString(permissionsFile).contains("\"subjects\": {}"));
+        assertTrue(Files.readString(subjectsFile).contains("\"subjects\": {}"));
+        assertTrue(Files.readString(groupsFile).contains("\"groups\": {}"));
+        assertTrue(Files.readString(groupsFile).contains("\"memberships\": {}"));
+        assertTrue(Files.readString(nodesFile).contains("\"nodes\": {}"));
+    }
+
+    /**
+     * Confirms storage bootstrap leaves existing files untouched.
+     *
+     * @throws IOException when test file setup or inspection fails
+     */
+    @Test
+    void materializeMissingJsonFilesDoesNotOverwriteExistingStorage(@TempDir Path temporaryDirectory) throws IOException {
+        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
+        Files.writeString(permissionsFile, "existing");
+
+        StorageFiles.materializeMissingJsonFiles(Map.of(StorageFileKind.PERMISSIONS, permissionsFile));
+
+        assertEquals("existing", Files.readString(permissionsFile));
+    }
+
+    /**
      * Confirms shared writes back up the current live file before replacement.
      *
      * @throws IOException when test file setup fails
@@ -75,6 +112,28 @@ class StorageBackupServiceTest {
         assertEquals(10, backups.size());
         assertEquals("value-11", Files.readString(backups.getFirst().path()));
         assertEquals("value-2", Files.readString(backups.getLast().path()));
+    }
+
+    /**
+     * Confirms backups created in the same millisecond sort by their collision suffix as newest first.
+     *
+     * @throws IOException when test file setup fails
+     */
+    @Test
+    void sameTimestampBackupsSortByCollisionSuffix(@TempDir Path temporaryDirectory) throws IOException {
+        Path liveFile = temporaryDirectory.resolve("permissions.json");
+        Clock clock = Clock.fixed(Instant.parse("2026-04-24T12:00:00Z"), ZoneId.of("UTC"));
+        StorageBackupService backupService = new StorageBackupService(temporaryDirectory.resolve("backups"), Map.of(StorageFileKind.PERMISSIONS, liveFile), clock);
+
+        Files.writeString(liveFile, "first");
+        backupService.backupExistingFile(StorageFileKind.PERMISSIONS);
+        Files.writeString(liveFile, "second");
+        backupService.backupExistingFile(StorageFileKind.PERMISSIONS);
+
+        List<StorageBackup> backups = backupService.listBackups(StorageFileKind.PERMISSIONS);
+        assertEquals(2, backups.size());
+        assertEquals("second", Files.readString(backups.getFirst().path()));
+        assertEquals("first", Files.readString(backups.getLast().path()));
     }
 
     /**

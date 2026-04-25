@@ -95,6 +95,20 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms fresh Paper startup creates visible empty storage files.
+     */
+    @Test
+    void startupMaterializesStorageFiles() {
+        Path dataFolder = plugin.getDataFolder().toPath();
+
+        assertTrue(Files.exists(dataFolder.resolve("permissions.json")));
+        assertTrue(Files.exists(dataFolder.resolve("subjects.json")));
+        assertTrue(Files.exists(dataFolder.resolve("groups.json")));
+        assertTrue(Files.exists(dataFolder.resolve("nodes.json")));
+        assertFalse(Files.exists(dataFolder.resolve("backups")));
+    }
+
+    /**
      * Confirms MockBukkit uses the intentional permission manager fallback path.
      */
     @Test

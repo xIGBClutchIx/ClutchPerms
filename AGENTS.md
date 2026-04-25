@@ -102,6 +102,7 @@ Locations:
 Storage expectations:
 
 - Treat missing files as empty state.
+- After successful startup or reload, materialize missing storage files with empty versioned JSON so fresh installs have visible files.
 - Save mutations immediately.
 - Create parent directories as needed.
 - Use deterministic output.

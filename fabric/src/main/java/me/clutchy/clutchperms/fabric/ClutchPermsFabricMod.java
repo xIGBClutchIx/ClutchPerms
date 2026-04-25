@@ -22,6 +22,7 @@ import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
+import me.clutchy.clutchperms.common.storage.StorageFiles;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
@@ -111,7 +112,6 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
-            LOGGER.error("Failed to load ClutchPerms storage from {}", FabricLoader.getInstance().getConfigDir().resolve(MOD_ID), exception);
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
@@ -209,19 +209,29 @@ public final class ClutchPermsFabricMod implements ModInitializer {
      * Reloads persisted storage from disk for the shared reload command.
      */
     public static void reloadStorage() {
-        PermissionService reloadedPermissionService = observablePermissionService(
-                PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")));
-        SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
-        GroupService reloadedGroupService = observableGroupService(GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")));
-        MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries.observing(
-                PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")), ClutchPermsFabricMod::refreshRuntimePermissions);
-        PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry);
-        permissionService = reloadedPermissionService;
-        subjectMetadataService = reloadedSubjectMetadataService;
-        groupService = reloadedGroupService;
-        manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
-        permissionNodeRegistry = reloadedPermissionNodeRegistry;
-        permissionResolver = new PermissionResolver(permissionService, groupService);
+        logStorageLoadStart();
+        try {
+            PermissionService reloadedPermissionService = observablePermissionService(
+                    PermissionServices.jsonFile(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")));
+            SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices
+                    .jsonFile(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"));
+            GroupService reloadedGroupService = observableGroupService(GroupServices.jsonFile(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")));
+            MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries.observing(
+                    PermissionNodeRegistries.jsonFile(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")),
+                    ClutchPermsFabricMod::refreshRuntimePermissions);
+            PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry);
+            materializeStorageFiles();
+            permissionService = reloadedPermissionService;
+            subjectMetadataService = reloadedSubjectMetadataService;
+            groupService = reloadedGroupService;
+            manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
+            permissionNodeRegistry = reloadedPermissionNodeRegistry;
+            permissionResolver = new PermissionResolver(permissionService, groupService);
+            logStorageLoadSuccess();
+        } catch (RuntimeException exception) {
+            LOGGER.error("Failed to load ClutchPerms storage from {}", storageRoot(), exception);
+            throw exception;
+        }
     }
 
     /**
@@ -240,10 +250,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
      * @return active storage backup service
      */
     public static StorageBackupService getStorageBackupService() {
-        return StorageBackupService.forFiles(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized").getParent().resolve("backups"),
-                Map.of(StorageFileKind.PERMISSIONS, permissionsFile, StorageFileKind.SUBJECTS, Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"),
-                        StorageFileKind.GROUPS, Objects.requireNonNull(groupsFile, "Groups file has not been initialized"), StorageFileKind.NODES,
-                        Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")));
+        return StorageBackupService.forFiles(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized").getParent().resolve("backups"), storageFiles());
     }
 
     /**
@@ -255,6 +262,35 @@ public final class ClutchPermsFabricMod implements ModInitializer {
 
     private static String formatPath(Path path) {
         return path.toAbsolutePath().normalize().toString();
+    }
+
+    private static Path storageRoot() {
+        return Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized").getParent();
+    }
+
+    private static void materializeStorageFiles() {
+        StorageFiles.materializeMissingJsonFiles(storageFiles());
+    }
+
+    private static Map<StorageFileKind, Path> storageFiles() {
+        return Map.of(StorageFileKind.PERMISSIONS, Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized"), StorageFileKind.SUBJECTS,
+                Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized"), StorageFileKind.GROUPS,
+                Objects.requireNonNull(groupsFile, "Groups file has not been initialized"), StorageFileKind.NODES,
+                Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized"));
+    }
+
+    private static void logStorageLoadStart() {
+        LOGGER.debug("ClutchPerms storage files: permissions={}, subjects={}, groups={}, nodes={}",
+                formatPath(Objects.requireNonNull(permissionsFile, "Permissions file has not been initialized")),
+                formatPath(Objects.requireNonNull(subjectsFile, "Subjects file has not been initialized")),
+                formatPath(Objects.requireNonNull(groupsFile, "Groups file has not been initialized")),
+                formatPath(Objects.requireNonNull(nodesFile, "Known nodes file has not been initialized")));
+    }
+
+    private static void logStorageLoadSuccess() {
+        LOGGER.info("Loaded ClutchPerms storage from {}: {} known subjects, {} groups, {} manual known nodes, {} total known nodes.", storageRoot(),
+                getSubjectMetadataService().getSubjects().size(), getGroupService().getGroups().size(), getManualPermissionNodeRegistry().getKnownNodes().size(),
+                getPermissionNodeRegistry().getKnownNodes().size());
     }
 
     private static PermissionService observablePermissionService(PermissionService storagePermissionService) {

@@ -123,6 +123,8 @@ ClutchPerms writes four versioned JSON files:
 | `subjects.json` | Last-known subject names and last-seen timestamps |
 | `nodes.json` | Manually registered exact permission nodes for discovery and wildcard expansion |
 
+Missing storage files load as empty state. After a successful startup or reload, ClutchPerms writes any missing storage files with empty versioned JSON so fresh installs have visible files to inspect and edit. Existing files are never overwritten by this bootstrap step.
+
 Direct permission example:
 
 ```json

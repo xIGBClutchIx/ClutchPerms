@@ -21,7 +21,7 @@ final class PaperPermissionManagerBridge implements AutoCloseable {
 
     private final boolean overrideActive;
 
-    private PaperPermissionManagerBridge(ClutchPermsPaperPlugin plugin, PaperClutchPermsPermissionManager permissionManager, boolean overrideActive) {
+    PaperPermissionManagerBridge(ClutchPermsPaperPlugin plugin, PaperClutchPermsPermissionManager permissionManager, boolean overrideActive) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.permissionManager = Objects.requireNonNull(permissionManager, "permissionManager");
         this.overrideActive = overrideActive;
@@ -103,18 +103,15 @@ final class PaperPermissionManagerBridge implements AutoCloseable {
     }
 
     /**
-     * Restores Paper's default permission manager when ClutchPerms owns the override.
+     * Detaches ClutchPerms lifecycle callbacks while leaving Paper with a live permission manager.
      */
     @Override
     public void close() {
+        permissionManager.clearRegistryChangeListener();
         if (!overrideActive) {
             return;
         }
-
-        try {
-            plugin.getServer().getPluginManager().overridePermissionManager(plugin, null);
-        } catch (RuntimeException | LinkageError exception) {
-            plugin.getLogger().warning("Failed to restore Paper's default permission manager (" + exception.getClass().getSimpleName() + ": " + exception.getMessage() + ")");
-        }
+        // Paper may still clear player permission subscriptions after plugin disable; restoring with null can leave its manager field null during shutdown.
+        plugin.getLogger().fine("Leaving ClutchPerms Paper permission manager override installed through shutdown to keep Paper permission subscriptions available");
     }
 }

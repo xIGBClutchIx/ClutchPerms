@@ -29,6 +29,7 @@ import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
+import me.clutchy.clutchperms.common.storage.StorageFiles;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
@@ -119,6 +120,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         subjectsFile = getDataFolder().toPath().resolve(SUBJECTS_FILE_NAME);
         groupsFile = getDataFolder().toPath().resolve(GROUPS_FILE_NAME);
         nodesFile = getDataFolder().toPath().resolve(NODES_FILE_NAME);
+        logStorageLoadStart();
         try {
             PermissionService storagePermissionService = loadPermissionService();
             GroupService storageGroupService = loadGroupService();
@@ -133,6 +135,8 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
             permissionService = observablePermissionService(storagePermissionService);
             groupService = observableGroupService(storageGroupService);
             permissionResolver = new PermissionResolver(permissionService, groupService);
+            materializeStorageFiles();
+            logStorageLoadSuccess();
         } catch (PermissionStorageException exception) {
             getLogger().log(Level.SEVERE, "Failed to load ClutchPerms storage from " + getDataFolder(), exception);
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
@@ -249,36 +253,44 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
      * Reloads persisted storage from disk for the shared reload command.
      */
     void reloadStorage() {
-        PermissionService reloadedStoragePermissionService = loadPermissionService();
-        GroupService reloadedStorageGroupService = loadGroupService();
-        MutablePermissionNodeRegistry reloadedStoragePermissionNodeRegistry = loadPermissionNodeRegistry();
-        SubjectMetadataService reloadedSubjectMetadataService = loadSubjectMetadataService();
-        PermissionService reloadedPermissionService = observablePermissionService(reloadedStoragePermissionService);
-        GroupService reloadedGroupService = observableGroupService(reloadedStorageGroupService);
-        MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = observablePermissionNodeRegistry(reloadedStoragePermissionNodeRegistry);
-        PermissionNodeRegistry reloadedPermissionNodeRegistry = createPermissionNodeRegistry(reloadedManualPermissionNodeRegistry);
-        PermissionResolver reloadedPermissionResolver = new PermissionResolver(reloadedPermissionService, reloadedGroupService);
+        logStorageLoadStart();
+        try {
+            PermissionService reloadedStoragePermissionService = loadPermissionService();
+            GroupService reloadedStorageGroupService = loadGroupService();
+            MutablePermissionNodeRegistry reloadedStoragePermissionNodeRegistry = loadPermissionNodeRegistry();
+            SubjectMetadataService reloadedSubjectMetadataService = loadSubjectMetadataService();
+            PermissionService reloadedPermissionService = observablePermissionService(reloadedStoragePermissionService);
+            GroupService reloadedGroupService = observableGroupService(reloadedStorageGroupService);
+            MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = observablePermissionNodeRegistry(reloadedStoragePermissionNodeRegistry);
+            PermissionNodeRegistry reloadedPermissionNodeRegistry = createPermissionNodeRegistry(reloadedManualPermissionNodeRegistry);
+            PermissionResolver reloadedPermissionResolver = new PermissionResolver(reloadedPermissionService, reloadedGroupService);
+            materializeStorageFiles();
 
-        PermissionService oldPermissionService = permissionService;
-        SubjectMetadataService oldSubjectMetadataService = subjectMetadataService;
-        GroupService oldGroupService = groupService;
-        MutablePermissionNodeRegistry oldManualPermissionNodeRegistry = manualPermissionNodeRegistry;
-        PermissionNodeRegistry oldPermissionNodeRegistry = permissionNodeRegistry;
-        PermissionResolver oldPermissionResolver = permissionResolver;
-        permissionService = reloadedPermissionService;
-        groupService = reloadedGroupService;
-        manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
-        permissionNodeRegistry = reloadedPermissionNodeRegistry;
-        permissionResolver = reloadedPermissionResolver;
-        subjectMetadataService = reloadedSubjectMetadataService;
+            PermissionService oldPermissionService = permissionService;
+            SubjectMetadataService oldSubjectMetadataService = subjectMetadataService;
+            GroupService oldGroupService = groupService;
+            MutablePermissionNodeRegistry oldManualPermissionNodeRegistry = manualPermissionNodeRegistry;
+            PermissionNodeRegistry oldPermissionNodeRegistry = permissionNodeRegistry;
+            PermissionResolver oldPermissionResolver = permissionResolver;
+            permissionService = reloadedPermissionService;
+            groupService = reloadedGroupService;
+            manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
+            permissionNodeRegistry = reloadedPermissionNodeRegistry;
+            permissionResolver = reloadedPermissionResolver;
+            subjectMetadataService = reloadedSubjectMetadataService;
 
-        getServer().getServicesManager().unregister(PermissionService.class, oldPermissionService);
-        getServer().getServicesManager().unregister(SubjectMetadataService.class, oldSubjectMetadataService);
-        getServer().getServicesManager().unregister(GroupService.class, oldGroupService);
-        getServer().getServicesManager().unregister(MutablePermissionNodeRegistry.class, oldManualPermissionNodeRegistry);
-        getServer().getServicesManager().unregister(PermissionNodeRegistry.class, oldPermissionNodeRegistry);
-        getServer().getServicesManager().unregister(PermissionResolver.class, oldPermissionResolver);
-        registerServices();
+            getServer().getServicesManager().unregister(PermissionService.class, oldPermissionService);
+            getServer().getServicesManager().unregister(SubjectMetadataService.class, oldSubjectMetadataService);
+            getServer().getServicesManager().unregister(GroupService.class, oldGroupService);
+            getServer().getServicesManager().unregister(MutablePermissionNodeRegistry.class, oldManualPermissionNodeRegistry);
+            getServer().getServicesManager().unregister(PermissionNodeRegistry.class, oldPermissionNodeRegistry);
+            getServer().getServicesManager().unregister(PermissionResolver.class, oldPermissionResolver);
+            registerServices();
+            logStorageLoadSuccess();
+        } catch (RuntimeException exception) {
+            getLogger().log(Level.SEVERE, "Failed to load ClutchPerms storage from " + getDataFolder(), exception);
+            throw exception;
+        }
     }
 
     /**
@@ -298,9 +310,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
      */
     StorageBackupService getStorageBackupService() {
         Path backupRoot = getDataFolder().toPath().resolve("backups");
-        return StorageBackupService.forFiles(backupRoot, Map.of(StorageFileKind.PERMISSIONS, Objects.requireNonNull(permissionsFile, "Permissions file is not available"),
-                StorageFileKind.SUBJECTS, Objects.requireNonNull(subjectsFile, "Subjects file is not available"), StorageFileKind.GROUPS,
-                Objects.requireNonNull(groupsFile, "Groups file is not available"), StorageFileKind.NODES, Objects.requireNonNull(nodesFile, "Known nodes file is not available")));
+        return StorageBackupService.forFiles(backupRoot, storageFiles());
     }
 
     /**
@@ -404,6 +414,29 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         getServer().getServicesManager().register(MutablePermissionNodeRegistry.class, getManualPermissionNodeRegistry(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(PermissionNodeRegistry.class, getPermissionNodeRegistry(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(PermissionResolver.class, getPermissionResolver(), this, ServicePriority.Normal);
+    }
+
+    private void materializeStorageFiles() {
+        StorageFiles.materializeMissingJsonFiles(storageFiles());
+    }
+
+    private Map<StorageFileKind, Path> storageFiles() {
+        return Map.of(StorageFileKind.PERMISSIONS, Objects.requireNonNull(permissionsFile, "Permissions file is not available"), StorageFileKind.SUBJECTS,
+                Objects.requireNonNull(subjectsFile, "Subjects file is not available"), StorageFileKind.GROUPS, Objects.requireNonNull(groupsFile, "Groups file is not available"),
+                StorageFileKind.NODES, Objects.requireNonNull(nodesFile, "Known nodes file is not available"));
+    }
+
+    private void logStorageLoadStart() {
+        getLogger().fine("ClutchPerms storage files: permissions=" + formatPath(Objects.requireNonNull(permissionsFile, "Permissions file is not available")) + ", subjects="
+                + formatPath(Objects.requireNonNull(subjectsFile, "Subjects file is not available")) + ", groups="
+                + formatPath(Objects.requireNonNull(groupsFile, "Groups file is not available")) + ", nodes="
+                + formatPath(Objects.requireNonNull(nodesFile, "Known nodes file is not available")));
+    }
+
+    private void logStorageLoadSuccess() {
+        getLogger().info("Loaded ClutchPerms storage from " + getDataFolder().toPath().toAbsolutePath().normalize() + ": " + getSubjectMetadataService().getSubjects().size()
+                + " known subjects, " + getGroupService().getGroups().size() + " groups, " + getManualPermissionNodeRegistry().getKnownNodes().size() + " manual known nodes, "
+                + getPermissionNodeRegistry().getKnownNodes().size() + " total known nodes.");
     }
 
     private static String formatPath(Path path) {

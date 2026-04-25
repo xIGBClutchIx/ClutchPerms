@@ -38,7 +38,7 @@ The built jars are copied into `build/` with the same platform-specific names.
 
 ## 2. Start The Server Once
 
-Start the server once with ClutchPerms installed. Missing storage files are treated as empty state and will be created when commands make their first changes.
+Start the server once with ClutchPerms installed. Missing storage files are treated as empty state and are created with empty versioned JSON after a successful startup.
 
 Storage locations:
 
@@ -49,15 +49,16 @@ Storage locations:
 | NeoForge | `config/clutchperms/` |
 | Forge | `config/clutchperms/` |
 
-Expected files:
+Expected storage files:
 
 ```text
 permissions.json
 groups.json
 subjects.json
 nodes.json
-backups/
 ```
+
+The `backups/` directory is created later when ClutchPerms replaces an existing storage file.
 
 Run this from the server console to confirm ClutchPerms loaded:
 
@@ -69,14 +70,14 @@ The status output should show storage paths, subject/group/node counts, resolver
 
 ## 3. Bootstrap The First Admin
 
-Players need effective ClutchPerms command permissions to run ClutchPerms commands. Use `clutchperms.admin.*` for a full admin grant. Being a Paper op is not enough for ClutchPerms command authorization because commands use the shared ClutchPerms resolver.
+Players need effective ClutchPerms command permissions to run ClutchPerms commands. For first setup, create an `owner` group with `*` so the first trusted admin can manage every ClutchPerms command and any early permission checks. Being a Paper op is not enough for ClutchPerms command authorization because commands use the shared ClutchPerms resolver.
 
 Use the server console for the first grant:
 
 ```text
-clutchperms group admin create
-clutchperms group admin set clutchperms.admin.* true
-clutchperms user ExamplePlayer group add admin
+clutchperms group owner create
+clutchperms group owner set * true
+clutchperms user ExamplePlayer group add owner
 ```
 
 `ExamplePlayer` can be:
@@ -88,7 +89,7 @@ clutchperms user ExamplePlayer group add admin
 If the player has never joined and no last-known name exists, use the UUID:
 
 ```text
-clutchperms user 00000000-0000-0000-0000-000000000000 group add admin
+clutchperms user 00000000-0000-0000-0000-000000000000 group add owner
 ```
 
 Verify the grant:
@@ -130,14 +131,14 @@ Example:
 ```text
 clutchperms group staff create
 clutchperms group staff set example.moderate true
-clutchperms group admin parent add staff
+clutchperms group owner parent add staff
 ```
 
 List group state:
 
 ```text
-clutchperms group admin list
-clutchperms group admin parents
+clutchperms group owner list
+clutchperms group owner parents
 ```
 
 ## 6. Register Known Permission Nodes
@@ -163,7 +164,7 @@ Supported wildcard assignments are:
 Examples:
 
 ```text
-clutchperms group admin set example.* true
+clutchperms group staff set example.* true
 clutchperms user ExamplePlayer check example.fly
 ```
 
@@ -240,10 +241,10 @@ clutchperms user ExamplePlayer check clutchperms.admin.status
 clutchperms user ExamplePlayer explain clutchperms.admin.status
 ```
 
-If the result is `UNSET` or `FALSE`, add the player to an admin group:
+If the result is `UNSET` or `FALSE`, add the player to the owner group:
 
 ```text
-clutchperms user ExamplePlayer group add admin
+clutchperms user ExamplePlayer group add owner
 ```
 
 ### A Name Is Not Found

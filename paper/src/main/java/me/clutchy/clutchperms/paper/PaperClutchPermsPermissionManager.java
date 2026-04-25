@@ -68,6 +68,14 @@ final class PaperClutchPermsPermissionManager implements PermissionManager {
     }
 
     /**
+     * Removes the registry change callback installed by the plugin lifecycle.
+     */
+    void clearRegistryChangeListener() {
+        registryChangeListener = () -> {
+        };
+    }
+
+    /**
      * Lists exact registered permission names known to Paper.
      *
      * @return deterministic exact permission node snapshot

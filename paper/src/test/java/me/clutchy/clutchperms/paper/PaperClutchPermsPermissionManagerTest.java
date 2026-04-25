@@ -184,6 +184,24 @@ class PaperClutchPermsPermissionManagerTest {
         assertEquals(5, changes.get());
     }
 
+    /**
+     * Confirms shutdown can detach ClutchPerms lifecycle callbacks without disabling the manager itself.
+     */
+    @Test
+    void registryChangeListenerCanBeClearedForShutdown() {
+        PaperClutchPermsPermissionManager manager = PaperClutchPermsPermissionManager.seededFrom(new TestPermissionManager());
+        AtomicInteger changes = new AtomicInteger();
+        Permission afterPermission = new Permission("Example.After");
+        manager.setRegistryChangeListener(changes::incrementAndGet);
+
+        manager.addPermission(new Permission("Example.Before"));
+        manager.clearRegistryChangeListener();
+        manager.addPermission(afterPermission);
+
+        assertEquals(1, changes.get());
+        assertSame(afterPermission, manager.getPermission("example.after"));
+    }
+
     private static final class TestPermissionManager implements PermissionManager {
 
         private final Map<String, Permission> permissions = new TreeMap<>();

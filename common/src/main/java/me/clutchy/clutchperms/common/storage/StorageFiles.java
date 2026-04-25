@@ -5,14 +5,24 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Map;
+import java.util.Objects;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 
 /**
  * Shared atomic file-write helpers for ClutchPerms JSON storage.
  */
 public final class StorageFiles {
+
+    private static final int CURRENT_VERSION = 1;
+
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     /**
      * Writes a live storage file through a temporary file, backing up the previous live file before replacement.
@@ -48,6 +58,17 @@ public final class StorageFiles {
     }
 
     /**
+     * Creates missing storage JSON files with empty versioned content, leaving existing files untouched.
+     *
+     * @param storageFiles live storage files by kind
+     * @throws PermissionStorageException when a missing file cannot be created
+     */
+    public static void materializeMissingJsonFiles(Map<StorageFileKind, Path> storageFiles) {
+        Objects.requireNonNull(storageFiles, "storageFiles");
+        storageFiles.forEach(StorageFiles::materializeMissingJsonFile);
+    }
+
+    /**
      * Moves a file into place, using an atomic move when the filesystem supports it.
      *
      * @param source source path
@@ -60,6 +81,39 @@ public final class StorageFiles {
         } catch (AtomicMoveNotSupportedException exception) {
             Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
         }
+    }
+
+    private static void materializeMissingJsonFile(StorageFileKind kind, Path targetFile) {
+        StorageFileKind requiredKind = Objects.requireNonNull(kind, "kind");
+        Path normalizedTarget = Objects.requireNonNull(targetFile, "targetFile").toAbsolutePath().normalize();
+        if (Files.exists(normalizedTarget)) {
+            return;
+        }
+
+        try {
+            writeAtomicallyWithBackup(normalizedTarget, requiredKind, writer -> {
+                GSON.toJson(emptyJson(requiredKind), writer);
+            });
+        } catch (NoSuchFileException exception) {
+            // Another process may have removed the parent between checks; report the same way as other storage failures.
+            throw new PermissionStorageException("Failed to create missing " + requiredKind.token() + " storage file at " + normalizedTarget, exception);
+        } catch (IOException exception) {
+            throw new PermissionStorageException("Failed to create missing " + requiredKind.token() + " storage file at " + normalizedTarget, exception);
+        }
+    }
+
+    private static JsonObject emptyJson(StorageFileKind kind) {
+        JsonObject root = new JsonObject();
+        root.addProperty("version", CURRENT_VERSION);
+        switch (kind) {
+            case PERMISSIONS, SUBJECTS -> root.add("subjects", new JsonObject());
+            case GROUPS -> {
+                root.add("groups", new JsonObject());
+                root.add("memberships", new JsonObject());
+            }
+            case NODES -> root.add("nodes", new JsonObject());
+        }
+        return root;
     }
 
     static Path backupRootFor(Path liveFile) {

@@ -11,7 +11,6 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -91,7 +90,7 @@ public final class StorageBackupService {
 
         try (Stream<Path> paths = Files.list(backupDirectory)) {
             return paths.filter(Files::isRegularFile).map(path -> toBackup(requiredKind, path)).filter(Optional::isPresent).map(Optional::orElseThrow)
-                    .sorted(Comparator.comparing(StorageBackup::fileName).reversed()).toList();
+                    .sorted(StorageBackupService::compareNewestFirst).toList();
         } catch (NoSuchFileException exception) {
             return List.of();
         } catch (IOException exception) {
@@ -214,6 +213,20 @@ public final class StorageBackupService {
         return backupFile;
     }
 
+    private static int compareNewestFirst(StorageBackup first, StorageBackup second) {
+        BackupFileOrder firstOrder = BackupFileOrder.from(first.fileName());
+        BackupFileOrder secondOrder = BackupFileOrder.from(second.fileName());
+        int timestampOrder = secondOrder.timestamp().compareTo(firstOrder.timestamp());
+        if (timestampOrder != 0) {
+            return timestampOrder;
+        }
+        int counterOrder = Integer.compare(secondOrder.counter(), firstOrder.counter());
+        if (counterOrder != 0) {
+            return counterOrder;
+        }
+        return second.fileName().compareTo(first.fileName());
+    }
+
     private Path resolveBackupFile(StorageFileKind kind, String backupFileName) {
         String requiredFileName = Objects.requireNonNull(backupFileName, "backupFileName");
         if (requiredFileName.isBlank() || !Path.of(requiredFileName).getFileName().toString().equals(requiredFileName)) {
@@ -260,5 +273,30 @@ public final class StorageBackupService {
         EnumMap<StorageFileKind, Path> normalized = new EnumMap<>(StorageFileKind.class);
         liveFiles.forEach((kind, path) -> normalized.put(Objects.requireNonNull(kind, "kind"), Objects.requireNonNull(path, "path").toAbsolutePath().normalize()));
         return Collections.unmodifiableMap(normalized);
+    }
+
+    private record BackupFileOrder(String timestamp, int counter) {
+
+        private static BackupFileOrder from(String fileName) {
+            String withoutExtension = fileName.substring(0, fileName.length() - ".json".length());
+            int firstDash = withoutExtension.indexOf('-');
+            if (firstDash < 0 || firstDash + 1 >= withoutExtension.length()) {
+                return new BackupFileOrder(withoutExtension, 1);
+            }
+
+            String timestampAndCounter = withoutExtension.substring(firstDash + 1);
+            int counterSeparator = timestampAndCounter.lastIndexOf('-');
+            if (counterSeparator < 0) {
+                return new BackupFileOrder(timestampAndCounter, 1);
+            }
+
+            String timestamp = timestampAndCounter.substring(0, counterSeparator);
+            String counterText = timestampAndCounter.substring(counterSeparator + 1);
+            try {
+                return new BackupFileOrder(timestamp, Integer.parseInt(counterText));
+            } catch (NumberFormatException exception) {
+                return new BackupFileOrder(timestampAndCounter, 1);
+            }
+        }
     }
 }
