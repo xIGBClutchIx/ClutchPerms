@@ -22,6 +22,7 @@ import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies JSON-backed group service loading, persistence, observing, and effective resolution.
@@ -36,15 +37,16 @@ class GroupServicesTest {
     private Path temporaryDirectory;
 
     /**
-     * Confirms a missing groups file starts with empty state.
+     * Confirms a missing groups file starts with the built-in default group.
      */
     @Test
-    void missingFileLoadsEmptyGroups() {
+    void missingFileLoadsDefaultGroup() {
         Path groupsFile = temporaryDirectory.resolve("groups.json");
 
         GroupService groupService = GroupServices.jsonFile(groupsFile);
 
-        assertEquals(Set.of(), groupService.getGroups());
+        assertEquals(Set.of("default"), groupService.getGroups());
+        assertTrue(groupService.hasGroup("default"));
         assertFalse(Files.exists(groupsFile));
     }
 
@@ -67,7 +69,7 @@ class GroupServicesTest {
 
         GroupService reloadedGroupService = GroupServices.jsonFile(groupsFile);
 
-        assertEquals(Set.of("admin", "staff"), reloadedGroupService.getGroups());
+        assertEquals(Set.of("admin", "default", "staff"), reloadedGroupService.getGroups());
         assertEquals(PermissionValue.TRUE, reloadedGroupService.getGroupPermission("admin", "example.node"));
         assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("admin", "example.denied"));
         assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("staff", "staff.*"));
@@ -136,6 +138,9 @@ class GroupServicesTest {
                       "parents": [
                         "zeta"
                       ]
+                    },
+                    "default": {
+                      "permissions": {}
                     },
                     "zeta": {
                       "permissions": {
@@ -231,6 +236,20 @@ class GroupServicesTest {
         groupService.deleteGroup("base");
 
         assertEquals(Set.of(), groupService.getGroupParents("staff"));
+    }
+
+    /**
+     * Confirms the built-in default group is always present and cannot be deleted.
+     */
+    @Test
+    void defaultGroupIsAlwaysPresentAndCannotBeDeleted() {
+        GroupService groupService = new InMemoryGroupService();
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> groupService.deleteGroup("default"));
+
+        assertEquals("default group cannot be deleted", exception.getMessage());
+        assertEquals(Set.of("default"), groupService.getGroups());
+        assertTrue(groupService.hasGroup("default"));
     }
 
     /**
@@ -491,7 +510,6 @@ class GroupServicesTest {
         groupService.setGroupPermission("trusted", "same-depth.node", PermissionValue.TRUE);
         groupService.createGroup("restricted");
         groupService.setGroupPermission("restricted", "same-depth.node", PermissionValue.FALSE);
-        groupService.createGroup("default");
         groupService.setGroupPermission("default", "example.node", PermissionValue.TRUE);
         groupService.createGroup("default-parent");
         groupService.setGroupPermission("default-parent", "default.parent", PermissionValue.TRUE);
@@ -575,7 +593,6 @@ class GroupServicesTest {
         groupService.addSubjectGroup(SECOND_SUBJECT, "child");
         groupService.addSubjectGroup(SECOND_SUBJECT, "allow");
         groupService.addSubjectGroup(SECOND_SUBJECT, "deny");
-        groupService.createGroup("default");
         groupService.setGroupPermission("default", "default.node", PermissionValue.TRUE);
         groupService.createGroup("default-parent");
         groupService.setGroupPermission("default-parent", "default.parent.*", PermissionValue.TRUE);
@@ -662,7 +679,7 @@ class GroupServicesTest {
     }
 
     private static void assertGroupRuntimeState(GroupService groupService) {
-        assertEquals(Set.of("base", "guest", "staff"), groupService.getGroups());
+        assertEquals(Set.of("base", "default", "guest", "staff"), groupService.getGroups());
         assertFalse(groupService.hasGroup("new"));
         assertEquals(PermissionValue.TRUE, groupService.getGroupPermission("staff", "old.node"));
         assertEquals(PermissionValue.UNSET, groupService.getGroupPermission("staff", "new.node"));

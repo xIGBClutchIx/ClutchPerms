@@ -30,17 +30,22 @@ public final class InMemoryGroupService implements GroupService {
      * Creates an empty in-memory group service.
      */
     public InMemoryGroupService() {
+        ensureDefaultGroup();
     }
 
     InMemoryGroupService(Map<String, Map<String, PermissionValue>> initialGroupPermissions, Map<String, Set<String>> initialGroupParents,
             Map<UUID, Set<String>> initialMemberships) {
+        this();
         Objects.requireNonNull(initialGroupPermissions, "initialGroupPermissions");
         Objects.requireNonNull(initialGroupParents, "initialGroupParents");
         Objects.requireNonNull(initialMemberships, "initialMemberships");
 
         initialGroupPermissions.forEach((groupName, permissions) -> {
-            createGroup(groupName);
-            permissions.forEach((node, value) -> setGroupPermission(groupName, node, value));
+            String normalizedGroupName = normalizeGroupName(groupName);
+            if (!hasGroup(normalizedGroupName)) {
+                createGroup(normalizedGroupName);
+            }
+            permissions.forEach((node, value) -> setGroupPermission(normalizedGroupName, node, value));
         });
         initialGroupParents.forEach((groupName, parents) -> parents.forEach(parentGroupName -> addGroupParent(groupName, parentGroupName)));
         initialMemberships.forEach((subjectId, groups) -> groups.forEach(groupName -> addSubjectGroup(subjectId, groupName)));
@@ -80,6 +85,9 @@ public final class InMemoryGroupService implements GroupService {
     @Override
     public void deleteGroup(String groupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
+        if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
+            throw new IllegalArgumentException("default group cannot be deleted");
+        }
         groupPermissions.remove(normalizedGroupName);
         groupParents.remove(normalizedGroupName);
         groupParents.forEach((ignored, parents) -> parents.remove(normalizedGroupName));
@@ -270,6 +278,11 @@ public final class InMemoryGroupService implements GroupService {
             throw new IllegalArgumentException("unknown group: " + normalizedGroupName);
         }
         return normalizedGroupName;
+    }
+
+    private void ensureDefaultGroup() {
+        groupPermissions.putIfAbsent(GroupService.DEFAULT_GROUP, new ConcurrentHashMap<>());
+        groupParents.putIfAbsent(GroupService.DEFAULT_GROUP, ConcurrentHashMap.newKeySet());
     }
 
     private static void rejectDefaultMembership(String normalizedGroupName) {

@@ -108,7 +108,11 @@ public final class StorageFiles {
         switch (kind) {
             case PERMISSIONS, SUBJECTS -> root.add("subjects", new JsonObject());
             case GROUPS -> {
-                root.add("groups", new JsonObject());
+                JsonObject groups = new JsonObject();
+                JsonObject defaultGroup = new JsonObject();
+                defaultGroup.add("permissions", new JsonObject());
+                groups.add("default", defaultGroup);
+                root.add("groups", groups);
                 root.add("memberships", new JsonObject());
             }
             case NODES -> root.add("nodes", new JsonObject());

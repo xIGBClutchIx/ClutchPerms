@@ -12,7 +12,7 @@ import me.clutchy.clutchperms.common.permission.PermissionValue;
 public interface GroupService {
 
     /**
-     * Group applied implicitly to every subject when it exists.
+     * Built-in group applied implicitly to every subject.
      */
     String DEFAULT_GROUP = "default";
 
@@ -39,7 +39,7 @@ public interface GroupService {
     void createGroup(String groupName);
 
     /**
-     * Deletes a group and removes every explicit membership in that group.
+     * Deletes a group and removes every explicit membership in that group. The built-in {@link #DEFAULT_GROUP} cannot be deleted.
      *
      * @param groupName group name to delete
      */

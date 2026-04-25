@@ -205,7 +205,7 @@ class ClutchPermsPaperPluginTest {
         assertNextMessage(player, "Groups file: " + plugin.getDataFolder().toPath().resolve("groups.json").toAbsolutePath().normalize());
         assertNextMessage(player, "Known nodes file: " + plugin.getDataFolder().toPath().resolve("nodes.json").toAbsolutePath().normalize());
         assertNextMessage(player, "Known subjects: 1");
-        assertNextMessage(player, "Known groups: 0");
+        assertNextMessage(player, "Known groups: 1");
         assertNextMessage(player, "Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size());
         PermissionResolverCacheStats cacheStats = plugin.getPermissionResolver().cacheStats();
         assertNextMessage(player, "Resolver cache: " + cacheStats.subjects() + " subjects, " + cacheStats.nodeResults() + " node results, " + cacheStats.effectiveSnapshots()
@@ -478,7 +478,6 @@ class ClutchPermsPaperPluginTest {
         assertTrue(target.isPermissionSet("group.wild.node"));
         assertTrue(target.hasPermission("group.wild.node"));
 
-        plugin.getGroupService().createGroup("default");
         plugin.getGroupService().setGroupPermission("default", "default.wild.*", PermissionValue.TRUE);
         assertTrue(target.isPermissionSet("default.wild.node"));
         assertTrue(target.hasPermission("default.wild.node"));

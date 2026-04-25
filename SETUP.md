@@ -38,7 +38,7 @@ The built jars are copied into `build/` with the same platform-specific names.
 
 ## 2. Start The Server Once
 
-Start the server once with ClutchPerms installed. Missing storage files are treated as empty state and are created with empty versioned JSON after a successful startup.
+Start the server once with ClutchPerms installed. Missing storage files are treated as empty state and are created with versioned JSON after a successful startup. `groups.json` starts with the built-in `default` group.
 
 Storage locations:
 
@@ -105,14 +105,13 @@ After this, that player should be able to run:
 /clutchperms status
 ```
 
-## 4. Add A Default Group
+## 4. Configure The Default Group
 
-The `default` group applies to every subject automatically when it exists. Users cannot be manually added to or removed from `default`.
+The `default` group always exists and applies to every subject automatically. It cannot be deleted, and users cannot be manually added to or removed from it.
 
 Example:
 
 ```text
-clutchperms group default create
 clutchperms group default set example.use true
 ```
 

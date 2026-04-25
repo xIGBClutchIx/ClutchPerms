@@ -38,9 +38,11 @@ class ClutchPermsRuntimeTest {
 
     /**
      * Confirms reload loads storage, composes platform known nodes, and materializes missing files.
+     *
+     * @throws IOException if materialized storage cannot be inspected
      */
     @Test
-    void reloadLoadsServicesAndMaterializesMissingFiles() {
+    void reloadLoadsServicesAndMaterializesMissingFiles() throws IOException {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
         ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, () -> PermissionNodeRegistries.staticNodes(PermissionNodeSource.PLATFORM, List.of("platform.node")),
                 ClutchPermsRuntimeHooks.noop());
@@ -53,10 +55,12 @@ class ClutchPermsRuntimeTest {
         assertNotNull(runtime.groupService());
         assertNotNull(runtime.manualPermissionNodeRegistry());
         assertNotNull(runtime.permissionResolver());
+        assertTrue(runtime.groupService().hasGroup("default"));
         assertTrue(runtime.permissionNodeRegistry().getKnownNode("platform.node").isPresent());
         assertTrue(Files.exists(storagePaths.permissionsFile()));
         assertTrue(Files.exists(storagePaths.subjectsFile()));
         assertTrue(Files.exists(storagePaths.groupsFile()));
+        assertTrue(Files.readString(storagePaths.groupsFile()).contains("\"default\""));
         assertTrue(Files.exists(storagePaths.nodesFile()));
     }
 

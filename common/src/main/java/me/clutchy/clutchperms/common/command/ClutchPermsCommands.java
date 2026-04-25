@@ -1,5 +1,8 @@
 package me.clutchy.clutchperms.common.command;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -87,13 +90,9 @@ public final class ClutchPermsCommands {
 
     private static final String UNKNOWN_ARGUMENT = CommandArguments.UNKNOWN;
 
-    private static final SimpleCommandExceptionType NO_PERMISSION = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_NO_PERMISSION));
+    private static final int TARGET_MATCH_LIMIT = 5;
 
-    private static final SimpleCommandExceptionType OTHER_SOURCE_DENIED = new SimpleCommandExceptionType(new LiteralMessage(CommandLang.ERROR_OTHER_SOURCE_DENIED));
-
-    private static final DynamicCommandExceptionType UNKNOWN_TARGET = new DynamicCommandExceptionType(target -> new LiteralMessage(CommandLang.unknownTarget(target).plainText()));
-
-    private static final DynamicCommandExceptionType AMBIGUOUS_TARGET = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+    private static final SimpleCommandExceptionType FEEDBACK_MESSAGES = new SimpleCommandExceptionType(new LiteralMessage("command feedback"));
 
     private static final DynamicCommandExceptionType INVALID_NODE = new DynamicCommandExceptionType(node -> new LiteralMessage(CommandLang.invalidNode(node).plainText()));
 
@@ -536,6 +535,9 @@ public final class ClutchPermsCommands {
 
         try {
             return action.run(source);
+        } catch (CommandFeedbackException exception) {
+            exception.messages().forEach(message -> environment.sendMessage(source, message));
+            return 0;
         } catch (CommandSyntaxException exception) {
             environment.sendMessage(source, CommandLang.error(exception.getRawMessage().getString()));
             return 0;
@@ -573,7 +575,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int sendBackupRestoreFileUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        StorageFileKind kind = getBackupKind(context);
+        StorageFileKind kind = getBackupKind(environment, context);
         return sendUsage(environment, context, "Missing backup file.", "Pick a backup file for " + kind.token() + ".",
                 List.of("backup restore " + kind.token() + " <backup-file>"));
     }
@@ -807,7 +809,7 @@ public final class ClutchPermsCommands {
 
     private static <S> int listBackups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         StorageBackupService backupService = environment.storageBackupService();
-        Optional<StorageFileKind> requestedKind = getOptionalBackupKind(context);
+        Optional<StorageFileKind> requestedKind = getOptionalBackupKind(environment, context);
         try {
             if (requestedKind.isPresent()) {
                 sendBackupList(environment, context, requestedKind.get(), backupService.listBackups(requestedKind.get()));
@@ -832,10 +834,18 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int restoreBackup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        StorageFileKind kind = getBackupKind(context);
+        StorageFileKind kind = getBackupKind(environment, context);
         String backupFileName = StringArgumentType.getString(context, BACKUP_FILE_ARGUMENT);
+        StorageBackupService backupService = environment.storageBackupService();
+        List<StorageBackup> backups;
         try {
-            environment.storageBackupService().restoreBackup(kind, backupFileName, () -> {
+            backups = backupService.listBackups(kind);
+        } catch (RuntimeException exception) {
+            throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
+        }
+        requireKnownBackupFile(context, kind, backupFileName, backups);
+        try {
+            backupService.restoreBackup(kind, backupFileName, () -> {
                 environment.reloadStorage();
                 environment.refreshRuntimePermissions();
             });
@@ -937,7 +947,7 @@ public final class ClutchPermsCommands {
 
     private static <S> int addSubjectGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
-        String groupName = getGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         try {
             environment.groupService().addSubjectGroup(subject.id(), groupName);
         } catch (RuntimeException exception) {
@@ -950,7 +960,7 @@ public final class ClutchPermsCommands {
 
     private static <S> int removeSubjectGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
-        String groupName = getGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         try {
             environment.groupService().removeSubjectGroup(subject.id(), groupName);
         } catch (RuntimeException exception) {
@@ -1028,7 +1038,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int deleteGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String groupName = getGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         try {
             environment.groupService().deleteGroup(groupName);
         } catch (RuntimeException exception) {
@@ -1040,7 +1050,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int listGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String groupName = getGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String normalizedGroupName = normalizeGroupName(groupName);
         Map<String, PermissionValue> permissions;
         Set<UUID> members;
@@ -1077,7 +1087,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int listGroupParents(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String groupName = getGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String normalizedGroupName = normalizeGroupName(groupName);
         Set<String> parents;
         try {
@@ -1095,8 +1105,8 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int addGroupParent(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String groupName = getGroupName(context);
-        String parentGroupName = getParentGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        String parentGroupName = requireExistingParentGroup(environment, context, getParentGroupName(context));
         try {
             environment.groupService().addGroupParent(groupName, parentGroupName);
         } catch (RuntimeException exception) {
@@ -1108,8 +1118,8 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int removeGroupParent(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String groupName = getGroupName(context);
-        String parentGroupName = getParentGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        String parentGroupName = requireExistingParentGroup(environment, context, getParentGroupName(context));
         try {
             environment.groupService().removeGroupParent(groupName, parentGroupName);
         } catch (RuntimeException exception) {
@@ -1121,7 +1131,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int getGroupPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String groupName = getGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String node = getNode(context);
         PermissionValue value;
         try {
@@ -1135,7 +1145,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int setGroupPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String groupName = getGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         PermissionAssignment assignment = getPermissionAssignment(context);
         try {
             environment.groupService().setGroupPermission(groupName, assignment.node(), assignment.value());
@@ -1148,7 +1158,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int clearGroupPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String groupName = getGroupName(context);
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String node = getNode(context);
         try {
             environment.groupService().clearGroupPermission(groupName, node);
@@ -1258,8 +1268,13 @@ public final class ClutchPermsCommands {
         String normalizedNode;
         try {
             normalizedNode = KnownPermissionNode.normalizeKnownNode(node);
+        } catch (IllegalArgumentException exception) {
+            throw NODE_OPERATION_FAILED.create(CommandLang.nodeOperationFailed(exception));
+        }
+        requireManuallyRegisteredNode(environment, context, normalizedNode);
+        try {
             environment.manualPermissionNodeRegistry().removeNode(normalizedNode);
-        } catch (IllegalArgumentException | UnsupportedOperationException exception) {
+        } catch (RuntimeException exception) {
             throw NODE_OPERATION_FAILED.create(CommandLang.nodeOperationFailed(exception));
         }
 
@@ -1274,7 +1289,7 @@ public final class ClutchPermsCommands {
             return onlineSubject.get();
         }
 
-        Optional<CommandSubject> knownSubject = resolveKnownSubject(environment, target);
+        Optional<CommandSubject> knownSubject = resolveKnownSubject(environment, context, target);
         if (knownSubject.isPresent()) {
             return knownSubject.get();
         }
@@ -1284,11 +1299,12 @@ public final class ClutchPermsCommands {
             String displayName = environment.subjectMetadataService().getSubject(subjectId).map(SubjectMetadata::lastKnownName).orElse(subjectId.toString());
             return new CommandSubject(subjectId, displayName);
         } catch (IllegalArgumentException exception) {
-            throw UNKNOWN_TARGET.create(target);
+            throw unknownUserTargetFeedback(environment, context, target);
         }
     }
 
-    private static <S> Optional<CommandSubject> resolveKnownSubject(ClutchPermsCommandEnvironment<S> environment, String target) throws CommandSyntaxException {
+    private static <S> Optional<CommandSubject> resolveKnownSubject(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String target)
+            throws CommandSyntaxException {
         String normalizedTarget = target.toLowerCase(Locale.ROOT);
         List<SubjectMetadata> matches = environment.subjectMetadataService().getSubjects().values().stream()
                 .filter(subject -> subject.lastKnownName().toLowerCase(Locale.ROOT).equals(normalizedTarget))
@@ -1297,27 +1313,26 @@ public final class ClutchPermsCommands {
             return Optional.empty();
         }
         if (matches.size() > 1) {
-            String matchedSubjects = matches.stream().map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
-            throw AMBIGUOUS_TARGET.create(CommandLang.ambiguousKnownUser(target, matchedSubjects));
+            throw ambiguousKnownUserFeedback(target, matches);
         }
 
         SubjectMetadata subject = matches.getFirst();
         return Optional.of(new CommandSubject(subject.subjectId(), subject.lastKnownName()));
     }
 
-    private static <S> Optional<StorageFileKind> getOptionalBackupKind(CommandContext<S> context) throws CommandSyntaxException {
+    private static <S> Optional<StorageFileKind> getOptionalBackupKind(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         boolean hasBackupKind = context.getNodes().stream().anyMatch(node -> BACKUP_KIND_ARGUMENT.equals(node.getNode().getName()));
         if (!hasBackupKind) {
             return Optional.empty();
         }
-        return Optional.of(getBackupKind(context));
+        return Optional.of(getBackupKind(environment, context));
     }
 
-    private static <S> StorageFileKind getBackupKind(CommandContext<S> context) throws CommandSyntaxException {
+    private static <S> StorageFileKind getBackupKind(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String token = StringArgumentType.getString(context, BACKUP_KIND_ARGUMENT).toLowerCase(Locale.ROOT);
         Optional<StorageFileKind> kind = StorageFileKind.fromToken(token);
         if (kind.isEmpty()) {
-            throw BACKUP_OPERATION_FAILED.create(CommandLang.unknownBackupKind(token));
+            throw unknownBackupKindFeedback(environment, context, token);
         }
         return kind.get();
     }
@@ -1382,6 +1397,252 @@ public final class ClutchPermsCommands {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(new IllegalArgumentException("group name must not be blank")));
         }
         return parentGroupName;
+    }
+
+    private static <S> String requireExistingGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String groupName) throws CommandSyntaxException {
+        String normalizedGroupName = normalizeGroupName(groupName);
+        if (!environment.groupService().hasGroup(normalizedGroupName)) {
+            throw unknownGroupTargetFeedback(environment, context, normalizedGroupName, false);
+        }
+        return normalizedGroupName;
+    }
+
+    private static <S> String requireExistingParentGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String groupName) throws CommandSyntaxException {
+        String normalizedGroupName = normalizeGroupName(groupName);
+        if (!environment.groupService().hasGroup(normalizedGroupName)) {
+            throw unknownGroupTargetFeedback(environment, context, normalizedGroupName, true);
+        }
+        return normalizedGroupName;
+    }
+
+    private static <S> void requireKnownBackupFile(CommandContext<S> context, StorageFileKind kind, String backupFileName, List<StorageBackup> backups)
+            throws CommandSyntaxException {
+        boolean knownBackupFile = backups.stream().map(StorageBackup::fileName).anyMatch(backupFileName::equals);
+        if (knownBackupFile) {
+            return;
+        }
+
+        List<CommandMessage> messages = new ArrayList<>();
+        messages.add(CommandLang.unknownBackupFile(kind.token(), backupFileName));
+        if (backups.isEmpty()) {
+            messages.add(CommandLang.noBackupsForKind(kind.token()));
+        } else {
+            List<String> matches = closestMatches(backupFileName, backups.stream().map(backup -> candidate(backup.fileName())).toList());
+            if (!matches.isEmpty()) {
+                messages.add(CommandLang.closestBackupFiles(String.join(", ", matches)));
+            }
+        }
+        messages.add(CommandLang.tryHeader());
+        messages.add(CommandLang.suggestion(rootLiteral(context), "backup list " + kind.token()));
+        throw feedback(messages);
+    }
+
+    private static <S> void requireManuallyRegisteredNode(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String normalizedNode)
+            throws CommandSyntaxException {
+        if (environment.manualPermissionNodeRegistry().getKnownNode(normalizedNode).isPresent()) {
+            return;
+        }
+
+        List<CommandMessage> messages = new ArrayList<>();
+        Optional<KnownPermissionNode> knownNode = environment.permissionNodeRegistry().getKnownNode(normalizedNode);
+        if (knownNode.isPresent()) {
+            messages.add(CommandLang.nonManualNode(formatNodeSource(knownNode.get()), normalizedNode));
+        } else {
+            messages.add(CommandLang.unknownManualNode(normalizedNode));
+        }
+        messages.add(CommandLang.onlyManualNodesRemovable());
+
+        List<KnownPermissionNode> manualNodes = environment.manualPermissionNodeRegistry().getKnownNodes().stream().sorted(Comparator.comparing(KnownPermissionNode::node))
+                .toList();
+        if (manualNodes.isEmpty()) {
+            messages.add(CommandLang.noManualNodes());
+            messages.add(CommandLang.tryHeader());
+            messages.add(CommandLang.suggestion(rootLiteral(context), "nodes add " + normalizedNode));
+        } else {
+            List<String> matches = closestMatches(normalizedNode, manualNodes.stream().map(node -> candidate(node.node())).toList());
+            if (!matches.isEmpty()) {
+                messages.add(CommandLang.closestManualNodes(String.join(", ", matches)));
+            } else {
+                messages.add(CommandLang.tryHeader());
+                messages.add(CommandLang.suggestion(rootLiteral(context), "nodes list"));
+            }
+        }
+        throw feedback(messages);
+    }
+
+    private static <S> CommandFeedbackException unknownUserTargetFeedback(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String target) {
+        List<CommandMessage> messages = new ArrayList<>();
+        messages.add(CommandLang.unknownUserTarget(target));
+        messages.add(CommandLang.userTargetForms());
+
+        List<String> onlineMatches = closestMatches(target, environment.onlineSubjectNames(context.getSource()).stream().map(ClutchPermsCommands::candidate).toList());
+        if (!onlineMatches.isEmpty()) {
+            messages.add(CommandLang.closestOnlineUsers(String.join(", ", onlineMatches)));
+        }
+
+        List<String> knownMatches = closestMatches(target,
+                environment.subjectMetadataService().getSubjects().values().stream().map(subject -> candidate(subject.lastKnownName(), formatSubjectMetadata(subject))).toList());
+        if (!knownMatches.isEmpty()) {
+            messages.add(CommandLang.closestKnownUsers(String.join(", ", knownMatches)));
+        }
+
+        if (onlineMatches.isEmpty() && knownMatches.isEmpty()) {
+            messages.add(CommandLang.noUserTargetMatches());
+            messages.add(CommandLang.tryHeader());
+            messages.add(CommandLang.suggestion(rootLiteral(context), "users search " + target));
+        }
+        return feedback(messages);
+    }
+
+    private static CommandFeedbackException ambiguousKnownUserFeedback(String target, List<SubjectMetadata> matches) {
+        List<CommandMessage> messages = new ArrayList<>();
+        messages.add(CommandLang.ambiguousKnownUser(target));
+        messages.add(CommandLang.ambiguousKnownUserDetail(target));
+        matches.stream().map(ClutchPermsCommands::formatSubjectMetadata).forEach(match -> messages.add(CommandLang.targetMatch(match)));
+        return feedback(messages);
+    }
+
+    private static <S> CommandFeedbackException unknownGroupTargetFeedback(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String groupName,
+            boolean parentGroup) {
+        List<CommandMessage> messages = new ArrayList<>();
+        messages.add(parentGroup ? CommandLang.unknownParentGroupTarget(groupName) : CommandLang.unknownGroupTarget(groupName));
+
+        Set<String> groups = environment.groupService().getGroups();
+        if (groups.isEmpty()) {
+            messages.add(CommandLang.noGroupsDefined());
+            messages.add(CommandLang.tryHeader());
+            messages.add(CommandLang.suggestion(rootLiteral(context), "group " + groupName + " create"));
+            return feedback(messages);
+        }
+
+        List<String> matches = closestMatches(groupName, groups.stream().map(ClutchPermsCommands::candidate).toList());
+        if (!matches.isEmpty()) {
+            messages.add(CommandLang.closestGroups(String.join(", ", matches)));
+        } else {
+            messages.add(CommandLang.noGroupTargetMatches());
+            messages.add(CommandLang.tryHeader());
+            messages.add(CommandLang.suggestion(rootLiteral(context), "group list"));
+        }
+        return feedback(messages);
+    }
+
+    private static <S> CommandFeedbackException unknownBackupKindFeedback(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String token) {
+        List<String> validKinds;
+        try {
+            validKinds = environment.storageBackupService().fileKinds().stream().map(StorageFileKind::token).sorted().toList();
+        } catch (RuntimeException exception) {
+            validKinds = Arrays.stream(StorageFileKind.values()).map(StorageFileKind::token).sorted().toList();
+        }
+        if (validKinds.isEmpty()) {
+            validKinds = Arrays.stream(StorageFileKind.values()).map(StorageFileKind::token).sorted().toList();
+        }
+
+        List<CommandMessage> messages = new ArrayList<>();
+        messages.add(CommandLang.unknownBackupKind(token));
+        List<String> matches = closestMatches(token, validKinds.stream().map(ClutchPermsCommands::candidate).toList());
+        if (matches.isEmpty()) {
+            messages.add(CommandLang.validBackupKinds(String.join(", ", validKinds)));
+        } else {
+            messages.add(CommandLang.closestBackupKinds(String.join(", ", matches)));
+        }
+        return feedback(messages);
+    }
+
+    private static CommandFeedbackException feedback(List<CommandMessage> messages) {
+        return new CommandFeedbackException(messages);
+    }
+
+    private static TargetCandidate candidate(String text) {
+        return candidate(text, text);
+    }
+
+    private static TargetCandidate candidate(String matchText, String displayText) {
+        return new TargetCandidate(matchText, displayText);
+    }
+
+    private static List<String> closestMatches(String target, Collection<TargetCandidate> candidates) {
+        String query = target.trim().toLowerCase(Locale.ROOT);
+        if (query.isEmpty()) {
+            return List.of();
+        }
+
+        return candidates
+                .stream().map(candidate -> matchCandidate(query, candidate)).flatMap(Optional::stream).sorted(Comparator.comparingInt(TargetMatch::category)
+                        .thenComparingInt(TargetMatch::score).thenComparing(TargetMatch::sortText).thenComparing(TargetMatch::displayText))
+                .limit(TARGET_MATCH_LIMIT).map(TargetMatch::displayText).toList();
+    }
+
+    private static Optional<TargetMatch> matchCandidate(String query, TargetCandidate candidate) {
+        String candidateText = candidate.matchText().trim().toLowerCase(Locale.ROOT);
+        if (candidateText.isEmpty()) {
+            return Optional.empty();
+        }
+
+        if (candidateText.startsWith(query)) {
+            return Optional.of(new TargetMatch(candidate.displayText(), 0, candidateText.length() - query.length(), candidateText));
+        }
+
+        int substringIndex = candidateText.indexOf(query);
+        if (substringIndex >= 0) {
+            return Optional.of(new TargetMatch(candidate.displayText(), 1, substringIndex, candidateText));
+        }
+
+        int reverseSubstringIndex = query.indexOf(candidateText);
+        if (reverseSubstringIndex >= 0) {
+            return Optional.of(new TargetMatch(candidate.displayText(), 1, 100 + reverseSubstringIndex, candidateText));
+        }
+
+        int maximumDistance = maximumEditDistance(query);
+        int distance = editDistance(query, candidateText, maximumDistance);
+        if (distance <= maximumDistance) {
+            return Optional.of(new TargetMatch(candidate.displayText(), 2, distance, candidateText));
+        }
+
+        return Optional.empty();
+    }
+
+    private static int maximumEditDistance(String query) {
+        if (query.length() <= 3) {
+            return 1;
+        }
+        if (query.length() <= 8) {
+            return 2;
+        }
+        return 3;
+    }
+
+    private static int editDistance(String first, String second, int cutoff) {
+        if (Math.abs(first.length() - second.length()) > cutoff) {
+            return cutoff + 1;
+        }
+
+        int[] previous = new int[second.length() + 1];
+        int[] current = new int[second.length() + 1];
+        for (int column = 0; column <= second.length(); column++) {
+            previous[column] = column;
+        }
+
+        for (int row = 1; row <= first.length(); row++) {
+            current[0] = row;
+            int bestInRow = current[0];
+            for (int column = 1; column <= second.length(); column++) {
+                int substitutionCost = first.charAt(row - 1) == second.charAt(column - 1) ? 0 : 1;
+                int insertion = current[column - 1] + 1;
+                int deletion = previous[column] + 1;
+                int substitution = previous[column - 1] + substitutionCost;
+                current[column] = Math.min(Math.min(insertion, deletion), substitution);
+                bestInRow = Math.min(bestInRow, current[column]);
+            }
+            if (bestInRow > cutoff) {
+                return cutoff + 1;
+            }
+
+            int[] nextPrevious = previous;
+            previous = current;
+            current = nextPrevious;
+        }
+
+        return previous[second.length()];
     }
 
     private static <S> CompletableFuture<Suggestions> suggestPermissionAssignment(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context,
@@ -1450,6 +1711,10 @@ public final class ClutchPermsCommands {
         return formattedNode;
     }
 
+    private static String formatNodeSource(KnownPermissionNode node) {
+        return node.source().name().toLowerCase(Locale.ROOT).replace('_', '-');
+    }
+
     private static String formatResolutionSource(PermissionResolution resolution) {
         return switch (resolution.source()) {
             case DIRECT -> "direct";
@@ -1481,6 +1746,28 @@ public final class ClutchPermsCommands {
     private interface CommandAction<S> {
 
         int run(S source) throws CommandSyntaxException;
+    }
+
+    private static final class CommandFeedbackException extends CommandSyntaxException {
+
+        private static final long serialVersionUID = 1L;
+
+        private final List<CommandMessage> messages;
+
+        private CommandFeedbackException(List<CommandMessage> messages) {
+            super(FEEDBACK_MESSAGES, new LiteralMessage(messages.isEmpty() ? "" : messages.getFirst().plainText()));
+            this.messages = List.copyOf(messages);
+        }
+
+        private List<CommandMessage> messages() {
+            return messages;
+        }
+    }
+
+    private record TargetCandidate(String matchText, String displayText) {
+    }
+
+    private record TargetMatch(String displayText, int category, int score, String sortText) {
     }
 
     private record PermissionAssignment(String node, PermissionValue value) {

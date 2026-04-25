@@ -15,6 +15,7 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.CommandArguments;
+import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 
 /**
@@ -148,7 +149,7 @@ public final class UserSubcommand {
     private static <S> CompletableFuture<Suggestions> suggestGroups(ClutchPermsCommandEnvironment<S> environment, SuggestionsBuilder builder) {
         String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
         environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining))
-                .forEach(builder::suggest);
+                .filter(group -> !GroupService.DEFAULT_GROUP.equals(group)).forEach(builder::suggest);
         return builder.buildFuture();
     }
 

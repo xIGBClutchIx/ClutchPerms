@@ -65,7 +65,7 @@ Shared package ownership:
 - Groups are named, normalized, and store explicit permission assignments.
 - Groups can inherit multiple parent groups recursively.
 - User group membership is direct only.
-- A group named `default` applies implicitly to every subject when it exists.
+- The `default` group always exists, applies implicitly to every subject, and cannot be deleted.
 - Users cannot be explicitly added to or removed from `default`.
 - Effective resolution order is direct user assignment, explicit user group hierarchy, then implicit `default` hierarchy.
 - Closer child group permissions beat parent permissions.
@@ -103,8 +103,8 @@ Locations:
 
 Storage expectations:
 
-- Treat missing files as empty state.
-- After successful startup or reload, materialize missing storage files with empty versioned JSON so fresh installs have visible files.
+- Treat missing files as empty state, except group storage starts with the built-in `default` group.
+- After successful startup or reload, materialize missing storage files with versioned JSON so fresh installs have visible files, including `default` in `groups.json`.
 - Save mutations immediately.
 - Create parent directories as needed.
 - Use deterministic output.
@@ -184,6 +184,7 @@ Authorization:
 - Other source types should be denied where the platform can distinguish them.
 - `status` should include storage paths, subject/group/node counts, resolver cache counts, and platform bridge status.
 - `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.
+- Bad user, group, parent group, backup kind/file, and manual known-node targets should return styled shared feedback with deterministic closest matches: case-insensitive prefix matches first, then substring matches, then small edit-distance matches, capped at 5 suggestions.
 - Node registry commands mutate only the manual registry. Built-in and platform-discovered known nodes are visible but not removable.
 
 ## Build And Versions

@@ -52,7 +52,7 @@ class StorageBackupServiceTest {
 
         assertTrue(Files.readString(permissionsFile).contains("\"subjects\": {}"));
         assertTrue(Files.readString(subjectsFile).contains("\"subjects\": {}"));
-        assertTrue(Files.readString(groupsFile).contains("\"groups\": {}"));
+        assertTrue(Files.readString(groupsFile).contains("\"default\""));
         assertTrue(Files.readString(groupsFile).contains("\"memberships\": {}"));
         assertTrue(Files.readString(nodesFile).contains("\"nodes\": {}"));
     }

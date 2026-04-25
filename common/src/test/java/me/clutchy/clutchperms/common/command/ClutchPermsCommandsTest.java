@@ -365,6 +365,48 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms unknown backup kinds report valid close matches.
+     */
+    @Test
+    void unknownBackupKindSuggestsClosestKind() {
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms backup list permisssions", console, "Unknown backup file kind: permisssions");
+
+        assertMessageContains(console, "Closest backup kinds: permissions");
+    }
+
+    /**
+     * Confirms unknown backup files report close files for the selected kind.
+     *
+     * @throws IOException when test backup setup fails
+     */
+    @Test
+    void unknownBackupFileSuggestsClosestBackupFile() throws IOException {
+        writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "first");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms backup restore permissions permissions-20260424-120000001.json", console,
+                "Unknown permissions backup file: permissions-20260424-120000001.json");
+
+        assertMessageContains(console, "Closest backup files: permissions-20260424-120000000.json");
+    }
+
+    /**
+     * Confirms unknown backup files explain when the selected kind has no backups.
+     */
+    @Test
+    void unknownBackupFileWithoutBackupsSuggestsList() {
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms backup restore permissions permissions-20260424-120000001.json", console,
+                "Unknown permissions backup file: permissions-20260424-120000001.json");
+
+        assertMessageContains(console, "No backups exist for permissions.");
+        assertMessageContains(console, "  /clutchperms backup list permissions");
+    }
+
+    /**
      * Confirms a console source can bootstrap direct permission assignments.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -529,9 +571,10 @@ class ClutchPermsCommandsTest {
 
         assertEquals(PermissionValue.UNSET, groupService.getGroups().contains("admin") ? groupService.getGroupPermission("admin", "example.node") : PermissionValue.UNSET);
         assertEquals(List.of("Created group admin.", "Set example.node for group admin to TRUE.", "Added Target (00000000-0000-0000-0000-000000000002) to group admin.",
-                "Groups for Target (00000000-0000-0000-0000-000000000002): admin", "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.",
-                "Permissions for group admin: example.node=TRUE", "Members of group admin: Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.",
-                "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."), console.messages());
+                "Groups for Target (00000000-0000-0000-0000-000000000002): admin, default (implicit)",
+                "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.", "Permissions for group admin: example.node=TRUE",
+                "Members of group admin: Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.", "Cleared example.node for group admin.",
+                "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."), console.messages());
     }
 
     /**
@@ -600,7 +643,6 @@ class ClutchPermsCommandsTest {
         groupService.createGroup("staff");
         groupService.setGroupPermission("staff", "example.node", PermissionValue.FALSE);
         groupService.addSubjectGroup(TARGET_ID, "staff");
-        groupService.createGroup("default");
         groupService.setGroupPermission("default", "*", PermissionValue.FALSE);
         TestSource console = TestSource.console();
 
@@ -670,7 +712,7 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms group staff create", console);
         dispatcher.execute("clutchperms group admin parent add staff", console);
 
-        assertCommandFails("clutchperms group admin parent add missing", console, "Group operation failed: unknown group: missing");
+        assertCommandFails("clutchperms group admin parent add missing", console, "Unknown parent group: missing");
         assertCommandFails("clutchperms group admin parent add admin", console, "Group operation failed: group cannot inherit itself: admin");
         assertCommandFails("clutchperms group staff parent add admin", console, "Group operation failed: group inheritance cycle detected");
     }
@@ -684,27 +726,35 @@ class ClutchPermsCommandsTest {
     void defaultGroupAppliesImplicitly() throws CommandSyntaxException {
         TestSource console = TestSource.console();
 
-        dispatcher.execute("clutchperms group default create", console);
         dispatcher.execute("clutchperms group default set example.default false", console);
         dispatcher.execute("clutchperms user Target groups", console);
         dispatcher.execute("clutchperms user Target check example.default", console);
 
         assertEquals(PermissionValue.FALSE, permissionResolver.resolve(TARGET_ID, "example.default").value());
-        assertEquals(
-                List.of("Created group default.", "Set example.default for group default to FALSE.", "Groups for Target (00000000-0000-0000-0000-000000000002): default (implicit)",
-                        "Target (00000000-0000-0000-0000-000000000002) effective example.default = FALSE from default group."),
-                console.messages());
+        assertEquals(List.of("Set example.default for group default to FALSE.", "Groups for Target (00000000-0000-0000-0000-000000000002): default (implicit)",
+                "Target (00000000-0000-0000-0000-000000000002) effective example.default = FALSE from default group."), console.messages());
     }
 
     /**
      * Confirms explicit default group membership is rejected because default applies implicitly.
      */
     @Test
-    void defaultGroupCannotBeAssignedExplicitly() throws CommandSyntaxException {
+    void defaultGroupCannotBeAssignedExplicitly() {
         TestSource console = TestSource.console();
-        dispatcher.execute("clutchperms group default create", console);
 
         assertCommandFails("clutchperms user Target group add default", console, "Group operation failed: default group membership is implicit");
+    }
+
+    /**
+     * Confirms the built-in default group cannot be deleted.
+     */
+    @Test
+    void defaultGroupCannotBeDeleted() {
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms group default delete", console, "Group operation failed: default group cannot be deleted");
+
+        assertTrue(groupService.hasGroup("default"));
     }
 
     /**
@@ -782,9 +832,104 @@ class ClutchPermsCommandsTest {
         subjectMetadataService.recordSubject(SECOND_TARGET_ID, "duplicate", SECOND_SEEN);
         TestSource console = TestSource.console();
 
-        assertCommandFails("clutchperms user Duplicate list", console, "Ambiguous known user Duplicate:");
-        assertLatestMessageContains(console, "Duplicate (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T12:00:00Z)");
-        assertLatestMessageContains(console, "duplicate (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T13:00:00Z)");
+        assertCommandFails("clutchperms user Duplicate list", console, "Ambiguous known user: Duplicate");
+
+        assertMessageContains(console, "More than one stored subject matches Duplicate.");
+        assertMessageContains(console, "  Duplicate (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T12:00:00Z)");
+        assertMessageContains(console, "  duplicate (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T13:00:00Z)");
+    }
+
+    /**
+     * Confirms unknown user targets show close online and stored-name matches.
+     */
+    @Test
+    void unknownUserTargetSuggestsClosestOnlineAndStoredMatches() {
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "Targe", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms user Targt list", console, "Unknown user target: Targt");
+
+        assertMessageContains(console, "Use an exact online name, stored last-known name, or UUID.");
+        assertMessageContains(console, "Closest online players: Target");
+        assertMessageContains(console, "Closest known users: Targe (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T12:00:00Z)");
+    }
+
+    /**
+     * Confirms unknown user targets without close matches suggest the users search command.
+     */
+    @Test
+    void unknownUserTargetWithoutMatchesSuggestsSearch() {
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms user CompletelyMissing list", console, "Unknown user target: CompletelyMissing");
+
+        assertMessageContains(console, "No close user matches.");
+        assertMessageContains(console, "  /clutchperms users search CompletelyMissing");
+    }
+
+    /**
+     * Confirms unknown group targets show close group matches.
+     */
+    @Test
+    void unknownGroupTargetSuggestsClosestGroup() {
+        groupService.createGroup("staff");
+        groupService.createGroup("builder");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms group staf list", console, "Unknown group: staf");
+
+        assertMessageContains(console, "Closest groups: staff");
+    }
+
+    /**
+     * Confirms unknown group targets suggest listing groups when there are no close matches.
+     */
+    @Test
+    void unknownGroupTargetWithoutCloseMatchesSuggestsList() {
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms group missing list", console, "Unknown group: missing");
+
+        assertMessageContains(console, "No close group matches.");
+        assertMessageContains(console, "  /clutchperms group list");
+    }
+
+    /**
+     * Confirms user group membership commands pre-check unknown group targets.
+     */
+    @Test
+    void unknownUserGroupTargetSuggestsClosestGroup() {
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms user Target group add staf", console, "Unknown group: staf");
+        assertCommandFails("clutchperms user Target group remove staf", console, "Unknown group: staf");
+
+        assertMessageContains(console, "Closest groups: staff");
+    }
+
+    /**
+     * Confirms explicit membership suggestions do not include the implicit default group.
+     */
+    @Test
+    void userGroupSuggestionsExcludeDefaultGroup() {
+        groupService.createGroup("staff");
+
+        assertEquals(List.of("staff"), suggestionTexts("clutchperms user Target group add "));
+    }
+
+    /**
+     * Confirms group parent commands identify an unknown parent separately from the child group.
+     */
+    @Test
+    void unknownParentGroupTargetSuggestsClosestGroup() {
+        groupService.createGroup("admin");
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms group admin parent add staf", console, "Unknown parent group: staf");
+
+        assertMessageContains(console, "Closest groups: staff");
     }
 
     /**
@@ -794,9 +939,10 @@ class ClutchPermsCommandsTest {
     void invalidTargetAndNodeFailExecution() {
         TestSource console = TestSource.console();
 
-        assertCommandFails("clutchperms user Missing list", console, "Unknown online player or invalid UUID: Missing");
+        assertCommandFails("clutchperms user Missing list", console, "Unknown user target: Missing");
         assertCommandFails("clutchperms user " + TARGET_ID + " get bad node", console, "Invalid permission node: bad node");
         assertCommandFails("clutchperms user Target set example* true", console, "Invalid permission node: example*");
+        groupService.createGroup("staff");
         assertCommandFails("clutchperms group staff set example.*.node true", console, "Invalid permission node: example.*.node");
     }
 
@@ -861,7 +1007,6 @@ class ClutchPermsCommandsTest {
         groupService.setGroupPermission("base", "example.inherited", PermissionValue.TRUE);
         groupService.addGroupParent("staff", "base");
         groupService.addSubjectGroup(TARGET_ID, "staff");
-        groupService.createGroup("default");
         groupService.setGroupPermission("default", "default.node", PermissionValue.TRUE);
 
         assertEquals(List.of("example.group", "example.inherited"), suggestionTexts("clutchperms user Target check ex"));
@@ -884,7 +1029,6 @@ class ClutchPermsCommandsTest {
     @Test
     void parentSuggestionsIncludeValidGroups() {
         groupService.createGroup("admin");
-        groupService.createGroup("default");
         groupService.createGroup("staff");
         groupService.addGroupParent("admin", "staff");
 
@@ -989,10 +1133,25 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
 
         assertCommandFails("clutchperms nodes remove " + PermissionNodes.ADMIN_STATUS, console,
-                "known permission node is not manually registered: " + PermissionNodes.ADMIN_STATUS);
-        assertCommandFails("clutchperms nodes remove platform.node", console, "known permission node is not manually registered: platform.node");
+                "Known permission node is supplied by built-in and cannot be removed: " + PermissionNodes.ADMIN_STATUS);
+        assertCommandFails("clutchperms nodes remove platform.node", console, "Known permission node is supplied by platform and cannot be removed: platform.node");
 
         assertEquals(0, environment.runtimeRefreshes());
+    }
+
+    /**
+     * Confirms unknown manual known-node removals suggest close manually registered nodes.
+     */
+    @Test
+    void unknownManualKnownNodeSuggestsClosestManualNode() {
+        manualPermissionNodeRegistry.addNode("example.fly");
+        manualPermissionNodeRegistry.addNode("example.build");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms nodes remove example.fli", console, "Known permission node is not manually registered: example.fli");
+
+        assertMessageContains(console, "Only manually registered known permission nodes can be removed.");
+        assertMessageContains(console, "Closest manual known permission nodes: example.fly");
     }
 
     /**
@@ -1015,18 +1174,24 @@ class ClutchPermsCommandsTest {
     }
 
     private void assertCommandFails(String command, TestSource source, String expectedMessage) {
+        int firstNewMessage = source.messages().size();
         try {
             assertEquals(0, dispatcher.execute(command, source));
         } catch (CommandSyntaxException exception) {
             throw new AssertionError("Expected styled command failure for " + command, exception);
         }
-        assertLatestMessageContains(source, expectedMessage);
+        assertMessageContains(source, firstNewMessage, expectedMessage);
     }
 
-    private static void assertLatestMessageContains(TestSource source, String expectedMessage) {
+    private static void assertMessageContains(TestSource source, String expectedMessage) {
+        assertMessageContains(source, 0, expectedMessage);
+    }
+
+    private static void assertMessageContains(TestSource source, int firstMessageIndex, String expectedMessage) {
         List<String> messages = source.messages();
-        assertTrue(!messages.isEmpty(), "Expected command feedback");
-        assertTrue(messages.get(messages.size() - 1).contains(expectedMessage), () -> "Expected latest message to contain <" + expectedMessage + "> but was " + messages);
+        assertTrue(messages.size() > firstMessageIndex, "Expected command feedback");
+        assertTrue(messages.subList(firstMessageIndex, messages.size()).stream().anyMatch(message -> message.contains(expectedMessage)),
+                () -> "Expected message to contain <" + expectedMessage + "> but was " + messages.subList(firstMessageIndex, messages.size()));
     }
 
     private void writeBackup(StorageFileKind kind, String fileName, String content) throws IOException {
@@ -1037,7 +1202,7 @@ class ClutchPermsCommandsTest {
 
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Permissions file: " + STATUS_DIAGNOSTICS.permissionsFile(), "Subjects file: " + STATUS_DIAGNOSTICS.subjectsFile(),
-                "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Known subjects: " + knownSubjects, "Known groups: 0",
+                "Groups file: " + STATUS_DIAGNOSTICS.groupsFile(), "Known nodes file: " + STATUS_DIAGNOSTICS.nodesFile(), "Known subjects: " + knownSubjects, "Known groups: 1",
                 "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
                 "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }

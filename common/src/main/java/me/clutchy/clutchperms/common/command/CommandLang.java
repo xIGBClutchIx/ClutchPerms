@@ -45,9 +45,29 @@ final class CommandLang {
 
     private static final String VALIDATE_SUCCESS = "Validated permissions, subjects, groups, and known nodes from disk.";
 
-    private static final String ERROR_UNKNOWN_TARGET = "Unknown online player or invalid UUID: %s";
+    private static final String ERROR_UNKNOWN_USER_TARGET = "Unknown user target: %s";
 
-    private static final String ERROR_AMBIGUOUS_KNOWN_USER = "Ambiguous known user %s: %s";
+    private static final String ERROR_AMBIGUOUS_KNOWN_USER_TARGET = "Ambiguous known user: %s";
+
+    private static final String USER_TARGET_FORMS = "Use an exact online name, stored last-known name, or UUID.";
+
+    private static final String AMBIGUOUS_KNOWN_USER_DETAIL = "More than one stored subject matches %s.";
+
+    private static final String CLOSEST_ONLINE_USERS = "Closest online players: %s";
+
+    private static final String CLOSEST_KNOWN_USERS = "Closest known users: %s";
+
+    private static final String NO_USER_TARGET_MATCHES = "No close user matches.";
+
+    private static final String ERROR_UNKNOWN_GROUP_TARGET = "Unknown group: %s";
+
+    private static final String ERROR_UNKNOWN_PARENT_GROUP_TARGET = "Unknown parent group: %s";
+
+    private static final String CLOSEST_GROUPS = "Closest groups: %s";
+
+    private static final String NO_GROUPS_DEFINED = "No groups are defined.";
+
+    private static final String NO_GROUP_TARGET_MATCHES = "No close group matches.";
 
     private static final String ERROR_INVALID_NODE = "Invalid permission node: %s";
 
@@ -66,6 +86,16 @@ final class CommandLang {
     private static final String ERROR_BACKUP_OPERATION_FAILED = "Backup operation failed: %s";
 
     private static final String ERROR_UNKNOWN_BACKUP_KIND = "Unknown backup file kind: %s";
+
+    private static final String VALID_BACKUP_KINDS = "Valid backup kinds: %s";
+
+    private static final String CLOSEST_BACKUP_KINDS = "Closest backup kinds: %s";
+
+    private static final String ERROR_UNKNOWN_BACKUP_FILE = "Unknown %s backup file: %s";
+
+    private static final String NO_BACKUPS_FOR_KIND = "No backups exist for %s.";
+
+    private static final String CLOSEST_BACKUP_FILES = "Closest backup files: %s";
 
     private static final String BACKUPS_EMPTY = "No backups found.";
 
@@ -104,6 +134,16 @@ final class CommandLang {
     private static final String NODE_ADDED = "Registered known permission node %s.";
 
     private static final String NODE_REMOVED = "Removed known permission node %s.";
+
+    private static final String ERROR_UNKNOWN_MANUAL_NODE = "Known permission node is not manually registered: %s";
+
+    private static final String ERROR_NON_MANUAL_NODE = "Known permission node is supplied by %s and cannot be removed: %s";
+
+    private static final String ONLY_MANUAL_NODES_REMOVABLE = "Only manually registered known permission nodes can be removed.";
+
+    private static final String CLOSEST_MANUAL_NODES = "Closest manual known permission nodes: %s";
+
+    private static final String NO_MANUAL_NODES = "No manual known permission nodes are registered.";
 
     private static final String GROUPS_EMPTY = "No groups defined.";
 
@@ -162,6 +202,8 @@ final class CommandLang {
     private static final String PERMISSION_EXPLAIN_MATCH = "Match: %s %s=%s (%s).";
 
     private static final String PERMISSION_EXPLAIN_NO_MATCHES = "Matches: none.";
+
+    private static final String TARGET_MATCH = "  %s";
 
     static List<CommandMessage> commandList(String rootLiteral) {
         return List.of(heading(COMMANDS_HEADER), usage(rootLiteral, "<status|reload|validate>"), usage(rootLiteral, "backup list [permissions|subjects|groups|nodes]"),
@@ -246,12 +288,52 @@ final class CommandLang {
         return success(VALIDATE_SUCCESS);
     }
 
-    static CommandMessage unknownTarget(Object target) {
-        return error(ERROR_UNKNOWN_TARGET, target);
+    static CommandMessage unknownUserTarget(String target) {
+        return error(ERROR_UNKNOWN_USER_TARGET, target);
     }
 
-    static CommandMessage ambiguousKnownUser(String target, String matchedSubjects) {
-        return error(ERROR_AMBIGUOUS_KNOWN_USER, target, matchedSubjects);
+    static CommandMessage ambiguousKnownUser(String target) {
+        return error(ERROR_AMBIGUOUS_KNOWN_USER_TARGET, target);
+    }
+
+    static CommandMessage userTargetForms() {
+        return detail(USER_TARGET_FORMS);
+    }
+
+    static CommandMessage ambiguousKnownUserDetail(String target) {
+        return detail(AMBIGUOUS_KNOWN_USER_DETAIL, target);
+    }
+
+    static CommandMessage closestOnlineUsers(String matches) {
+        return detail(CLOSEST_ONLINE_USERS, matches);
+    }
+
+    static CommandMessage closestKnownUsers(String matches) {
+        return detail(CLOSEST_KNOWN_USERS, matches);
+    }
+
+    static CommandMessage noUserTargetMatches() {
+        return detail(NO_USER_TARGET_MATCHES);
+    }
+
+    static CommandMessage unknownGroupTarget(String group) {
+        return error(ERROR_UNKNOWN_GROUP_TARGET, group);
+    }
+
+    static CommandMessage unknownParentGroupTarget(String group) {
+        return error(ERROR_UNKNOWN_PARENT_GROUP_TARGET, group);
+    }
+
+    static CommandMessage closestGroups(String matches) {
+        return detail(CLOSEST_GROUPS, matches);
+    }
+
+    static CommandMessage noGroupsDefined() {
+        return detail(NO_GROUPS_DEFINED);
+    }
+
+    static CommandMessage noGroupTargetMatches() {
+        return detail(NO_GROUP_TARGET_MATCHES);
     }
 
     static CommandMessage invalidNode(Object node) {
@@ -288,6 +370,26 @@ final class CommandLang {
 
     static CommandMessage unknownBackupKind(String token) {
         return error(ERROR_UNKNOWN_BACKUP_KIND, token);
+    }
+
+    static CommandMessage validBackupKinds(String kinds) {
+        return detail(VALID_BACKUP_KINDS, kinds);
+    }
+
+    static CommandMessage closestBackupKinds(String kinds) {
+        return detail(CLOSEST_BACKUP_KINDS, kinds);
+    }
+
+    static CommandMessage unknownBackupFile(String kind, String backupFileName) {
+        return error(ERROR_UNKNOWN_BACKUP_FILE, kind, backupFileName);
+    }
+
+    static CommandMessage noBackupsForKind(String kind) {
+        return detail(NO_BACKUPS_FOR_KIND, kind);
+    }
+
+    static CommandMessage closestBackupFiles(String backupFileNames) {
+        return detail(CLOSEST_BACKUP_FILES, backupFileNames);
     }
 
     static CommandMessage backupsEmpty() {
@@ -364,6 +466,30 @@ final class CommandLang {
 
     static CommandMessage nodeRemoved(String node) {
         return success(NODE_REMOVED, node);
+    }
+
+    static CommandMessage unknownManualNode(String node) {
+        return error(ERROR_UNKNOWN_MANUAL_NODE, node);
+    }
+
+    static CommandMessage nonManualNode(String source, String node) {
+        return error(ERROR_NON_MANUAL_NODE, source, node);
+    }
+
+    static CommandMessage onlyManualNodesRemovable() {
+        return detail(ONLY_MANUAL_NODES_REMOVABLE);
+    }
+
+    static CommandMessage closestManualNodes(String nodes) {
+        return detail(CLOSEST_MANUAL_NODES, nodes);
+    }
+
+    static CommandMessage noManualNodes() {
+        return detail(NO_MANUAL_NODES);
+    }
+
+    static CommandMessage targetMatch(String match) {
+        return detail(TARGET_MATCH, match);
     }
 
     static CommandMessage groupsEmpty() {

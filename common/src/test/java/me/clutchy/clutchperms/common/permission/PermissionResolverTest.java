@@ -157,7 +157,6 @@ class PermissionResolverTest {
         groupService.createGroup("staff");
         groupService.setGroupPermission("staff", "example.node", PermissionValue.FALSE);
         groupService.addSubjectGroup(SUBJECT_ID, "staff");
-        groupService.createGroup("default");
         groupService.setGroupPermission("default", "*", PermissionValue.FALSE);
 
         PermissionExplanation explanation = resolver.explain(SUBJECT_ID, "Example.Node");

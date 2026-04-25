@@ -2,7 +2,7 @@
 
 ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It provides shared `/clutchperms` commands, JSON storage, users, groups, terminal wildcard permissions, backup/restore support, and runtime permission bridges for each platform.
 
-This is a usable prototype, not a mature permissions suite. The model is intentionally small: direct user permissions, inherited groups, an implicit `default` group, terminal wildcards, and shared effective permission resolution.
+This is a usable prototype, not a mature permissions suite. The model is intentionally small: direct user permissions, inherited groups, a built-in implicit `default` group, terminal wildcards, and shared effective permission resolution.
 
 For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 
@@ -13,7 +13,7 @@ For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 - JSON-backed storage for permissions, groups, subjects, and known nodes
 - Direct user permissions with `TRUE`, `FALSE`, and `UNSET`
 - Named groups with recursive parent inheritance
-- Implicit `default` group when a group named `default` exists
+- Built-in implicit `default` group
 - Terminal wildcards: `*` and trailing `prefix.*`
 - Offline targeting by stored last-known name or UUID
 - Validation, reload, rolling backups, and one-file restore with rollback
@@ -87,8 +87,10 @@ Useful grants:
 Notes:
 
 - `<target>` resolves exact online name, then exact stored last-known name, then UUID.
+- Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
-- Users cannot be explicitly added to or removed from the implicit `default` group.
+- The `default` group always exists, applies implicitly to every subject, and cannot be deleted.
+- Users cannot be explicitly added to or removed from `default`.
 - Permission assignments may use exact nodes, `*`, or terminal wildcards like `example.*`.
 - Mid-node wildcards such as `example.*.edit` are rejected.
 - Known node registry entries must be exact nodes. Wildcards are valid assignments, not known-node entries.
@@ -104,7 +106,7 @@ ClutchPerms writes four versioned JSON files:
 | `subjects.json` | Last-known subject names and last-seen timestamps |
 | `nodes.json` | Manually registered exact known permission nodes |
 
-Missing files load as empty state and are materialized after successful startup or reload.
+Missing files load as empty state, except `groups.json` starts with the built-in `default` group. Missing files are materialized after successful startup or reload.
 
 Validation is strict. Malformed JSON, unsupported versions, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
 
