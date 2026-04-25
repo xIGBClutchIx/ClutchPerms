@@ -15,6 +15,7 @@ import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
+import me.clutchy.clutchperms.common.display.DisplayResolver;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.KnownPermissionNode;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -84,6 +85,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         registerServices();
         getServer().getPluginManager().registerEvents(runtimePermissionBridge, this);
         getServer().getPluginManager().registerEvents(subjectMetadataListener, this);
+        getServer().getPluginManager().registerEvents(new PaperChatDisplayListener(this::getDisplayResolver), this);
         runtimePermissionBridge.refreshOnlinePlayers();
         subjectMetadataListener.recordOnlinePlayers(getServer().getOnlinePlayers());
 
@@ -158,6 +160,15 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
      */
     public PermissionResolver getPermissionResolver() {
         return getRuntime().permissionResolver();
+    }
+
+    /**
+     * Exposes the active display resolver for Paper chat formatting.
+     *
+     * @return active display resolver
+     */
+    DisplayResolver getDisplayResolver() {
+        return getRuntime().displayResolver();
     }
 
     /**

@@ -8,6 +8,7 @@ import java.util.UUID;
 import java.util.function.UnaryOperator;
 
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
+import me.clutchy.clutchperms.common.display.DisplayResolver;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -67,6 +68,15 @@ public interface ClutchPermsCommandEnvironment<S> {
      */
     default PermissionResolver permissionResolver() {
         return new PermissionResolver(permissionService(), groupService());
+    }
+
+    /**
+     * Returns the effective display resolver used by chat and display commands.
+     *
+     * @return active display resolver
+     */
+    default DisplayResolver displayResolver() {
+        return new DisplayResolver(subjectMetadataService(), groupService());
     }
 
     /**

@@ -64,6 +64,15 @@ permissions:
   clutchperms.admin.user.group.remove:
     description: Allows removing users from groups.
     default: false
+  clutchperms.admin.user.display.view:
+    description: Allows viewing user prefixes and suffixes.
+    default: false
+  clutchperms.admin.user.display.set:
+    description: Allows setting user prefixes and suffixes.
+    default: false
+  clutchperms.admin.user.display.clear:
+    description: Allows clearing user prefixes and suffixes.
+    default: false
   clutchperms.admin.group.list:
     description: Allows listing groups.
     default: false
@@ -93,6 +102,15 @@ permissions:
     default: false
   clutchperms.admin.group.parent.remove:
     description: Allows removing group parents.
+    default: false
+  clutchperms.admin.group.display.view:
+    description: Allows viewing group prefixes and suffixes.
+    default: false
+  clutchperms.admin.group.display.set:
+    description: Allows setting group prefixes and suffixes.
+    default: false
+  clutchperms.admin.group.display.clear:
+    description: Allows clearing group prefixes and suffixes.
     default: false
   clutchperms.admin.users.list:
     description: Allows listing known users.

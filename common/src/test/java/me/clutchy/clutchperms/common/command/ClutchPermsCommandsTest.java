@@ -148,7 +148,7 @@ class ClutchPermsCommandsTest {
         assertEquals(commandListPageOneMessages("cperms"), cperms.messages());
         assertEquals(List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
                 "  /perms group <group> <create|delete|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
-                "  /perms group <group> parent <add|remove> <parent>"), perms.messages());
+                "  /perms group <group> parent <add|remove> <parent>", "  /perms group <group> <prefix|suffix> get|set|clear"), perms.messages());
         assertSuggests(perms.commandMessages().get(3), "/perms group list");
     }
 
@@ -183,7 +183,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(List.of("ClutchPerms commands (page 1/11):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/11 | Next >"),
+        assertEquals(List.of("ClutchPerms commands (page 1/13):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/13 | Next >"),
                 console.messages());
         assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
     }
@@ -202,7 +202,7 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("Invalid page: nope", "Pages start at 1.", "Try one:", "  /clutchperms help 1"), invalid.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms help 99", outOfRange));
-        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-5.", "Try one:", "  /clutchperms help 5"), outOfRange.messages());
+        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-6.", "Try one:", "  /clutchperms help 6"), outOfRange.messages());
     }
 
     /**
@@ -333,7 +333,7 @@ class ClutchPermsCommandsTest {
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
-        assertEquals(List.of("ClutchPerms commands (page 1/11):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/11 | Next >"), help.messages());
+        assertEquals(List.of("ClutchPerms commands (page 1/13):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/13 | Next >"), help.messages());
 
         permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
         permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
@@ -664,6 +664,61 @@ class ClutchPermsCommandsTest {
                         "Permissions for Target (00000000-0000-0000-0000-000000000002) (page 1/1):", "  example.node=TRUE",
                         "Cleared example.node for Target (00000000-0000-0000-0000-000000000002).", "No permissions set for Target (00000000-0000-0000-0000-000000000002)."),
                 console.messages());
+    }
+
+    /**
+     * Confirms user and group display commands manage prefixes and suffixes with effective feedback.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanManageUserAndGroupDisplayValues() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff create", console);
+        dispatcher.execute("clutchperms group staff prefix set &7[Staff]", console);
+        dispatcher.execute("clutchperms group staff suffix set &f*", console);
+        dispatcher.execute("clutchperms user Target group add staff", console);
+        dispatcher.execute("clutchperms user Target prefix get", console);
+        dispatcher.execute("clutchperms user Target prefix set &c[Admin]", console);
+        dispatcher.execute("clutchperms user Target suffix set &e!", console);
+        dispatcher.execute("clutchperms user Target prefix get", console);
+        dispatcher.execute("clutchperms user Target list", console);
+        dispatcher.execute("clutchperms group staff list", console);
+        dispatcher.execute("clutchperms user Target prefix clear", console);
+        dispatcher.execute("clutchperms user Target prefix get", console);
+        dispatcher.execute("clutchperms group staff suffix clear", console);
+        dispatcher.execute("clutchperms group staff suffix get", console);
+
+        assertTrue(subjectMetadataService.getSubjectDisplay(TARGET_ID).prefix().isEmpty());
+        assertEquals("&e!", subjectMetadataService.getSubjectDisplay(TARGET_ID).suffix().orElseThrow().rawText());
+        assertEquals("&7[Staff]", groupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
+        assertTrue(console.messages().contains("Target (00000000-0000-0000-0000-000000000002) direct prefix is unset."));
+        assertTrue(console.messages().contains("Target (00000000-0000-0000-0000-000000000002) effective prefix = &7[Staff] from group staff."));
+        assertTrue(console.messages().contains("Target (00000000-0000-0000-0000-000000000002) direct prefix = &c[Admin]."));
+        assertTrue(console.messages().contains("Target (00000000-0000-0000-0000-000000000002) effective prefix = &c[Admin] from direct."));
+        assertMessageContains(console, "  direct prefix &c[Admin]");
+        assertMessageContains(console, "  effective suffix &e! from direct");
+        assertMessageContains(console, "  prefix &7[Staff]");
+        assertMessageContains(console, "  suffix &f*");
+        assertTrue(console.messages().contains("Group staff suffix is unset."));
+    }
+
+    /**
+     * Confirms display commands validate ampersand formatting and report usage for incomplete sets.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void displayCommandsRejectInvalidValuesAndShowUsage() throws CommandSyntaxException {
+        TestSource missing = TestSource.console();
+        TestSource invalid = TestSource.console();
+
+        assertEquals(0, dispatcher.execute("clutchperms user Target prefix set", missing));
+        assertEquals(List.of("Missing display text.", "Use ampersand formatting codes like &7, &a, &l, &o, &r, and && for a literal ampersand.", "Try one:",
+                "  /clutchperms user Target prefix set <text>"), missing.messages());
+
+        assertCommandFails("clutchperms user Target suffix set &xBad", invalid, "Display operation failed: display text contains invalid formatting code &x");
     }
 
     /**
@@ -1580,9 +1635,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageOneMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 1/5):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
+        return List.of("ClutchPerms commands (page 1/6):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
                 "/" + rootLiteral + " validate", "/" + rootLiteral + " config list", "/" + rootLiteral + " config get <key>", "/" + rootLiteral + " config set <key> <value>",
-                "Page 1/5 | Next >");
+                "Page 1/6 | Next >");
     }
 
     private static List<String> commandListPageTwoMessages() {
@@ -1590,27 +1645,28 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageTwoMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 2/5):", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup list [kind] [page]",
+        return List.of("ClutchPerms commands (page 2/6):", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup list [kind] [page]",
                 "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup restore <kind> <backup-file>", "/" + rootLiteral + " user <target> list [page]",
-                "/" + rootLiteral + " user <target> get <node>", "/" + rootLiteral + " user <target> set <node> <true|false>", "< Prev | Page 2/5 | Next >");
+                "/" + rootLiteral + " user <target> get <node>", "/" + rootLiteral + " user <target> set <node> <true|false>", "< Prev | Page 2/6 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {
         return List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /clutchperms group list",
                 "  /clutchperms group <group> <create|delete|list|parents>", "  /clutchperms group <group> <get|clear> <node>",
-                "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> parent <add|remove> <parent>");
+                "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> parent <add|remove> <parent>",
+                "  /clutchperms group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsageMessages(String group) {
         return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try one:", "  /clutchperms group " + group + " <create|delete|list|parents>",
                 "  /clutchperms group " + group + " <get|clear> <node>", "  /clutchperms group " + group + " set <node> <true|false>",
-                "  /clutchperms group " + group + " parent <add|remove> <parent>");
+                "  /clutchperms group " + group + " parent <add|remove> <parent>", "  /clutchperms group " + group + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userRootUsageMessages() {
         return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try one:", "  /clutchperms user <target> <list|groups>",
                 "  /clutchperms user <target> <get|clear|check|explain> <node>", "  /clutchperms user <target> set <node> <true|false>",
-                "  /clutchperms user <target> group <add|remove> <group>");
+                "  /clutchperms user <target> group <add|remove> <group>", "  /clutchperms user <target> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> nodesUsageMessages() {

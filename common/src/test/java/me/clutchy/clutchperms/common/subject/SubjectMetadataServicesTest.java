@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -58,10 +59,14 @@ class SubjectMetadataServicesTest {
         SubjectMetadataService subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
 
         subjectMetadataService.recordSubject(FIRST_SUBJECT, " Target ", FIRST_SEEN);
+        subjectMetadataService.setSubjectPrefix(FIRST_SUBJECT, DisplayText.parse("&7[Admin]"));
+        subjectMetadataService.setSubjectSuffix(FIRST_SUBJECT, DisplayText.parse("&f*"));
 
         SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
 
         assertEquals(new SubjectMetadata(FIRST_SUBJECT, "Target", FIRST_SEEN), reloadedSubjectMetadataService.getSubject(FIRST_SUBJECT).orElseThrow());
+        assertEquals("&7[Admin]", reloadedSubjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).prefix().orElseThrow().rawText());
+        assertEquals("&f*", reloadedSubjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).suffix().orElseThrow().rawText());
     }
 
     /**
@@ -91,7 +96,8 @@ class SubjectMetadataServicesTest {
                       "lastKnownName": "Second",
                       "lastSeen": "2026-04-24T13:00:00Z"
                     }
-                  }
+                  },
+                  "display": {}
                 }
                 """, persistedJson);
     }
@@ -126,6 +132,11 @@ class SubjectMetadataServicesTest {
                       "lastKnownName": "First",
                       "lastSeen": "2026-04-24T12:00:00Z"
                     }
+                  },
+                  "display": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "prefix": "&7[Old]"
+                    }
                   }
                 }
                 """);
@@ -137,6 +148,15 @@ class SubjectMetadataServicesTest {
         assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
 
         assertThrows(PermissionStorageException.class, () -> subjectMetadataService.recordSubject(SECOND_SUBJECT, "Second", SECOND_SEEN));
+        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> subjectMetadataService.setSubjectPrefix(FIRST_SUBJECT, DisplayText.parse("&c[New]")));
+        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> subjectMetadataService.clearSubjectPrefix(FIRST_SUBJECT));
+        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> subjectMetadataService.setSubjectSuffix(FIRST_SUBJECT, DisplayText.parse("&f*")));
         assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
     }
 
@@ -187,6 +207,17 @@ class SubjectMetadataServicesTest {
                   }
                 }
                 """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "subjects": {},
+                  "display": {
+                    "00000000-0000-0000-0000-000000000001": {
+                      "prefix": "§cBad"
+                    }
+                  }
+                }
+                """);
     }
 
     private void assertFailsToLoad(String json) throws IOException {
@@ -207,6 +238,8 @@ class SubjectMetadataServicesTest {
         assertEquals(firstSubject, subjectMetadataService.getSubject(FIRST_SUBJECT).orElseThrow());
         assertFalse(subjectMetadataService.getSubject(SECOND_SUBJECT).isPresent());
         assertEquals(Map.of(FIRST_SUBJECT, firstSubject), subjectMetadataService.getSubjects());
+        assertEquals("&7[Old]", subjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).prefix().orElseThrow().rawText());
+        assertFalse(subjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).suffix().isPresent());
     }
 
     private void blockBackupRoot() throws IOException {

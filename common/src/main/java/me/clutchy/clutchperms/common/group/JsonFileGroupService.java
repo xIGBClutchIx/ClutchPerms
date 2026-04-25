@@ -21,6 +21,8 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 
+import me.clutchy.clutchperms.common.display.DisplayProfile;
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
@@ -51,7 +53,7 @@ final class JsonFileGroupService implements GroupService {
         this.groupsFile = groupsFile.toAbsolutePath().normalize();
         this.writeOptions = StorageWriteOptions.defaultIfNull(writeOptions);
         GroupData groupData = loadGroups();
-        this.delegate = new InMemoryGroupService(groupData.groupPermissions(), groupData.groupParents(), groupData.memberships());
+        this.delegate = new InMemoryGroupService(groupData.groupPermissions(), groupData.groupDisplays(), groupData.groupParents(), groupData.memberships());
     }
 
     @Override
@@ -103,6 +105,39 @@ final class JsonFileGroupService implements GroupService {
     }
 
     @Override
+    public synchronized DisplayProfile getGroupDisplay(String groupName) {
+        return delegate.getGroupDisplay(groupName);
+    }
+
+    @Override
+    public synchronized void setGroupPrefix(String groupName, DisplayText prefix) {
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.setGroupPrefix(groupName, prefix);
+        commit(candidate);
+    }
+
+    @Override
+    public synchronized void clearGroupPrefix(String groupName) {
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.clearGroupPrefix(groupName);
+        commit(candidate);
+    }
+
+    @Override
+    public synchronized void setGroupSuffix(String groupName, DisplayText suffix) {
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.setGroupSuffix(groupName, suffix);
+        commit(candidate);
+    }
+
+    @Override
+    public synchronized void clearGroupSuffix(String groupName) {
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.clearGroupSuffix(groupName);
+        commit(candidate);
+    }
+
+    @Override
     public synchronized Set<String> getSubjectGroups(UUID subjectId) {
         return delegate.getSubjectGroups(subjectId);
     }
@@ -146,34 +181,34 @@ final class JsonFileGroupService implements GroupService {
     }
 
     private InMemoryGroupService copyDelegate() {
-        return new InMemoryGroupService(delegate.groupPermissionsSnapshot(), delegate.groupParentsSnapshot(), delegate.membershipsSnapshot());
+        return new InMemoryGroupService(delegate.groupPermissionsSnapshot(), delegate.groupDisplaysSnapshot(), delegate.groupParentsSnapshot(), delegate.membershipsSnapshot());
     }
 
     private void commit(InMemoryGroupService candidate) {
-        saveGroups(candidate.groupPermissionsSnapshot(), candidate.groupParentsSnapshot(), candidate.membershipsSnapshot());
+        saveGroups(candidate.groupPermissionsSnapshot(), candidate.groupDisplaysSnapshot(), candidate.groupParentsSnapshot(), candidate.membershipsSnapshot());
         delegate = candidate;
     }
 
     private GroupData loadGroups() {
         if (Files.notExists(groupsFile)) {
-            return new GroupData(Map.of(), Map.of(), Map.of());
+            return new GroupData(Map.of(), Map.of(), Map.of(), Map.of());
         }
 
         try (Reader reader = Files.newBufferedReader(groupsFile, StandardCharsets.UTF_8)) {
             JsonElement rootElement = JsonParser.parseReader(reader);
             return parseRoot(rootElement);
         } catch (NoSuchFileException exception) {
-            return new GroupData(Map.of(), Map.of(), Map.of());
+            return new GroupData(Map.of(), Map.of(), Map.of(), Map.of());
         } catch (IOException | JsonParseException | IllegalArgumentException exception) {
             throw new PermissionStorageException("Failed to load groups from " + groupsFile, exception);
         }
     }
 
-    private void saveGroups(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<String, Set<String>> groupParentsSnapshot,
-            Map<UUID, Set<String>> membershipsSnapshot) {
+    private void saveGroups(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<String, DisplayProfile> groupDisplaysSnapshot,
+            Map<String, Set<String>> groupParentsSnapshot, Map<UUID, Set<String>> membershipsSnapshot) {
         try {
             StorageFiles.writeAtomicallyWithBackup(groupsFile, StorageFileKind.GROUPS, writeOptions, writer -> {
-                GSON.toJson(toJson(groupPermissionsSnapshot, groupParentsSnapshot, membershipsSnapshot), writer);
+                GSON.toJson(toJson(groupPermissionsSnapshot, groupDisplaysSnapshot, groupParentsSnapshot, membershipsSnapshot), writer);
                 writer.write(System.lineSeparator());
             });
         } catch (IOException exception) {
@@ -199,10 +234,11 @@ final class JsonFileGroupService implements GroupService {
 
         ParsedGroups parsedGroups = parseGroups(groupsElement.getAsJsonObject());
         Map<String, Map<String, PermissionValue>> groupPermissions = parsedGroups.groupPermissions();
+        Map<String, DisplayProfile> groupDisplays = parsedGroups.groupDisplays();
         Map<String, Set<String>> groupParents = parsedGroups.groupParents();
         validateGroupParents(groupParents, groupPermissions.keySet());
         Map<UUID, Set<String>> memberships = parseMemberships(root, groupPermissions.keySet());
-        return new GroupData(groupPermissions, groupParents, memberships);
+        return new GroupData(groupPermissions, groupDisplays, groupParents, memberships);
     }
 
     private static int readVersion(JsonObject root) {
@@ -225,6 +261,7 @@ final class JsonFileGroupService implements GroupService {
 
     private static ParsedGroups parseGroups(JsonObject groupsElement) {
         Map<String, Map<String, PermissionValue>> groupPermissions = new LinkedHashMap<>();
+        Map<String, DisplayProfile> groupDisplays = new LinkedHashMap<>();
         Map<String, Set<String>> groupParents = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> groupEntry : groupsElement.entrySet()) {
             String groupName = InMemoryGroupService.normalizeGroupName(groupEntry.getKey());
@@ -241,9 +278,23 @@ final class JsonFileGroupService implements GroupService {
                 throw new IllegalArgumentException("permissions for group " + groupName + " must be an object");
             }
             groupPermissions.put(groupName, parseGroupPermissions(groupName, permissionsElement.getAsJsonObject()));
+            groupDisplays.put(groupName, parseGroupDisplay(groupName, groupElement.getAsJsonObject()));
             groupParents.put(groupName, parseGroupParents(groupName, groupElement.getAsJsonObject()));
         }
-        return new ParsedGroups(groupPermissions, groupParents);
+        return new ParsedGroups(groupPermissions, groupDisplays, groupParents);
+    }
+
+    private static DisplayProfile parseGroupDisplay(String groupName, JsonObject groupElement) {
+        DisplayProfile display = DisplayProfile.empty();
+        JsonElement prefixElement = groupElement.get("prefix");
+        if (prefixElement != null) {
+            display = display.withPrefix(DisplayText.parse(readString(prefixElement, "prefix for group " + groupName)));
+        }
+        JsonElement suffixElement = groupElement.get("suffix");
+        if (suffixElement != null) {
+            display = display.withSuffix(DisplayText.parse(readString(suffixElement, "suffix for group " + groupName)));
+        }
+        return display;
     }
 
     private static Map<String, PermissionValue> parseGroupPermissions(String groupName, JsonObject permissionsElement) {
@@ -332,6 +383,13 @@ final class JsonFileGroupService implements GroupService {
         throw new IllegalArgumentException("permission " + node + " for group " + groupName + " must be TRUE or FALSE");
     }
 
+    private static String readString(JsonElement valueElement, String owner) {
+        if (valueElement == null || !valueElement.isJsonPrimitive() || !valueElement.getAsJsonPrimitive().isString()) {
+            throw new IllegalArgumentException(owner + " must be a string");
+        }
+        return valueElement.getAsString();
+    }
+
     private static Map<UUID, Set<String>> parseMemberships(JsonObject root, Set<String> knownGroups) {
         JsonElement membershipsElement = root.get("memberships");
         if (membershipsElement == null || !membershipsElement.isJsonObject()) {
@@ -381,8 +439,8 @@ final class JsonFileGroupService implements GroupService {
         return subjectGroups;
     }
 
-    private static JsonObject toJson(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<String, Set<String>> groupParentsSnapshot,
-            Map<UUID, Set<String>> membershipsSnapshot) {
+    private static JsonObject toJson(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<String, DisplayProfile> groupDisplaysSnapshot,
+            Map<String, Set<String>> groupParentsSnapshot, Map<UUID, Set<String>> membershipsSnapshot) {
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
 
@@ -396,6 +454,9 @@ final class JsonFileGroupService implements GroupService {
                 }
             });
             group.add("permissions", permissions);
+            DisplayProfile display = groupDisplaysSnapshot.getOrDefault(groupName, DisplayProfile.empty());
+            display.prefix().ifPresent(prefix -> group.addProperty("prefix", prefix.rawText()));
+            display.suffix().ifPresent(suffix -> group.addProperty("suffix", suffix.rawText()));
             Set<String> parentsSnapshot = groupParentsSnapshot.getOrDefault(groupName, Set.of());
             if (!parentsSnapshot.isEmpty()) {
                 JsonArray parents = new JsonArray();
@@ -416,9 +477,10 @@ final class JsonFileGroupService implements GroupService {
         return root;
     }
 
-    private record ParsedGroups(Map<String, Map<String, PermissionValue>> groupPermissions, Map<String, Set<String>> groupParents) {
+    private record ParsedGroups(Map<String, Map<String, PermissionValue>> groupPermissions, Map<String, DisplayProfile> groupDisplays, Map<String, Set<String>> groupParents) {
     }
 
-    private record GroupData(Map<String, Map<String, PermissionValue>> groupPermissions, Map<String, Set<String>> groupParents, Map<UUID, Set<String>> memberships) {
+    private record GroupData(Map<String, Map<String, PermissionValue>> groupPermissions, Map<String, DisplayProfile> groupDisplays, Map<String, Set<String>> groupParents,
+            Map<UUID, Set<String>> memberships) {
     }
 }

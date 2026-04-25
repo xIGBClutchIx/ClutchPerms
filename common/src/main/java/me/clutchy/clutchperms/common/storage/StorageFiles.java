@@ -120,7 +120,11 @@ public final class StorageFiles {
         JsonObject root = new JsonObject();
         root.addProperty("version", CURRENT_VERSION);
         switch (kind) {
-            case PERMISSIONS, SUBJECTS -> root.add("subjects", new JsonObject());
+            case PERMISSIONS -> root.add("subjects", new JsonObject());
+            case SUBJECTS -> {
+                root.add("subjects", new JsonObject());
+                root.add("display", new JsonObject());
+            }
             case GROUPS -> {
                 JsonObject groups = new JsonObject();
                 JsonObject defaultGroup = new JsonObject();

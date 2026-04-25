@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "me.clutchy.clutchperms.fabric.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "server": [
+    "PlayerListChatMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

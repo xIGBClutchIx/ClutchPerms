@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.permission.InMemoryPermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionResolution;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
@@ -64,6 +65,8 @@ class GroupServicesTest {
         groupService.setGroupPermission("staff", "Staff.*", PermissionValue.FALSE);
         groupService.setGroupPermission("admin", "Example.Node", PermissionValue.TRUE);
         groupService.setGroupPermission("admin", "Example.Denied", PermissionValue.FALSE);
+        groupService.setGroupPrefix("admin", DisplayText.parse("&c[Admin]"));
+        groupService.setGroupSuffix("admin", DisplayText.parse("&f*"));
         groupService.addGroupParent("admin", "staff");
         groupService.addSubjectGroup(FIRST_SUBJECT, "admin");
 
@@ -74,6 +77,8 @@ class GroupServicesTest {
         assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("admin", "example.denied"));
         assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("staff", "staff.*"));
         assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE), reloadedGroupService.getGroupPermissions("admin"));
+        assertEquals("&c[Admin]", reloadedGroupService.getGroupDisplay("admin").prefix().orElseThrow().rawText());
+        assertEquals("&f*", reloadedGroupService.getGroupDisplay("admin").suffix().orElseThrow().rawText());
         assertEquals(Set.of("staff"), reloadedGroupService.getGroupParents("admin"));
         assertEquals(Set.of(), reloadedGroupService.getGroupParents("staff"));
         assertEquals(Set.of("admin"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
@@ -182,6 +187,7 @@ class GroupServicesTest {
                       "permissions": {
                         "old.node": "TRUE"
                       },
+                      "prefix": "&7[Old]",
                       "parents": [
                         "base"
                       ]
@@ -208,6 +214,15 @@ class GroupServicesTest {
         assertGroupStatePreserved(groupService, groupsFile, persistedJson);
 
         assertThrows(PermissionStorageException.class, () -> groupService.clearGroupPermission("staff", "old.node"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.setGroupPrefix("staff", DisplayText.parse("&c[New]")));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.clearGroupPrefix("staff"));
+        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.setGroupSuffix("staff", DisplayText.parse("&f*")));
         assertGroupStatePreserved(groupService, groupsFile, persistedJson);
 
         assertThrows(PermissionStorageException.class, () -> groupService.addSubjectGroup(SECOND_SUBJECT, "base"));
@@ -492,6 +507,18 @@ class GroupServicesTest {
                   "memberships": {}
                 }
                 """);
+        assertFailsToLoad("""
+                {
+                  "version": 1,
+                  "groups": {
+                    "admin": {
+                      "permissions": {},
+                      "prefix": "§cBad"
+                    }
+                  },
+                  "memberships": {}
+                }
+                """);
     }
 
     /**
@@ -653,6 +680,8 @@ class GroupServicesTest {
 
         groupService.createGroup("admin");
         groupService.setGroupPermission("admin", "example.node", PermissionValue.TRUE);
+        groupService.setGroupPrefix("admin", DisplayText.parse("&7[Admin]"));
+        groupService.clearGroupPrefix("admin");
         groupService.createGroup("base");
         groupService.addGroupParent("admin", "base");
         groupService.removeGroupParent("admin", "base");
@@ -661,7 +690,7 @@ class GroupServicesTest {
         assertThrows(IllegalArgumentException.class, () -> groupService.addSubjectGroup(FIRST_SUBJECT, "missing"));
         assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "missing"));
 
-        assertEquals(List.of("all", "all", "all", "all", "all"), fullRefreshes);
+        assertEquals(List.of("all", "all", "all", "all", "all", "all", "all"), fullRefreshes);
         assertEquals(List.of(FIRST_SUBJECT, FIRST_SUBJECT), subjectRefreshes);
     }
 
@@ -684,6 +713,8 @@ class GroupServicesTest {
         assertEquals(PermissionValue.TRUE, groupService.getGroupPermission("staff", "old.node"));
         assertEquals(PermissionValue.UNSET, groupService.getGroupPermission("staff", "new.node"));
         assertEquals(Map.of("old.node", PermissionValue.TRUE), groupService.getGroupPermissions("staff"));
+        assertEquals("&7[Old]", groupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
+        assertFalse(groupService.getGroupDisplay("staff").suffix().isPresent());
         assertEquals(Set.of("base"), groupService.getGroupParents("staff"));
         assertEquals(Set.of(), groupService.getGroupParents("guest"));
         assertEquals(Set.of("staff"), groupService.getSubjectGroups(FIRST_SUBJECT));

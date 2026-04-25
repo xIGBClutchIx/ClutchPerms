@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.fabric;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.UnaryOperator;
 
 import org.slf4j.Logger;
@@ -28,6 +29,7 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
@@ -139,6 +141,21 @@ public final class ClutchPermsFabricMod implements ModInitializer {
      */
     public static PermissionResolver getPermissionResolver() {
         return getRuntime().permissionResolver();
+    }
+
+    /**
+     * Formats a full Fabric chat line with the active display resolver.
+     *
+     * @param player chat sender
+     * @param message original chat message component
+     * @return formatted chat component, or empty when ClutchPerms runtime is not active
+     */
+    public static Optional<Component> formatChatMessage(ServerPlayer player, Component message) {
+        if (runtime == null) {
+            return Optional.empty();
+        }
+        Component displayName = Component.literal(player.getGameProfile().name());
+        return Optional.of(FabricDisplayComponents.chatLine(player.getUUID(), displayName, message, getRuntime().displayResolver()));
     }
 
     /**

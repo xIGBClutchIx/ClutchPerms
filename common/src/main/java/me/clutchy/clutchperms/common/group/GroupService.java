@@ -4,6 +4,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import me.clutchy.clutchperms.common.display.DisplayProfile;
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 
 /**
@@ -78,6 +80,44 @@ public interface GroupService {
      * @param node permission node to clear
      */
     void clearGroupPermission(String groupName, String node);
+
+    /**
+     * Looks up direct display values for a group.
+     *
+     * @param groupName group name to inspect
+     * @return direct group display values
+     */
+    DisplayProfile getGroupDisplay(String groupName);
+
+    /**
+     * Stores a direct group prefix.
+     *
+     * @param groupName group name to update
+     * @param prefix prefix to store
+     */
+    void setGroupPrefix(String groupName, DisplayText prefix);
+
+    /**
+     * Clears a direct group prefix.
+     *
+     * @param groupName group name to update
+     */
+    void clearGroupPrefix(String groupName);
+
+    /**
+     * Stores a direct group suffix.
+     *
+     * @param groupName group name to update
+     * @param suffix suffix to store
+     */
+    void setGroupSuffix(String groupName, DisplayText suffix);
+
+    /**
+     * Clears a direct group suffix.
+     *
+     * @param groupName group name to update
+     */
+    void clearGroupSuffix(String groupName);
 
     /**
      * Lists explicit groups assigned to one subject.

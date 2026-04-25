@@ -113,6 +113,8 @@ final class CommandLang {
 
     private static final String ERROR_CONFIG_OPERATION_FAILED = "Config operation failed: %s";
 
+    private static final String ERROR_DISPLAY_OPERATION_FAILED = "Display operation failed: %s";
+
     private static final String CONFIG_HEADER = "ClutchPerms config:";
 
     private static final String CONFIG_ROW = "%s = %s (%s; range %s-%s)";
@@ -168,6 +170,18 @@ final class CommandLang {
     private static final String PERMISSION_SET = "Set %s for %s to %s.";
 
     private static final String PERMISSION_CLEAR = "Cleared %s for %s.";
+
+    private static final String USER_DISPLAY_DIRECT = "%s direct %s = %s.";
+
+    private static final String USER_DISPLAY_DIRECT_UNSET = "%s direct %s is unset.";
+
+    private static final String USER_DISPLAY_EFFECTIVE = "%s effective %s = %s from %s.";
+
+    private static final String USER_DISPLAY_EFFECTIVE_UNSET = "%s effective %s is unset.";
+
+    private static final String USER_DISPLAY_SET = "Set direct %s for %s to %s.";
+
+    private static final String USER_DISPLAY_CLEAR = "Cleared direct %s for %s.";
 
     private static final String USERS_EMPTY = "No known users.";
 
@@ -230,6 +244,14 @@ final class CommandLang {
     private static final String GROUP_PERMISSION_SET = "Set %s for group %s to %s.";
 
     private static final String GROUP_PERMISSION_CLEAR = "Cleared %s for group %s.";
+
+    private static final String GROUP_DISPLAY_GET = "Group %s %s = %s.";
+
+    private static final String GROUP_DISPLAY_UNSET = "Group %s %s is unset.";
+
+    private static final String GROUP_DISPLAY_SET = "Set %s for group %s to %s.";
+
+    private static final String GROUP_DISPLAY_CLEAR = "Cleared %s for group %s.";
 
     private static final String USER_GROUPS_EMPTY = "No groups set for %s.";
 
@@ -477,6 +499,10 @@ final class CommandLang {
         return error(ERROR_CONFIG_OPERATION_FAILED, exceptionMessage(exception));
     }
 
+    static CommandMessage displayOperationFailed(Throwable exception) {
+        return error(ERROR_DISPLAY_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
     static CommandMessage configHeader() {
         return heading(CONFIG_HEADER);
     }
@@ -587,6 +613,30 @@ final class CommandLang {
 
     static CommandMessage permissionClear(String node, String subject) {
         return success(PERMISSION_CLEAR, node, subject);
+    }
+
+    static CommandMessage userDisplayDirect(String subject, String slot, String value) {
+        return detail(USER_DISPLAY_DIRECT, subject, slot, value);
+    }
+
+    static CommandMessage userDisplayDirectUnset(String subject, String slot) {
+        return detail(USER_DISPLAY_DIRECT_UNSET, subject, slot);
+    }
+
+    static CommandMessage userDisplayEffective(String subject, String slot, String value, String source) {
+        return detail(USER_DISPLAY_EFFECTIVE, subject, slot, value, source);
+    }
+
+    static CommandMessage userDisplayEffectiveUnset(String subject, String slot) {
+        return detail(USER_DISPLAY_EFFECTIVE_UNSET, subject, slot);
+    }
+
+    static CommandMessage userDisplaySet(String slot, String subject, String value) {
+        return success(USER_DISPLAY_SET, slot, subject, value);
+    }
+
+    static CommandMessage userDisplayClear(String slot, String subject) {
+        return success(USER_DISPLAY_CLEAR, slot, subject);
     }
 
     static CommandMessage usersEmpty() {
@@ -715,6 +765,22 @@ final class CommandLang {
 
     static CommandMessage groupPermissionClear(String node, String group) {
         return success(GROUP_PERMISSION_CLEAR, node, group);
+    }
+
+    static CommandMessage groupDisplayGet(String group, String slot, String value) {
+        return detail(GROUP_DISPLAY_GET, group, slot, value);
+    }
+
+    static CommandMessage groupDisplayUnset(String group, String slot) {
+        return detail(GROUP_DISPLAY_UNSET, group, slot);
+    }
+
+    static CommandMessage groupDisplaySet(String slot, String group, String value) {
+        return success(GROUP_DISPLAY_SET, slot, group, value);
+    }
+
+    static CommandMessage groupDisplayClear(String slot, String group) {
+        return success(GROUP_DISPLAY_CLEAR, slot, group);
     }
 
     static CommandMessage userGroupsEmpty(String subject) {

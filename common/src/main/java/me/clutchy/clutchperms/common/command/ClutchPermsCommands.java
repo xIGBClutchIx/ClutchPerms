@@ -39,6 +39,9 @@ import me.clutchy.clutchperms.common.command.subcommand.UsersSubcommand;
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
+import me.clutchy.clutchperms.common.display.DisplayResolution;
+import me.clutchy.clutchperms.common.display.DisplaySlot;
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.KnownPermissionNode;
 import me.clutchy.clutchperms.common.node.PermissionNodeSource;
@@ -100,6 +103,8 @@ public final class ClutchPermsCommands {
 
     private static final String CONFIG_VALUE_ARGUMENT = CommandArguments.CONFIG_VALUE;
 
+    private static final String DISPLAY_VALUE_ARGUMENT = CommandArguments.DISPLAY_VALUE;
+
     private static final String PAGE_ARGUMENT = CommandArguments.PAGE;
 
     private static final String UNKNOWN_ARGUMENT = CommandArguments.UNKNOWN;
@@ -125,6 +130,8 @@ public final class ClutchPermsCommands {
     private static final DynamicCommandExceptionType BACKUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType CONFIG_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
+    private static final DynamicCommandExceptionType DISPLAY_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final List<ConfigEntry> CONFIG_ENTRIES = List.of(
             new ConfigEntry("backups.retentionLimit", "newest backups kept per storage kind", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT,
@@ -158,6 +165,9 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("user <target> explain <node>", PermissionNodes.ADMIN_USER_EXPLAIN, "Explains matching assignments and the winner."),
             new CommandHelpEntry("user <target> groups [page]", PermissionNodes.ADMIN_USER_GROUPS, "Lists explicit and implicit groups for a user."),
             new CommandHelpEntry("user <target> group <add|remove> <group>", PermissionNodes.ADMIN_USER_GROUPS, "Changes explicit group membership."),
+            new CommandHelpEntry("user <target> <prefix|suffix> get", PermissionNodes.ADMIN_USER_DISPLAY_VIEW, "Shows direct and effective user display values."),
+            new CommandHelpEntry("user <target> <prefix|suffix> set <text>", PermissionNodes.ADMIN_USER_DISPLAY_SET, "Sets direct user chat display text."),
+            new CommandHelpEntry("user <target> <prefix|suffix> clear", PermissionNodes.ADMIN_USER_DISPLAY_CLEAR, "Clears direct user chat display text."),
             new CommandHelpEntry("group list [page]", PermissionNodes.ADMIN_GROUP_LIST, "Lists groups."),
             new CommandHelpEntry("group <group> <create|delete>", PermissionNodes.ADMIN_GROUP_VIEW, "Creates or deletes a group."),
             new CommandHelpEntry("group <group> list [page]", PermissionNodes.ADMIN_GROUP_VIEW, "Lists group permissions, parents, and members."),
@@ -165,6 +175,9 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("group <group> <get|clear> <node>", PermissionNodes.ADMIN_GROUP_GET, "Reads or clears one group permission."),
             new CommandHelpEntry("group <group> set <node> <true|false>", PermissionNodes.ADMIN_GROUP_SET, "Sets one group permission."),
             new CommandHelpEntry("group <group> parent <add|remove> <parent>", PermissionNodes.ADMIN_GROUP_PARENTS, "Changes group inheritance."),
+            new CommandHelpEntry("group <group> <prefix|suffix> get", PermissionNodes.ADMIN_GROUP_DISPLAY_VIEW, "Shows group chat display values."),
+            new CommandHelpEntry("group <group> <prefix|suffix> set <text>", PermissionNodes.ADMIN_GROUP_DISPLAY_SET, "Sets group chat display text."),
+            new CommandHelpEntry("group <group> <prefix|suffix> clear", PermissionNodes.ADMIN_GROUP_DISPLAY_CLEAR, "Clears group chat display text."),
             new CommandHelpEntry("users list [page]", PermissionNodes.ADMIN_USERS_LIST, "Lists stored user metadata."),
             new CommandHelpEntry("users search <name> [page]", PermissionNodes.ADMIN_USERS_SEARCH, "Searches stored last-known names."),
             new CommandHelpEntry("nodes list [page]", PermissionNodes.ADMIN_NODES_LIST, "Lists known permission nodes."),
@@ -415,6 +428,56 @@ public final class ClutchPermsCommands {
             }
 
             @Override
+            public int prefixUsage(CommandContext<S> context) {
+                return sendUserDisplayUsage(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int prefixGet(CommandContext<S> context) throws CommandSyntaxException {
+                return getUserDisplay(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int prefixSetUsage(CommandContext<S> context) {
+                return sendUserDisplaySetUsage(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int prefixSet(CommandContext<S> context) throws CommandSyntaxException {
+                return setUserDisplay(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int prefixClear(CommandContext<S> context) throws CommandSyntaxException {
+                return clearUserDisplay(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int suffixUsage(CommandContext<S> context) {
+                return sendUserDisplayUsage(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
+            public int suffixGet(CommandContext<S> context) throws CommandSyntaxException {
+                return getUserDisplay(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
+            public int suffixSetUsage(CommandContext<S> context) {
+                return sendUserDisplaySetUsage(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
+            public int suffixSet(CommandContext<S> context) throws CommandSyntaxException {
+                return setUserDisplay(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
+            public int suffixClear(CommandContext<S> context) throws CommandSyntaxException {
+                return clearUserDisplay(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
             public int groupUsage(CommandContext<S> context) {
                 return sendUserGroupUsage(environment, context);
             }
@@ -567,6 +630,56 @@ public final class ClutchPermsCommands {
             @Override
             public int clear(CommandContext<S> context) throws CommandSyntaxException {
                 return clearGroupPermission(environment, context);
+            }
+
+            @Override
+            public int prefixUsage(CommandContext<S> context) {
+                return sendGroupDisplayUsage(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int prefixGet(CommandContext<S> context) throws CommandSyntaxException {
+                return getGroupDisplay(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int prefixSetUsage(CommandContext<S> context) {
+                return sendGroupDisplaySetUsage(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int prefixSet(CommandContext<S> context) throws CommandSyntaxException {
+                return setGroupDisplay(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int prefixClear(CommandContext<S> context) throws CommandSyntaxException {
+                return clearGroupDisplay(environment, context, DisplaySlot.PREFIX);
+            }
+
+            @Override
+            public int suffixUsage(CommandContext<S> context) {
+                return sendGroupDisplayUsage(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
+            public int suffixGet(CommandContext<S> context) throws CommandSyntaxException {
+                return getGroupDisplay(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
+            public int suffixSetUsage(CommandContext<S> context) {
+                return sendGroupDisplaySetUsage(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
+            public int suffixSet(CommandContext<S> context) throws CommandSyntaxException {
+                return setGroupDisplay(environment, context, DisplaySlot.SUFFIX);
+            }
+
+            @Override
+            public int suffixClear(CommandContext<S> context) throws CommandSyntaxException {
+                return clearGroupDisplay(environment, context, DisplaySlot.SUFFIX);
             }
         };
     }
@@ -785,6 +898,18 @@ public final class ClutchPermsCommands {
         return sendUsage(environment, context, "Missing permission node.", "Choose the direct user permission node to clear.", List.of("user " + target + " clear <node>"));
     }
 
+    private static <S> int sendUserDisplayUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing user " + slot.label() + " command.", "Get, set, or clear this user's direct " + slot.label() + ".",
+                List.of("user " + target + " " + slot.label() + " get", "user " + target + " " + slot.label() + " set <text>", "user " + target + " " + slot.label() + " clear"));
+    }
+
+    private static <S> int sendUserDisplaySetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing display text.", "Use ampersand formatting codes like &7, &a, &l, &o, &r, and && for a literal ampersand.",
+                List.of("user " + target + " " + slot.label() + " set <text>"));
+    }
+
     private static <S> int sendUserCheckUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
         return sendUsage(environment, context, "Missing permission node.", "Choose the effective permission node to check.", List.of("user " + target + " check <node>"));
@@ -846,6 +971,18 @@ public final class ClutchPermsCommands {
     private static <S> int sendGroupClearUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
         return sendUsage(environment, context, "Missing permission node.", "Choose the group permission node to clear.", List.of("group " + group + " clear <node>"));
+    }
+
+    private static <S> int sendGroupDisplayUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing group " + slot.label() + " command.", "Get, set, or clear this group's " + slot.label() + ".",
+                List.of("group " + group + " " + slot.label() + " get", "group " + group + " " + slot.label() + " set <text>", "group " + group + " " + slot.label() + " clear"));
+    }
+
+    private static <S> int sendGroupDisplaySetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) {
+        String group = StringArgumentType.getString(context, GROUP_ARGUMENT);
+        return sendUsage(environment, context, "Missing display text.", "Use ampersand formatting codes like &7, &a, &l, &o, &r, and && for a literal ampersand.",
+                List.of("group " + group + " " + slot.label() + " set <text>"));
     }
 
     private static <S> int sendGroupParentUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -998,22 +1135,22 @@ public final class ClutchPermsCommands {
 
     private static List<String> userRootUsages() {
         return List.of("user <target> <list|groups>", "user <target> <get|clear|check|explain> <node>", "user <target> set <node> <true|false>",
-                "user <target> group <add|remove> <group>");
+                "user <target> group <add|remove> <group>", "user <target> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userTargetUsages(String target) {
         return List.of("user " + target + " <list|groups>", "user " + target + " <get|clear|check|explain> <node>", "user " + target + " set <node> <true|false>",
-                "user " + target + " group <add|remove> <group>");
+                "user " + target + " group <add|remove> <group>", "user " + target + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupRootUsages() {
         return List.of("group list", "group <group> <create|delete|list|parents>", "group <group> <get|clear> <node>", "group <group> set <node> <true|false>",
-                "group <group> parent <add|remove> <parent>");
+                "group <group> parent <add|remove> <parent>", "group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsages(String group) {
         return List.of("group " + group + " <create|delete|list|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
-                "group " + group + " parent <add|remove> <parent>");
+                "group " + group + " parent <add|remove> <parent>", "group " + group + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> usersUsages() {
@@ -1201,14 +1338,17 @@ public final class ClutchPermsCommands {
     private static <S> int listPermissions(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         Map<String, PermissionValue> permissions = environment.permissionService().getPermissions(subject.id());
-        if (permissions.isEmpty()) {
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = new ArrayList<>();
+        addSubjectDisplayRows(environment, rows, rootLiteral, subject);
+        permissions.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .map(entry -> new PagedRow(entry.getKey() + "=" + entry.getValue().name(), fullCommand(rootLiteral, "user " + subject.id() + " get " + entry.getKey())))
+                .forEach(rows::add);
+        if (rows.isEmpty()) {
             environment.sendMessage(context.getSource(), CommandLang.permissionsEmpty(formatSubject(subject)));
             return Command.SINGLE_SUCCESS;
         }
 
-        String rootLiteral = rootLiteral(context);
-        List<PagedRow> rows = permissions.entrySet().stream().sorted(Map.Entry.comparingByKey())
-                .map(entry -> new PagedRow(entry.getKey() + "=" + entry.getValue().name(), fullCommand(rootLiteral, "user " + subject.id() + " get " + entry.getKey()))).toList();
         sendPagedRows(environment, context, "Permissions for " + formatSubject(subject), rows, "user " + StringArgumentType.getString(context, TARGET_ARGUMENT) + " list");
         return Command.SINGLE_SUCCESS;
     }
@@ -1245,6 +1385,56 @@ public final class ClutchPermsCommands {
             throw PERMISSION_OPERATION_FAILED.create(CommandLang.permissionOperationFailed(exception));
         }
         environment.sendMessage(context.getSource(), CommandLang.permissionClear(node, formatSubject(subject)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int getUserDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        Optional<DisplayText> directValue = subjectDisplayValue(environment, subject.id(), slot);
+        if (directValue.isPresent()) {
+            environment.sendMessage(context.getSource(), CommandLang.userDisplayDirect(formatSubject(subject), slot.label(), directValue.get().rawText()));
+        } else {
+            environment.sendMessage(context.getSource(), CommandLang.userDisplayDirectUnset(formatSubject(subject), slot.label()));
+        }
+
+        DisplayResolution resolution = environment.displayResolver().resolve(subject.id(), slot);
+        if (resolution.value().isPresent()) {
+            environment.sendMessage(context.getSource(),
+                    CommandLang.userDisplayEffective(formatSubject(subject), slot.label(), resolution.value().get().rawText(), formatDisplaySource(resolution)));
+        } else {
+            environment.sendMessage(context.getSource(), CommandLang.userDisplayEffectiveUnset(formatSubject(subject), slot.label()));
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int setUserDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        DisplayText displayText = getDisplayText(context);
+        try {
+            if (slot == DisplaySlot.PREFIX) {
+                environment.subjectMetadataService().setSubjectPrefix(subject.id(), displayText);
+            } else {
+                environment.subjectMetadataService().setSubjectSuffix(subject.id(), displayText);
+            }
+        } catch (RuntimeException exception) {
+            throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
+        }
+        environment.sendMessage(context.getSource(), CommandLang.userDisplaySet(slot.label(), formatSubject(subject), displayText.rawText()));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int clearUserDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        try {
+            if (slot == DisplaySlot.PREFIX) {
+                environment.subjectMetadataService().clearSubjectPrefix(subject.id());
+            } else {
+                environment.subjectMetadataService().clearSubjectSuffix(subject.id());
+            }
+        } catch (RuntimeException exception) {
+            throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
+        }
+        environment.sendMessage(context.getSource(), CommandLang.userDisplayClear(slot.label(), formatSubject(subject)));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1391,6 +1581,7 @@ public final class ClutchPermsCommands {
 
         String rootLiteral = rootLiteral(context);
         List<PagedRow> rows = new ArrayList<>();
+        addGroupDisplayRows(environment, rows, rootLiteral, normalizedGroupName);
         permissions.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> new PagedRow("permission " + entry.getKey() + "=" + entry.getValue().name(),
                 fullCommand(rootLiteral, "group " + normalizedGroupName + " get " + entry.getKey()))).forEach(rows::add);
         parents.stream().sorted(Comparator.naturalOrder()).map(parent -> new PagedRow("parent " + parent, fullCommand(rootLiteral, "group " + parent + " list")))
@@ -1496,6 +1687,48 @@ public final class ClutchPermsCommands {
         }
 
         environment.sendMessage(context.getSource(), CommandLang.groupPermissionClear(node, normalizeGroupName(groupName)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int getGroupDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        Optional<DisplayText> value = groupDisplayValue(environment, groupName, slot);
+        if (value.isPresent()) {
+            environment.sendMessage(context.getSource(), CommandLang.groupDisplayGet(groupName, slot.label(), value.get().rawText()));
+        } else {
+            environment.sendMessage(context.getSource(), CommandLang.groupDisplayUnset(groupName, slot.label()));
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int setGroupDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        DisplayText displayText = getDisplayText(context);
+        try {
+            if (slot == DisplaySlot.PREFIX) {
+                environment.groupService().setGroupPrefix(groupName, displayText);
+            } else {
+                environment.groupService().setGroupSuffix(groupName, displayText);
+            }
+        } catch (RuntimeException exception) {
+            throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
+        }
+        environment.sendMessage(context.getSource(), CommandLang.groupDisplaySet(slot.label(), groupName, displayText.rawText()));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int clearGroupDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        try {
+            if (slot == DisplaySlot.PREFIX) {
+                environment.groupService().clearGroupPrefix(groupName);
+            } else {
+                environment.groupService().clearGroupSuffix(groupName);
+            }
+        } catch (RuntimeException exception) {
+            throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
+        }
+        environment.sendMessage(context.getSource(), CommandLang.groupDisplayClear(slot.label(), groupName));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1719,6 +1952,15 @@ public final class ClutchPermsCommands {
         }
 
         return new PermissionAssignment(node, value);
+    }
+
+    private static <S> DisplayText getDisplayText(CommandContext<S> context) throws CommandSyntaxException {
+        String rawDisplayText = StringArgumentType.getString(context, DISPLAY_VALUE_ARGUMENT);
+        try {
+            return DisplayText.parse(rawDisplayText);
+        } catch (IllegalArgumentException exception) {
+            throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
+        }
     }
 
     private static String validateNode(String node) throws CommandSyntaxException {
@@ -2098,6 +2340,49 @@ public final class ClutchPermsCommands {
         return formattedNode;
     }
 
+    private static <S> void addSubjectDisplayRows(ClutchPermsCommandEnvironment<S> environment, List<PagedRow> rows, String rootLiteral, CommandSubject subject) {
+        addSubjectDisplayRow(environment, rows, rootLiteral, subject, DisplaySlot.PREFIX);
+        addSubjectDisplayRow(environment, rows, rootLiteral, subject, DisplaySlot.SUFFIX);
+    }
+
+    private static <S> void addSubjectDisplayRow(ClutchPermsCommandEnvironment<S> environment, List<PagedRow> rows, String rootLiteral, CommandSubject subject, DisplaySlot slot) {
+        Optional<DisplayText> directValue = subjectDisplayValue(environment, subject.id(), slot);
+        if (directValue.isPresent()) {
+            rows.add(new PagedRow("direct " + slot.label() + " " + directValue.get().rawText(), fullCommand(rootLiteral, "user " + subject.id() + " " + slot.label() + " get")));
+        }
+
+        DisplayResolution resolution = environment.displayResolver().resolve(subject.id(), slot);
+        if (resolution.value().isPresent()) {
+            String source = formatDisplaySource(resolution);
+            rows.add(new PagedRow("effective " + slot.label() + " " + resolution.value().get().rawText() + " from " + source,
+                    fullCommand(rootLiteral, "user " + subject.id() + " " + slot.label() + " get")));
+        }
+    }
+
+    private static <S> void addGroupDisplayRows(ClutchPermsCommandEnvironment<S> environment, List<PagedRow> rows, String rootLiteral, String groupName) {
+        addGroupDisplayRow(environment, rows, rootLiteral, groupName, DisplaySlot.PREFIX);
+        addGroupDisplayRow(environment, rows, rootLiteral, groupName, DisplaySlot.SUFFIX);
+    }
+
+    private static <S> void addGroupDisplayRow(ClutchPermsCommandEnvironment<S> environment, List<PagedRow> rows, String rootLiteral, String groupName, DisplaySlot slot) {
+        groupDisplayValue(environment, groupName, slot)
+                .ifPresent(value -> rows.add(new PagedRow(slot.label() + " " + value.rawText(), fullCommand(rootLiteral, "group " + groupName + " " + slot.label() + " get"))));
+    }
+
+    private static <S> Optional<DisplayText> subjectDisplayValue(ClutchPermsCommandEnvironment<S> environment, UUID subjectId, DisplaySlot slot) {
+        return switch (slot) {
+            case PREFIX -> environment.subjectMetadataService().getSubjectDisplay(subjectId).prefix();
+            case SUFFIX -> environment.subjectMetadataService().getSubjectDisplay(subjectId).suffix();
+        };
+    }
+
+    private static <S> Optional<DisplayText> groupDisplayValue(ClutchPermsCommandEnvironment<S> environment, String groupName, DisplaySlot slot) {
+        return switch (slot) {
+            case PREFIX -> environment.groupService().getGroupDisplay(groupName).prefix();
+            case SUFFIX -> environment.groupService().getGroupDisplay(groupName).suffix();
+        };
+    }
+
     private static PagedRow backupRow(String rootLiteral, StorageFileKind kind, StorageBackup backup, String text) {
         return new PagedRow(text, fullCommand(rootLiteral, "backup restore " + kind.token() + " " + backup.fileName()));
     }
@@ -2118,6 +2403,15 @@ public final class ClutchPermsCommands {
     }
 
     private static String formatResolutionSource(PermissionResolution resolution) {
+        return switch (resolution.source()) {
+            case DIRECT -> "direct";
+            case GROUP -> "group " + resolution.groupName();
+            case DEFAULT -> GroupService.DEFAULT_GROUP.equals(resolution.groupName()) ? "default group" : "default group parent " + resolution.groupName();
+            case UNSET -> "unset";
+        };
+    }
+
+    private static String formatDisplaySource(DisplayResolution resolution) {
         return switch (resolution.source()) {
             case DIRECT -> "direct";
             case GROUP -> "group " + resolution.groupName();

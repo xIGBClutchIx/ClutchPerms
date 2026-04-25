@@ -12,6 +12,7 @@ import java.util.function.UnaryOperator;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfigs;
+import me.clutchy.clutchperms.common.display.DisplayResolver;
 import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
@@ -207,6 +208,15 @@ public final class ClutchPermsRuntime {
      */
     public PermissionResolver permissionResolver() {
         return activeServices().permissionResolver();
+    }
+
+    /**
+     * Creates an effective display resolver for the active subject and group services.
+     *
+     * @return display resolver
+     */
+    public DisplayResolver displayResolver() {
+        return new DisplayResolver(subjectMetadataService(), groupService());
     }
 
     /**

@@ -29,6 +29,7 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -148,6 +149,8 @@ class ClutchPermsPaperPluginTest {
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_CONFIG_SET));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_CONFIG_RESET));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_SET));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_DISPLAY_SET));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_GROUP_DISPLAY_SET));
     }
 
     /**
@@ -259,7 +262,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
 
-        assertNextMessage(player, "ClutchPerms commands (page 1/5):");
+        assertNextMessage(player, "ClutchPerms commands (page 1/6):");
         Component firstCommand = player.nextComponentMessage();
         assertEquals("/clutchperms help [page]", PlainTextComponentSerializer.plainText().serialize(firstCommand));
         assertComponentClick(firstCommand, ClickEvent.Action.SUGGEST_COMMAND, "/clutchperms help [page]");
@@ -269,9 +272,23 @@ class ClutchPermsPaperPluginTest {
             player.nextComponentMessage();
         }
         Component navigation = player.nextComponentMessage();
-        assertEquals("Page 1/5 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
+        assertEquals("Page 1/6 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
         assertComponentClick(navigation, ClickEvent.Action.RUN_COMMAND, "/clutchperms help 2");
         assertComponentHover(navigation);
+    }
+
+    /**
+     * Confirms Paper chat display components render the effective prefix and suffix as a full chat line.
+     */
+    @Test
+    void paperChatDisplayFormatsFullChatLine() {
+        PlayerMock player = server.addPlayer("Target");
+        plugin.getSubjectMetadataService().setSubjectPrefix(player.getUniqueId(), DisplayText.parse("&7[Admin]"));
+        plugin.getSubjectMetadataService().setSubjectSuffix(player.getUniqueId(), DisplayText.parse("&e*"));
+
+        Component line = PaperDisplayComponents.chatLine(player.getUniqueId(), Component.text(player.getName()), Component.text("hello"), plugin.getDisplayResolver());
+
+        assertEquals("[Admin] Target *: hello", PlainTextComponentSerializer.plainText().serialize(line));
     }
 
     /**

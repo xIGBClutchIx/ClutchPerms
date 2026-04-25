@@ -12,6 +12,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import me.clutchy.clutchperms.common.display.DisplayProfile;
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 
@@ -21,6 +23,8 @@ import me.clutchy.clutchperms.common.permission.PermissionValue;
 public final class InMemoryGroupService implements GroupService {
 
     private final ConcurrentMap<String, ConcurrentMap<String, PermissionValue>> groupPermissions = new ConcurrentHashMap<>();
+
+    private final ConcurrentMap<String, DisplayProfile> groupDisplays = new ConcurrentHashMap<>();
 
     private final ConcurrentMap<String, Set<String>> groupParents = new ConcurrentHashMap<>();
 
@@ -35,8 +39,14 @@ public final class InMemoryGroupService implements GroupService {
 
     InMemoryGroupService(Map<String, Map<String, PermissionValue>> initialGroupPermissions, Map<String, Set<String>> initialGroupParents,
             Map<UUID, Set<String>> initialMemberships) {
+        this(initialGroupPermissions, Map.of(), initialGroupParents, initialMemberships);
+    }
+
+    InMemoryGroupService(Map<String, Map<String, PermissionValue>> initialGroupPermissions, Map<String, DisplayProfile> initialGroupDisplays,
+            Map<String, Set<String>> initialGroupParents, Map<UUID, Set<String>> initialMemberships) {
         this();
         Objects.requireNonNull(initialGroupPermissions, "initialGroupPermissions");
+        Objects.requireNonNull(initialGroupDisplays, "initialGroupDisplays");
         Objects.requireNonNull(initialGroupParents, "initialGroupParents");
         Objects.requireNonNull(initialMemberships, "initialMemberships");
 
@@ -46,6 +56,14 @@ public final class InMemoryGroupService implements GroupService {
                 createGroup(normalizedGroupName);
             }
             permissions.forEach((node, value) -> setGroupPermission(normalizedGroupName, node, value));
+        });
+        initialGroupDisplays.forEach((groupName, display) -> {
+            String normalizedGroupName = normalizeGroupName(groupName);
+            if (!hasGroup(normalizedGroupName)) {
+                createGroup(normalizedGroupName);
+            }
+            display.prefix().ifPresent(prefix -> setGroupPrefix(normalizedGroupName, prefix));
+            display.suffix().ifPresent(suffix -> setGroupSuffix(normalizedGroupName, suffix));
         });
         initialGroupParents.forEach((groupName, parents) -> parents.forEach(parentGroupName -> addGroupParent(groupName, parentGroupName)));
         initialMemberships.forEach((subjectId, groups) -> groups.forEach(groupName -> addSubjectGroup(subjectId, groupName)));
@@ -89,6 +107,7 @@ public final class InMemoryGroupService implements GroupService {
             throw new IllegalArgumentException("default group cannot be deleted");
         }
         groupPermissions.remove(normalizedGroupName);
+        groupDisplays.remove(normalizedGroupName);
         groupParents.remove(normalizedGroupName);
         groupParents.forEach((ignored, parents) -> parents.remove(normalizedGroupName));
         memberships.forEach((subjectId, groups) -> groups.remove(normalizedGroupName));
@@ -141,6 +160,59 @@ public final class InMemoryGroupService implements GroupService {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         String normalizedNode = PermissionNodes.normalize(node);
         groupPermissions.get(normalizedGroupName).remove(normalizedNode);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public DisplayProfile getGroupDisplay(String groupName) {
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        return groupDisplays.getOrDefault(normalizedGroupName, DisplayProfile.empty());
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void setGroupPrefix(String groupName, DisplayText prefix) {
+        Objects.requireNonNull(prefix, "prefix");
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        groupDisplays.compute(normalizedGroupName, (ignored, display) -> Objects.requireNonNullElseGet(display, DisplayProfile::empty).withPrefix(prefix));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void clearGroupPrefix(String groupName) {
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        groupDisplays.computeIfPresent(normalizedGroupName, (ignored, display) -> {
+            DisplayProfile updated = display.withoutPrefix();
+            return updated.isEmpty() ? null : updated;
+        });
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void setGroupSuffix(String groupName, DisplayText suffix) {
+        Objects.requireNonNull(suffix, "suffix");
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        groupDisplays.compute(normalizedGroupName, (ignored, display) -> Objects.requireNonNullElseGet(display, DisplayProfile::empty).withSuffix(suffix));
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void clearGroupSuffix(String groupName) {
+        String normalizedGroupName = normalizeExistingGroupName(groupName);
+        groupDisplays.computeIfPresent(normalizedGroupName, (ignored, display) -> {
+            DisplayProfile updated = display.withoutSuffix();
+            return updated.isEmpty() ? null : updated;
+        });
     }
 
     /**
@@ -252,6 +324,16 @@ public final class InMemoryGroupService implements GroupService {
         return Collections.unmodifiableMap(snapshot);
     }
 
+    Map<String, DisplayProfile> groupDisplaysSnapshot() {
+        Map<String, DisplayProfile> snapshot = new TreeMap<>();
+        groupDisplays.forEach((groupName, display) -> {
+            if (!display.isEmpty()) {
+                snapshot.put(groupName, display);
+            }
+        });
+        return Collections.unmodifiableMap(snapshot);
+    }
+
     Map<UUID, Set<String>> membershipsSnapshot() {
         Map<UUID, Set<String>> snapshot = new TreeMap<>(Comparator.comparing(UUID::toString));
         memberships.forEach((subjectId, groups) -> {
@@ -282,6 +364,7 @@ public final class InMemoryGroupService implements GroupService {
 
     private void ensureDefaultGroup() {
         groupPermissions.putIfAbsent(GroupService.DEFAULT_GROUP, new ConcurrentHashMap<>());
+        groupDisplays.putIfAbsent(GroupService.DEFAULT_GROUP, DisplayProfile.empty());
         groupParents.putIfAbsent(GroupService.DEFAULT_GROUP, ConcurrentHashMap.newKeySet());
     }
 

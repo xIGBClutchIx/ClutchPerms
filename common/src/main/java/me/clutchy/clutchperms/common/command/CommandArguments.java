@@ -30,6 +30,8 @@ public final class CommandArguments {
 
     public static final String CONFIG_VALUE = "configValue";
 
+    public static final String DISPLAY_VALUE = "displayValue";
+
     public static final String PAGE = "page";
 
     public static final String UNKNOWN = "unknown";

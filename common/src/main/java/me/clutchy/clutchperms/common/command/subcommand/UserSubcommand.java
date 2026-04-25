@@ -52,6 +52,26 @@ public final class UserSubcommand {
 
         int groups(CommandContext<S> context) throws CommandSyntaxException;
 
+        int prefixUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixGet(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixSetUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixSet(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixClear(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixGet(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixSetUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixSet(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixClear(CommandContext<S> context) throws CommandSyntaxException;
+
         int groupUsage(CommandContext<S> context) throws CommandSyntaxException;
 
         int groupAddUsage(CommandContext<S> context) throws CommandSyntaxException;
@@ -81,8 +101,9 @@ public final class UserSubcommand {
         return LiteralArgumentBuilder.<S>literal("user").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::rootUsage))
                 .then(target.then(listCommand(authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
                         .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
-                        .then(groupsCommand(authorized, handlers)).then(groupCommand(environment, authorized, handlers)).then(checkCommand(authorized, handlers, permissionNodes))
-                        .then(explainCommand(authorized, handlers, permissionNodes))
+                        .then(groupsCommand(authorized, handlers)).then(displayCommand("prefix", authorized, handlers, true))
+                        .then(displayCommand("suffix", authorized, handlers, false)).then(groupCommand(environment, authorized, handlers))
+                        .then(checkCommand(authorized, handlers, permissionNodes)).then(explainCommand(authorized, handlers, permissionNodes))
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::targetUsage))
                         .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::unknownTargetUsage))));
     }
@@ -112,6 +133,19 @@ public final class UserSubcommand {
                 .then(UserSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groups)));
     }
 
+    private static <S> LiteralArgumentBuilder<S> displayCommand(String literal, AuthorizedCommand<S> authorized, Handlers<S> handlers, boolean prefix) {
+        return LiteralArgumentBuilder.<S>literal(literal)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_VIEW, prefix ? handlers::prefixUsage : handlers::suffixUsage))
+                .then(LiteralArgumentBuilder.<S>literal("get")
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_VIEW, prefix ? handlers::prefixGet : handlers::suffixGet)))
+                .then(LiteralArgumentBuilder.<S>literal("set")
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_SET, prefix ? handlers::prefixSetUsage : handlers::suffixSetUsage))
+                        .then(UserSubcommand.<S>displayValueArgument()
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_SET, prefix ? handlers::prefixSet : handlers::suffixSet))))
+                .then(LiteralArgumentBuilder.<S>literal("clear")
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_CLEAR, prefix ? handlers::prefixClear : handlers::suffixClear)));
+    }
+
     private static <S> LiteralArgumentBuilder<S> groupCommand(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
         return LiteralArgumentBuilder.<S>literal("group").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groupUsage))
                 .then(LiteralArgumentBuilder.<S>literal("add").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_ADD, handlers::groupAddUsage))
@@ -137,6 +171,10 @@ public final class UserSubcommand {
 
     private static <S> RequiredArgumentBuilder<S, String> assignmentArgument(SuggestionProvider<S> permissionAssignment) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.ASSIGNMENT, StringArgumentType.greedyString()).suggests(permissionAssignment);
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> displayValueArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.DISPLAY_VALUE, StringArgumentType.greedyString());
     }
 
     private static <S> RequiredArgumentBuilder<S, String> pageArgument() {

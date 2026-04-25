@@ -26,8 +26,10 @@ import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.ServerChatEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
@@ -70,6 +72,7 @@ public final class ClutchPermsForgeMod {
         RegisterCommandsEvent.BUS.addListener(this::registerCommands);
         PermissionGatherEvent.Handler.BUS.addListener(this::registerPermissionHandler);
         PermissionGatherEvent.Nodes.BUS.addListener(this::registerPermissionNodes);
+        ServerChatEvent.BUS.addListener((java.util.function.Predicate<ServerChatEvent>) this::onServerChat);
         ServerStartedEvent.BUS.addListener(this::onServerStarted);
         PlayerEvent.PlayerLoggedInEvent.BUS.addListener(this::onPlayerLoggedIn);
         ServerStoppedEvent.BUS.addListener(this::onServerStopped);
@@ -109,6 +112,13 @@ public final class ClutchPermsForgeMod {
         if (event.getEntity() instanceof ServerPlayer player) {
             recordSubject(player);
         }
+    }
+
+    private boolean onServerChat(ServerChatEvent event) {
+        Component formattedMessage = ForgeDisplayComponents.chatLine(event.getPlayer().getUUID(), Component.literal(event.getUsername()), event.getMessage(),
+                getRuntime().displayResolver());
+        event.getPlayer().level().getServer().getPlayerList().broadcastSystemMessage(formattedMessage, false);
+        return true;
     }
 
     private void onServerStopped(ServerStoppedEvent event) {

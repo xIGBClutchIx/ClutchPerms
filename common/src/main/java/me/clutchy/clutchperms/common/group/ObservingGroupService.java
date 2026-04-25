@@ -5,6 +5,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
+import me.clutchy.clutchperms.common.display.DisplayProfile;
+import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 
 /**
@@ -62,6 +64,35 @@ final class ObservingGroupService implements GroupService {
     @Override
     public void clearGroupPermission(String groupName, String node) {
         delegate.clearGroupPermission(groupName, node);
+        listener.groupsChanged();
+    }
+
+    @Override
+    public DisplayProfile getGroupDisplay(String groupName) {
+        return delegate.getGroupDisplay(groupName);
+    }
+
+    @Override
+    public void setGroupPrefix(String groupName, DisplayText prefix) {
+        delegate.setGroupPrefix(groupName, prefix);
+        listener.groupsChanged();
+    }
+
+    @Override
+    public void clearGroupPrefix(String groupName) {
+        delegate.clearGroupPrefix(groupName);
+        listener.groupsChanged();
+    }
+
+    @Override
+    public void setGroupSuffix(String groupName, DisplayText suffix) {
+        delegate.setGroupSuffix(groupName, suffix);
+        listener.groupsChanged();
+    }
+
+    @Override
+    public void clearGroupSuffix(String groupName) {
+        delegate.clearGroupSuffix(groupName);
         listener.groupsChanged();
     }
 

@@ -2,7 +2,7 @@
 
 This guide covers first install, first admin access, basic verification, and the most common platform-specific setup steps. For the full command reference and storage schema notes, see [README.md](README.md).
 
-ClutchPerms is currently a usable prototype. Treat setup as a direct JSON-backed permissions service with shared `/clutchperms` commands, groups, inheritance, wildcards, reload, validation, backups, and platform runtime bridges.
+ClutchPerms is currently a usable prototype. Treat setup as a direct JSON-backed permissions service with shared `/clutchperms` commands, groups, inheritance, wildcards, prefixes/suffixes, reload, validation, backups, and platform runtime bridges.
 
 ## 1. Pick The Correct Jar
 
@@ -60,6 +60,8 @@ nodes.json
 ```
 
 `config.json` is created with defaults for backup retention and command page sizes. You can manage these values in-game with `clutchperms config`, or edit the file manually and run `clutchperms validate` before `clutchperms reload`.
+
+Direct user prefixes/suffixes are stored in `subjects.json`. Group prefixes/suffixes are stored in `groups.json`.
 
 The `backups/` directory is created later when ClutchPerms replaces an existing storage file.
 
@@ -143,7 +145,38 @@ clutchperms group owner list
 clutchperms group owner parents
 ```
 
-## 6. Register Known Permission Nodes
+## 6. Add Prefixes And Suffixes
+
+Prefixes and suffixes use ampersand formatting codes: `&0-9`, `&a-f`, `&k-o`, `&r`, and `&&` for a literal ampersand. Raw section signs, invalid codes, blank values, and values over 128 raw characters are rejected.
+
+Examples:
+
+```text
+clutchperms group default prefix set &7[Member]
+clutchperms group staff prefix set &b[Staff]
+clutchperms user ExamplePlayer suffix set &f*
+```
+
+Check display state:
+
+```text
+clutchperms user ExamplePlayer prefix get
+clutchperms user ExamplePlayer suffix get
+clutchperms group staff list
+```
+
+Effective prefix and suffix resolve independently: direct user value first, then the nearest explicit group hierarchy, then the nearest `default` group hierarchy. If multiple groups at the same depth provide a value, the alphabetically first group name wins.
+
+Chat display is active by default on Paper, Fabric, NeoForge, and Forge and renders as `prefix name suffix: message`. Without a configured prefix or suffix, chat remains close to vanilla output. Some loaders or clients may mark formatted chat as modified or unsigned.
+
+Clear display values with:
+
+```text
+clutchperms user ExamplePlayer suffix clear
+clutchperms group staff prefix clear
+```
+
+## 7. Register Known Permission Nodes
 
 Unknown permission nodes are still assignable. Known nodes improve suggestions, diagnostics, and Paper wildcard expansion.
 
@@ -156,7 +189,7 @@ clutchperms nodes list
 
 Known node entries must be exact permission nodes. Wildcards such as `example.*` are valid permission assignments, but they are not valid known-node registry entries.
 
-## 7. Use Wildcards Carefully
+## 8. Use Wildcards Carefully
 
 Supported wildcard assignments are:
 
@@ -174,7 +207,7 @@ clutchperms user ExamplePlayer check example.fly
 
 Paper note: ClutchPerms expands wildcard assignments onto exact known permission nodes. Arbitrary unregistered Bukkit permission strings are not expanded unless they are known through Paper's registry, ClutchPerms built-ins, or `nodes.json`.
 
-## 8. Validate, Reload, And Recover
+## 9. Validate, Reload, And Recover
 
 Validate manual JSON/config edits without applying them:
 
@@ -216,7 +249,7 @@ clutchperms backup restore groups groups-YYYYMMDD-HHMMSSSSS.json
 
 Restore validates the selected backup before replacing the live file, then reloads config and all storage immediately. If reload fails after replacement, ClutchPerms rolls the disk file back and keeps the active runtime state unchanged. `config.json` is not restored by backup commands in this version.
 
-## 9. Enable Forge And NeoForge Runtime Checks
+## 10. Enable Forge And NeoForge Runtime Checks
 
 Forge and NeoForge allow only one active permission handler. ClutchPerms commands and storage work after install, but other mods will not resolve permissions through ClutchPerms until the server selects the `clutchperms:direct` handler.
 
@@ -243,7 +276,7 @@ clutchperms status
 
 The runtime bridge line should report that the ClutchPerms handler is active.
 
-## 10. Common First-Setup Problems
+## 11. Common First-Setup Problems
 
 ### A Player Cannot Run `/clutchperms`
 

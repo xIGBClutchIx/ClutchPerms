@@ -17,6 +17,7 @@ ClutchPerms is an early cross-platform Minecraft permissions prototype for Paper
 - shared permission, group, subject metadata, storage, and command code in `common`
 - JSON-backed persisted state
 - shared Brigadier `/clutchperms` commands
+- shared user/group display values for prefixes, suffixes, and chat rendering
 - Paper runtime attachments and known-node wildcard expansion
 - Fabric fabric-permissions-api integration
 - Forge and NeoForge native permission handlers
@@ -47,6 +48,7 @@ Shared package ownership:
 
 - `common.permission` - direct permissions, node normalization, wildcard matching, cached effective resolution, permission observers, and permission service factories
 - `common.group` - group definitions, group permissions, memberships, group storage, and group observers
+- `common.display` - ampersand-formatted prefix/suffix parsing and effective display resolution
 - `common.node` - known permission node registry, manual node storage, registry composition, and node observers
 - `common.subject` - last-known subject metadata
 - `common.config` - runtime config parsing, defaults, validation, and materialization
@@ -81,6 +83,11 @@ Shared package ownership:
 - `nodes.json` stores only manually registered exact nodes. Platform-discovered nodes are runtime-only and must not be written back to `nodes.json`.
 - Unknown permission nodes remain assignable; do not make assignment mutation depend on the known-node registry.
 - Subject metadata stores UUID, last-known name, and last-seen timestamp.
+- Subject metadata may also store direct user prefix/suffix display values.
+- Groups may store prefix/suffix display values.
+- Display text is ampersand-formatted only: support `&0-9`, `&a-f`, `&k-o`, `&r`, and `&&`; reject raw section signs, invalid codes, blank values, and raw values over 128 characters.
+- Effective display prefix and suffix resolve independently: direct user value, nearest explicit group hierarchy, then nearest `default` hierarchy.
+- Same-depth display ties are deterministic and sort by group name.
 - Command targets resolve exact online name first, exact stored last-known name second, and UUID third.
 - Ambiguous stored last-known names must fail clearly instead of mutating an arbitrary UUID.
 
@@ -92,8 +99,8 @@ Current persisted files:
 
 - `config.json` for runtime settings such as backup retention and command page sizes
 - `permissions.json` for direct user permission assignments
-- `groups.json` for group definitions, group permissions, parent links, and memberships
-- `subjects.json` for subject metadata
+- `groups.json` for group definitions, group permissions, prefix/suffix display values, parent links, and memberships
+- `subjects.json` for subject metadata and direct user prefix/suffix display values
 - `nodes.json` for manually registered exact known permission nodes
 
 Locations:
@@ -121,6 +128,7 @@ Storage expectations:
 - Backup layout is `backups/<kind>/<kind>-YYYYMMDD-HHMMSSSSS.json`, where kind is `permissions`, `subjects`, `groups`, or `nodes`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
 - Fail startup, validate, or reload on malformed JSON, unsupported versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- Fail startup, validate, or reload on invalid stored display text, including raw section signs, invalid ampersand codes, blank display values, and over-length display values.
 - `/clutchperms validate` should parse config and all persisted files without replacing active services/config, refreshing runtime bridges, or mutating storage.
 - Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
 - Successful reload should replace active services, active config, and the active resolver cache; failed reload should leave the old config, resolver, and resolver cache in place.
@@ -136,9 +144,13 @@ Storage expectations:
 - Paper expands ClutchPerms wildcard assignments onto exact known permission nodes from built-ins, manual `nodes.json`, and Paper's permission registry.
 - Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary unregistered wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without `Permissible` injection or another deeper Paper-specific bridge.
 - Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
+- Paper formats chat through `AsyncChatEvent` renderers as `prefix name suffix: message` using native Adventure components.
 - Fabric exposes effective permissions through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
+- Fabric formats server chat through a server-side mixin that broadcasts the full formatted line as a native Minecraft component.
 - Forge and NeoForge expose effective permissions through native Boolean permission handlers registered as `clutchperms:direct`.
+- Forge and NeoForge format chat through `ServerChatEvent` by replacing the full chat line with native Minecraft components.
 - Forge and NeoForge only affect mods that use the platform permission APIs and only when server config selects `clutchperms:direct`.
+- Prefix/suffix chat formatting is active by default and intentionally takes priority over vanilla signed-chat presentation; do not claim that formatted chat remains vanilla-signed on every loader/client.
 - Keep bridge code thin. Shared behavior belongs in `common`; platform code should adapt lifecycle/source/runtime APIs.
 
 ## Commands
@@ -179,9 +191,13 @@ Current command surface:
 - `/clutchperms user <target> get|set|clear|check|explain`
 - `/clutchperms user <target> groups [page]`
 - `/clutchperms user <target> group add|remove <group>`
+- `/clutchperms user <target> prefix get|set|clear`
+- `/clutchperms user <target> suffix get|set|clear`
 - `/clutchperms group list [page]`
 - `/clutchperms group <group> create|delete|get|set|clear`
 - `/clutchperms group <group> list [page]`
+- `/clutchperms group <group> prefix get|set|clear`
+- `/clutchperms group <group> suffix get|set|clear`
 - `/clutchperms group <group> parents [page]`
 - `/clutchperms group <group> parent add|remove <parent>`
 - `/clutchperms users list [page]`
@@ -198,6 +214,8 @@ Authorization:
 - Use `clutchperms.admin.*` as the full ClutchPerms admin grant.
 - Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
 - Config command permissions are `clutchperms.admin.config.view`, `clutchperms.admin.config.set`, and `clutchperms.admin.config.reset`; `clutchperms.admin.config.*` should work through wildcard resolution.
+- User display command permissions are `clutchperms.admin.user.display.view`, `clutchperms.admin.user.display.set`, and `clutchperms.admin.user.display.clear`; `clutchperms.admin.user.*` should cover them.
+- Group display command permissions are `clutchperms.admin.group.display.view`, `clutchperms.admin.group.display.set`, and `clutchperms.admin.group.display.clear`; `clutchperms.admin.group.*` should cover them.
 - `clutchperms.admin` is only the namespace root and does not authorize commands.
 - Other source types should be denied where the platform can distinguish them.
 - `status` should include storage paths, subject/group/node counts, resolver cache counts, and platform bridge status.

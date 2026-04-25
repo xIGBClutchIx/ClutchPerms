@@ -26,11 +26,13 @@ import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -71,6 +73,7 @@ public final class ClutchPermsNeoForgeMod {
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::registerPermissionHandler);
         NeoForge.EVENT_BUS.addListener(this::registerPermissionNodes);
+        NeoForge.EVENT_BUS.addListener(this::onServerChat);
         NeoForge.EVENT_BUS.addListener(this::onServerStarted);
         NeoForge.EVENT_BUS.addListener(this::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(this::onServerStopped);
@@ -110,6 +113,13 @@ public final class ClutchPermsNeoForgeMod {
         if (event.getEntity() instanceof ServerPlayer player) {
             recordSubject(player);
         }
+    }
+
+    private void onServerChat(ServerChatEvent event) {
+        Component formattedMessage = NeoForgeDisplayComponents.chatLine(event.getPlayer().getUUID(), Component.literal(event.getUsername()), event.getMessage(),
+                getRuntime().displayResolver());
+        event.getPlayer().level().getServer().getPlayerList().broadcastSystemMessage(formattedMessage, false);
+        event.setCanceled(true);
     }
 
     private void onServerStopped(ServerStoppedEvent event) {

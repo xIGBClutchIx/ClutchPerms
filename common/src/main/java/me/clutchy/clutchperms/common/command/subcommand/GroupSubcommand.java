@@ -69,6 +69,26 @@ public final class GroupSubcommand {
         int clearUsage(CommandContext<S> context) throws CommandSyntaxException;
 
         int clear(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixGet(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixSetUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixSet(CommandContext<S> context) throws CommandSyntaxException;
+
+        int prefixClear(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixGet(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixSetUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixSet(CommandContext<S> context) throws CommandSyntaxException;
+
+        int suffixClear(CommandContext<S> context) throws CommandSyntaxException;
     }
 
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers,
@@ -82,6 +102,7 @@ public final class GroupSubcommand {
                         .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents))))
                 .then(parentCommand(environment, authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
                 .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
+                .then(displayCommand("prefix", authorized, handlers, true)).then(displayCommand("suffix", authorized, handlers, false))
                 .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::unknownTargetUsage)));
 
         return LiteralArgumentBuilder.<S>literal("group").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::rootUsage))
@@ -115,12 +136,29 @@ public final class GroupSubcommand {
                 .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CLEAR, handlers::clear)));
     }
 
+    private static <S> LiteralArgumentBuilder<S> displayCommand(String literal, AuthorizedCommand<S> authorized, Handlers<S> handlers, boolean prefix) {
+        return LiteralArgumentBuilder.<S>literal(literal)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_DISPLAY_VIEW, prefix ? handlers::prefixUsage : handlers::suffixUsage))
+                .then(LiteralArgumentBuilder.<S>literal("get")
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_DISPLAY_VIEW, prefix ? handlers::prefixGet : handlers::suffixGet)))
+                .then(LiteralArgumentBuilder.<S>literal("set")
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_DISPLAY_SET, prefix ? handlers::prefixSetUsage : handlers::suffixSetUsage))
+                        .then(GroupSubcommand.<S>displayValueArgument()
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_DISPLAY_SET, prefix ? handlers::prefixSet : handlers::suffixSet))))
+                .then(LiteralArgumentBuilder.<S>literal("clear")
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_DISPLAY_CLEAR, prefix ? handlers::prefixClear : handlers::suffixClear)));
+    }
+
     private static <S> RequiredArgumentBuilder<S, String> nodeArgument(SuggestionProvider<S> permissionNodes) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.NODE, StringArgumentType.greedyString()).suggests(permissionNodes);
     }
 
     private static <S> RequiredArgumentBuilder<S, String> assignmentArgument(SuggestionProvider<S> permissionAssignment) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.ASSIGNMENT, StringArgumentType.greedyString()).suggests(permissionAssignment);
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> displayValueArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.DISPLAY_VALUE, StringArgumentType.greedyString());
     }
 
     private static <S> RequiredArgumentBuilder<S, String> pageArgument() {
