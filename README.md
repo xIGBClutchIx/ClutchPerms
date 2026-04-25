@@ -55,6 +55,8 @@ Useful grants:
 
 `clutchperms.admin` is only the namespace root. It does not grant command access by itself.
 
+### Root And Runtime
+
 | Command | Permission | Description |
 | --- | --- | --- |
 | `/clutchperms` | `clutchperms.admin.help` | Shows command help page 1. |
@@ -62,14 +64,31 @@ Useful grants:
 | `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, config values, counts, resolver cache counts, and runtime bridge status. |
 | `/clutchperms reload` | `clutchperms.admin.reload` | Reloads config and all JSON storage files, then refreshes runtime permissions. |
 | `/clutchperms validate` | `clutchperms.admin.validate` | Parses config and all JSON storage files without applying them. |
+
+### Config
+
+| Command | Permission | Description |
+| --- | --- | --- |
 | `/clutchperms config list` | `clutchperms.admin.config.view` | Lists active runtime config values. |
 | `/clutchperms config get <key>` | `clutchperms.admin.config.view` | Shows one config value. |
 | `/clutchperms config set <key> <value>` | `clutchperms.admin.config.set` | Saves one config value, reloads runtime, and rolls back on failure. |
 | `/clutchperms config reset <key\|all>` | `clutchperms.admin.config.reset` | Resets one config value or all values to defaults. |
+
+### Backups
+
+| Command | Permission | Description |
+| --- | --- | --- |
 | `/clutchperms backup list` | `clutchperms.admin.backup.list` | Lists backups for all files on page 1. |
 | `/clutchperms backup list page <page>` | `clutchperms.admin.backup.list` | Lists all backups on a specific page. |
 | `/clutchperms backup list <kind> [page]` | `clutchperms.admin.backup.list` | Lists backups for one kind: `permissions`, `subjects`, `groups`, or `nodes`. |
 | `/clutchperms backup restore <kind> <backup-file>` | `clutchperms.admin.backup.restore` | Restores one backup file, validates all storage, and reloads if valid. |
+
+### User Commands
+
+`<target>` is an exact online name, exact stored last-known name, or UUID.
+
+| Command | Permission | Description |
+| --- | --- | --- |
 | `/clutchperms user <target> info` | `clutchperms.admin.user.info` | Shows a quick user summary. |
 | `/clutchperms user <target> list [page]` | `clutchperms.admin.user.list` | Lists direct permissions and display metadata for a user. |
 | `/clutchperms user <target> get <node>` | `clutchperms.admin.user.get` | Shows one direct user permission. |
@@ -86,6 +105,13 @@ Useful grants:
 | `/clutchperms user <target> suffix get` | `clutchperms.admin.user.display.view` | Shows direct and effective user suffix values. |
 | `/clutchperms user <target> suffix set <text>` | `clutchperms.admin.user.display.set` | Sets a direct user suffix. |
 | `/clutchperms user <target> suffix clear` | `clutchperms.admin.user.display.clear` | Clears the direct user suffix. |
+
+### Group Commands
+
+The built-in `default` group always exists, applies implicitly to every subject, and cannot be deleted or renamed.
+
+| Command | Permission | Description |
+| --- | --- | --- |
 | `/clutchperms group list [page]` | `clutchperms.admin.group.list` | Lists groups. |
 | `/clutchperms group <group> create` | `clutchperms.admin.group.create` | Creates a group. |
 | `/clutchperms group <group> delete` | `clutchperms.admin.group.delete` | Deletes a group and related links. |
@@ -104,8 +130,18 @@ Useful grants:
 | `/clutchperms group <group> parents [page]` | `clutchperms.admin.group.parents` | Lists parent groups. |
 | `/clutchperms group <group> parent add <parent>` | `clutchperms.admin.group.parent.add` | Adds an inheritance parent. |
 | `/clutchperms group <group> parent remove <parent>` | `clutchperms.admin.group.parent.remove` | Removes an inheritance parent. |
+
+### Stored Users
+
+| Command | Permission | Description |
+| --- | --- | --- |
 | `/clutchperms users list [page]` | `clutchperms.admin.users.list` | Lists stored subject metadata. |
 | `/clutchperms users search <name> [page]` | `clutchperms.admin.users.search` | Searches stored last-known names. |
+
+### Known Nodes
+
+| Command | Permission | Description |
+| --- | --- | --- |
 | `/clutchperms nodes list [page]` | `clutchperms.admin.nodes.list` | Lists known permission nodes. |
 | `/clutchperms nodes search <query> [page]` | `clutchperms.admin.nodes.search` | Searches known nodes and descriptions. |
 | `/clutchperms nodes add <node> [description]` | `clutchperms.admin.nodes.add` | Adds or updates a manually known exact node. |
