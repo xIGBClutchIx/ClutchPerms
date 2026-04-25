@@ -38,6 +38,10 @@ final class PaperClutchPermsCommand {
         return ClutchPermsCommands.create(new PaperCommandEnvironment(plugin));
     }
 
+    static com.mojang.brigadier.tree.LiteralCommandNode<CommandSourceStack> create(ClutchPermsPaperPlugin plugin, String rootLiteral) {
+        return ClutchPermsCommands.create(new PaperCommandEnvironment(plugin), rootLiteral);
+    }
+
     private PaperClutchPermsCommand() {
     }
 

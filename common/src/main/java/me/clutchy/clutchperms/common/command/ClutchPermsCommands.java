@@ -53,6 +53,16 @@ public final class ClutchPermsCommands {
     public static final String ROOT_LITERAL = "clutchperms";
 
     /**
+     * Root command aliases registered by every platform adapter.
+     */
+    public static final List<String> ROOT_ALIASES = List.of("cperms", "perms");
+
+    /**
+     * Root command literals registered by every platform adapter, including the primary command and aliases.
+     */
+    public static final List<String> ROOT_LITERALS = List.of(ROOT_LITERAL, "cperms", "perms");
+
+    /**
      * Health line returned by the status command.
      */
     public static final String STATUS_MESSAGE = CommandLang.STATUS;
@@ -107,7 +117,19 @@ public final class ClutchPermsCommands {
      * @return built root command node
      */
     public static <S> LiteralCommandNode<S> create(ClutchPermsCommandEnvironment<S> environment) {
-        return builder(environment).build();
+        return create(environment, ROOT_LITERAL);
+    }
+
+    /**
+     * Creates a ClutchPerms command node for one root literal.
+     *
+     * @param environment platform command environment
+     * @param rootLiteral root command literal
+     * @param <S> platform command source type
+     * @return built root command node
+     */
+    public static <S> LiteralCommandNode<S> create(ClutchPermsCommandEnvironment<S> environment, String rootLiteral) {
+        return builder(environment, rootLiteral).build();
     }
 
     /**
@@ -118,10 +140,23 @@ public final class ClutchPermsCommands {
      * @return root command builder
      */
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment) {
+        return builder(environment, ROOT_LITERAL);
+    }
+
+    /**
+     * Creates a ClutchPerms command builder for one root literal.
+     *
+     * @param environment platform command environment
+     * @param rootLiteral root command literal
+     * @param <S> platform command source type
+     * @return root command builder
+     */
+    public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, String rootLiteral) {
         Objects.requireNonNull(environment, "environment");
+        String literal = normalizeRootLiteral(rootLiteral);
         AuthorizedCommand<S> authorized = (context, requiredPermission, command) -> executeAuthorized(environment, context, requiredPermission, source -> command.run(context));
 
-        return LiteralArgumentBuilder.<S>literal(ROOT_LITERAL)
+        return LiteralArgumentBuilder.<S>literal(literal)
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context)))
                 .then(statusCommand(environment)).then(reloadCommand(environment)).then(validateCommand(environment))
                 .then(BackupSubcommand.builder(environment, authorized, backupHandlers(environment)))
@@ -130,6 +165,14 @@ public final class ClutchPermsCommands {
                 .then(GroupSubcommand.builder(environment, authorized, groupHandlers(environment), (context, builder) -> suggestPermissionNodes(environment, context, builder),
                         (context, builder) -> suggestPermissionAssignment(environment, context, builder)))
                 .then(UsersSubcommand.builder(authorized, usersHandlers(environment))).then(NodesSubcommand.builder(environment, authorized, nodesHandlers(environment)));
+    }
+
+    private static String normalizeRootLiteral(String rootLiteral) {
+        String literal = Objects.requireNonNull(rootLiteral, "rootLiteral").trim();
+        if (literal.isEmpty()) {
+            throw new IllegalArgumentException("root literal must not be blank");
+        }
+        return literal;
     }
 
     private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -498,7 +541,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int sendCommandList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
-        CommandLang.commandList(ROOT_LITERAL).forEach(message -> environment.sendMessage(context.getSource(), message));
+        CommandLang.commandList(rootLiteral(context)).forEach(message -> environment.sendMessage(context.getSource(), message));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -693,8 +736,16 @@ public final class ClutchPermsCommands {
         environment.sendMessage(source, CommandLang.error(error));
         environment.sendMessage(source, CommandLang.detail(detail));
         environment.sendMessage(source, CommandLang.tryHeader());
-        usages.forEach(usage -> environment.sendMessage(source, CommandLang.suggestion(ROOT_LITERAL, usage)));
+        String rootLiteral = rootLiteral(context);
+        usages.forEach(usage -> environment.sendMessage(source, CommandLang.suggestion(rootLiteral, usage)));
         return 0;
+    }
+
+    private static <S> String rootLiteral(CommandContext<S> context) {
+        if (context.getNodes().isEmpty()) {
+            return ROOT_LITERAL;
+        }
+        return context.getNodes().getFirst().getNode().getName();
     }
 
     private static List<String> backupUsages() {

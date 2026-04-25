@@ -109,7 +109,7 @@ class ClutchPermsCommandsTest {
                         StorageFileKind.GROUPS, temporaryDirectory.resolve("groups.json"), StorageFileKind.NODES, temporaryDirectory.resolve("nodes.json"))));
         environment.addOnlineSubject("Target", TARGET_ID);
         dispatcher = new CommandDispatcher<>();
-        dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment));
+        ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment, rootLiteral)));
     }
 
     /**
@@ -124,6 +124,25 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms", console);
 
         assertEquals(commandListMessages(), console.messages());
+    }
+
+    /**
+     * Confirms root command aliases execute the shared command tree and keep alias-specific usage output.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void rootAliasesExecuteSharedCommandTree() throws CommandSyntaxException {
+        TestSource cperms = TestSource.console();
+        TestSource perms = TestSource.console();
+
+        dispatcher.execute("cperms", cperms);
+        dispatcher.execute("perms group", perms);
+
+        assertEquals(commandListMessages("cperms"), cperms.messages());
+        assertEquals(List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
+                "  /perms group <group> <create|delete|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
+                "  /perms group <group> parent <add|remove> <parent>"), perms.messages());
     }
 
     /**
@@ -1001,13 +1020,18 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListMessages() {
-        return List.of("ClutchPerms commands:", "/clutchperms <status|reload|validate>", "/clutchperms backup list [permissions|subjects|groups|nodes]",
-                "/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>", "/clutchperms user <target> <list|groups>",
-                "/clutchperms user <target> <get|clear|check|explain> <node>", "/clutchperms user <target> set <node> <true|false>",
-                "/clutchperms user <target> group <add|remove> <group>", "/clutchperms group list", "/clutchperms group <group> <create|delete|list|parents>",
-                "/clutchperms group <group> <get|clear> <node>", "/clutchperms group <group> set <node> <true|false>", "/clutchperms group <group> parent <add|remove> <parent>",
-                "/clutchperms users list", "/clutchperms users search <name>", "/clutchperms nodes list", "/clutchperms nodes search <query>",
-                "/clutchperms nodes add <node> [description]", "/clutchperms nodes remove <node>");
+        return commandListMessages("clutchperms");
+    }
+
+    private static List<String> commandListMessages(String rootLiteral) {
+        return List.of("ClutchPerms commands:", "/" + rootLiteral + " <status|reload|validate>", "/" + rootLiteral + " backup list [permissions|subjects|groups|nodes]",
+                "/" + rootLiteral + " backup restore <permissions|subjects|groups|nodes> <backup-file>", "/" + rootLiteral + " user <target> <list|groups>",
+                "/" + rootLiteral + " user <target> <get|clear|check|explain> <node>", "/" + rootLiteral + " user <target> set <node> <true|false>",
+                "/" + rootLiteral + " user <target> group <add|remove> <group>", "/" + rootLiteral + " group list",
+                "/" + rootLiteral + " group <group> <create|delete|list|parents>", "/" + rootLiteral + " group <group> <get|clear> <node>",
+                "/" + rootLiteral + " group <group> set <node> <true|false>", "/" + rootLiteral + " group <group> parent <add|remove> <parent>", "/" + rootLiteral + " users list",
+                "/" + rootLiteral + " users search <name>", "/" + rootLiteral + " nodes list", "/" + rootLiteral + " nodes search <query>",
+                "/" + rootLiteral + " nodes add <node> [description]", "/" + rootLiteral + " nodes remove <node>");
     }
 
     private static List<String> groupRootUsageMessages() {

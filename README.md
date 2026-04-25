@@ -40,7 +40,7 @@ Paper note: ClutchPerms attaches stored wildcard nodes such as `example.*` and e
 
 ## Commands
 
-All platforms expose the same shared command tree. Console and remote console can run commands for bootstrap. Players need the effective command permission for the exact command they run.
+All platforms expose the same shared command tree through `/clutchperms`, `/cperms`, and `/perms`. Console and remote console can run commands for bootstrap. Players need the effective command permission for the exact command they run.
 
 Useful command grants:
 
@@ -57,7 +57,7 @@ Useful command grants:
 
 | Command | Permission | Description | Notes |
 | --- | --- | --- | --- |
-| `/clutchperms` | `clutchperms.admin.help` | Shows the command list. | Incomplete command branches also return contextual `Try one:` suggestions. |
+| `/clutchperms` (`/cperms`, `/perms`) | `clutchperms.admin.help` | Shows the command list. | Incomplete command branches also return contextual `Try one:` suggestions. |
 | `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, subject count, group count, known node count, resolver cache counts, and runtime bridge status. | Paper also reports permission manager override mode. |
 | `/clutchperms reload` | `clutchperms.admin.reload` | Reloads all JSON storage files and refreshes runtime permissions. | If any file is invalid, active runtime state is kept unchanged. |
 | `/clutchperms validate` | `clutchperms.admin.validate` | Parses all JSON storage files without applying them. | Does not replace active services or refresh runtime permissions. |

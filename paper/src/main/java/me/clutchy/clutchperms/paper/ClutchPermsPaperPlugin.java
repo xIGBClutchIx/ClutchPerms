@@ -151,8 +151,8 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         runtimePermissionBridge.refreshOnlinePlayers();
         subjectMetadataListener.recordOnlinePlayers(getServer().getOnlinePlayers());
 
-        getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS,
-                event -> event.registrar().register(PaperClutchPermsCommand.create(this), "Manages ClutchPerms direct permissions"));
+        getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> ClutchPermsCommands.ROOT_LITERALS
+                .forEach(rootLiteral -> event.registrar().register(PaperClutchPermsCommand.create(this, rootLiteral), "Manages ClutchPerms direct permissions")));
     }
 
     /**
