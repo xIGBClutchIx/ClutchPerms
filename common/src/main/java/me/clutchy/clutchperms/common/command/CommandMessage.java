@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Platform-neutral command feedback with styled text segments and a plain-text fallback.
+ * Platform-neutral command feedback with styled text segments, optional interactions, and a plain-text fallback.
  */
 public final class CommandMessage {
 
@@ -70,6 +70,26 @@ public final class CommandMessage {
     }
 
     /**
+     * Creates click metadata that suggests a command in chat.
+     *
+     * @param command command text to paste
+     * @return click metadata
+     */
+    public static Click clickSuggest(String command) {
+        return new Click(ClickAction.SUGGEST_COMMAND, command);
+    }
+
+    /**
+     * Creates click metadata that runs a command.
+     *
+     * @param command command text to run
+     * @return click metadata
+     */
+    public static Click clickRun(String command) {
+        return new Click(ClickAction.RUN_COMMAND, command);
+    }
+
+    /**
      * Returns immutable styled segments in render order.
      *
      * @return styled segments
@@ -102,6 +122,47 @@ public final class CommandMessage {
         return new CommandMessage(combined);
     }
 
+    /**
+     * Returns a new message with the same click metadata applied to every segment.
+     *
+     * @param click click metadata
+     * @return interactive message
+     */
+    public CommandMessage withClick(Click click) {
+        Objects.requireNonNull(click, "click");
+        return mapSegments(segment -> segment.withClick(click));
+    }
+
+    /**
+     * Returns a new message with the same hover text applied to every segment.
+     *
+     * @param hover hover text
+     * @return interactive message
+     */
+    public CommandMessage withHover(CommandMessage hover) {
+        Objects.requireNonNull(hover, "hover");
+        return mapSegments(segment -> segment.withHover(hover));
+    }
+
+    /**
+     * Returns a new message with the same click and hover metadata applied to every segment.
+     *
+     * @param click click metadata
+     * @param hover hover text
+     * @return interactive message
+     */
+    public CommandMessage withInteraction(Click click, CommandMessage hover) {
+        Objects.requireNonNull(click, "click");
+        Objects.requireNonNull(hover, "hover");
+        return mapSegments(segment -> segment.withClick(click).withHover(hover));
+    }
+
+    private CommandMessage mapSegments(SegmentMapper mapper) {
+        List<Segment> mapped = new ArrayList<>(segments.size());
+        segments.forEach(segment -> mapped.add(mapper.map(segment)));
+        return new CommandMessage(mapped);
+    }
+
     @Override
     public String toString() {
         return plainText();
@@ -115,17 +176,57 @@ public final class CommandMessage {
     }
 
     /**
+     * Supported platform-neutral click actions.
+     */
+    public enum ClickAction {
+        SUGGEST_COMMAND, RUN_COMMAND
+    }
+
+    /**
+     * Platform-neutral click metadata.
+     *
+     * @param action click action
+     * @param value action value
+     */
+    public record Click(ClickAction action, String value) {
+
+        public Click {
+            Objects.requireNonNull(action, "action");
+            Objects.requireNonNull(value, "value");
+        }
+    }
+
+    /**
      * One styled text segment.
      *
      * @param text segment text
      * @param color segment color
      * @param bold whether the segment should be bold
+     * @param click optional click metadata
+     * @param hover optional hover text
      */
-    public record Segment(String text, Color color, boolean bold) {
+    public record Segment(String text, Color color, boolean bold, Click click, CommandMessage hover) {
+
+        public Segment(String text, Color color, boolean bold) {
+            this(text, color, bold, null, null);
+        }
 
         public Segment {
             Objects.requireNonNull(text, "text");
             Objects.requireNonNull(color, "color");
         }
+
+        private Segment withClick(Click click) {
+            return new Segment(text, color, bold, click, hover);
+        }
+
+        private Segment withHover(CommandMessage hover) {
+            return new Segment(text, color, bold, click, hover);
+        }
+    }
+
+    private interface SegmentMapper {
+
+        Segment map(Segment segment);
     }
 }

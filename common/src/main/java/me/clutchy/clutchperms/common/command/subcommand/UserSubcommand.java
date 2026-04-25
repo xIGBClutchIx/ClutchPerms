@@ -88,7 +88,8 @@ public final class UserSubcommand {
     }
 
     private static <S> LiteralArgumentBuilder<S> listCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::list));
+        return LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::list))
+                .then(UserSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::list)));
     }
 
     private static <S> LiteralArgumentBuilder<S> getCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
@@ -107,7 +108,8 @@ public final class UserSubcommand {
     }
 
     private static <S> LiteralArgumentBuilder<S> groupsCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("groups").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groups));
+        return LiteralArgumentBuilder.<S>literal("groups").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groups))
+                .then(UserSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groups)));
     }
 
     private static <S> LiteralArgumentBuilder<S> groupCommand(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
@@ -135,6 +137,10 @@ public final class UserSubcommand {
 
     private static <S> RequiredArgumentBuilder<S, String> assignmentArgument(SuggestionProvider<S> permissionAssignment) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.ASSIGNMENT, StringArgumentType.greedyString()).suggests(permissionAssignment);
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> pageArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.PAGE, StringArgumentType.word());
     }
 
     private static <S> RequiredArgumentBuilder<S, String> groupArgument(ClutchPermsCommandEnvironment<S> environment) {

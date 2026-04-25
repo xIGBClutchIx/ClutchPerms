@@ -13,12 +13,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.LiteralMessage;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
@@ -35,6 +35,7 @@ import me.clutchy.clutchperms.common.command.subcommand.UserSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UsersSubcommand;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.KnownPermissionNode;
+import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.PermissionExplanation;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolution;
@@ -89,9 +90,15 @@ public final class ClutchPermsCommands {
 
     private static final String BACKUP_FILE_ARGUMENT = CommandArguments.BACKUP_FILE;
 
+    private static final String PAGE_ARGUMENT = CommandArguments.PAGE;
+
     private static final String UNKNOWN_ARGUMENT = CommandArguments.UNKNOWN;
 
     private static final int TARGET_MATCH_LIMIT = 5;
+
+    private static final int HELP_PAGE_SIZE = 7;
+
+    private static final int RESULT_PAGE_SIZE = 8;
 
     private static final SimpleCommandExceptionType FEEDBACK_MESSAGES = new SimpleCommandExceptionType(new LiteralMessage("command feedback"));
 
@@ -110,6 +117,35 @@ public final class ClutchPermsCommands {
     private static final DynamicCommandExceptionType NODE_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType BACKUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
+    private static final List<CommandHelpEntry> COMMAND_HELP = List.of(new CommandHelpEntry("help [page]", PermissionNodes.ADMIN_HELP, "Shows paged command help."),
+            new CommandHelpEntry("status", PermissionNodes.ADMIN_STATUS, "Shows storage, counts, resolver cache, and bridge status."),
+            new CommandHelpEntry("reload", PermissionNodes.ADMIN_RELOAD, "Reloads all JSON storage and refreshes runtime permissions."),
+            new CommandHelpEntry("validate", PermissionNodes.ADMIN_VALIDATE, "Checks all JSON storage without applying it."),
+            new CommandHelpEntry("backup list [kind] [page]", PermissionNodes.ADMIN_BACKUP_LIST, "Lists backups by file kind."),
+            new CommandHelpEntry("backup list page <page>", PermissionNodes.ADMIN_BACKUP_LIST, "Lists all backups on a specific page."),
+            new CommandHelpEntry("backup restore <kind> <backup-file>", PermissionNodes.ADMIN_BACKUP_RESTORE, "Restores one validated backup file."),
+            new CommandHelpEntry("user <target> list [page]", PermissionNodes.ADMIN_USER_LIST, "Lists direct user permissions."),
+            new CommandHelpEntry("user <target> get <node>", PermissionNodes.ADMIN_USER_GET, "Shows one direct user permission."),
+            new CommandHelpEntry("user <target> set <node> <true|false>", PermissionNodes.ADMIN_USER_SET, "Sets one direct user permission."),
+            new CommandHelpEntry("user <target> clear <node>", PermissionNodes.ADMIN_USER_CLEAR, "Clears one direct user permission."),
+            new CommandHelpEntry("user <target> check <node>", PermissionNodes.ADMIN_USER_CHECK, "Shows the effective permission result."),
+            new CommandHelpEntry("user <target> explain <node>", PermissionNodes.ADMIN_USER_EXPLAIN, "Explains matching assignments and the winner."),
+            new CommandHelpEntry("user <target> groups [page]", PermissionNodes.ADMIN_USER_GROUPS, "Lists explicit and implicit groups for a user."),
+            new CommandHelpEntry("user <target> group <add|remove> <group>", PermissionNodes.ADMIN_USER_GROUPS, "Changes explicit group membership."),
+            new CommandHelpEntry("group list [page]", PermissionNodes.ADMIN_GROUP_LIST, "Lists groups."),
+            new CommandHelpEntry("group <group> <create|delete>", PermissionNodes.ADMIN_GROUP_VIEW, "Creates or deletes a group."),
+            new CommandHelpEntry("group <group> list [page]", PermissionNodes.ADMIN_GROUP_VIEW, "Lists group permissions, parents, and members."),
+            new CommandHelpEntry("group <group> parents [page]", PermissionNodes.ADMIN_GROUP_PARENTS, "Lists parent groups."),
+            new CommandHelpEntry("group <group> <get|clear> <node>", PermissionNodes.ADMIN_GROUP_GET, "Reads or clears one group permission."),
+            new CommandHelpEntry("group <group> set <node> <true|false>", PermissionNodes.ADMIN_GROUP_SET, "Sets one group permission."),
+            new CommandHelpEntry("group <group> parent <add|remove> <parent>", PermissionNodes.ADMIN_GROUP_PARENTS, "Changes group inheritance."),
+            new CommandHelpEntry("users list [page]", PermissionNodes.ADMIN_USERS_LIST, "Lists stored user metadata."),
+            new CommandHelpEntry("users search <name> [page]", PermissionNodes.ADMIN_USERS_SEARCH, "Searches stored last-known names."),
+            new CommandHelpEntry("nodes list [page]", PermissionNodes.ADMIN_NODES_LIST, "Lists known permission nodes."),
+            new CommandHelpEntry("nodes search <query> [page]", PermissionNodes.ADMIN_NODES_SEARCH, "Searches known nodes and descriptions."),
+            new CommandHelpEntry("nodes add <node> [description]", PermissionNodes.ADMIN_NODES_ADD, "Adds or updates a manual known node."),
+            new CommandHelpEntry("nodes remove <node>", PermissionNodes.ADMIN_NODES_REMOVE, "Removes a manual known node."));
 
     /**
      * Creates the root ClutchPerms command node for a platform source type.
@@ -160,7 +196,7 @@ public final class ClutchPermsCommands {
 
         return LiteralArgumentBuilder.<S>literal(literal)
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context)))
-                .then(statusCommand(environment)).then(reloadCommand(environment)).then(validateCommand(environment))
+                .then(helpCommand(environment)).then(statusCommand(environment)).then(reloadCommand(environment)).then(validateCommand(environment))
                 .then(BackupSubcommand.builder(environment, authorized, backupHandlers(environment)))
                 .then(UserSubcommand.builder(environment, authorized, userHandlers(environment), (context, builder) -> suggestPermissionNodes(environment, context, builder),
                         (context, builder) -> suggestPermissionAssignment(environment, context, builder)))
@@ -180,6 +216,13 @@ public final class ClutchPermsCommands {
     private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("status")
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_STATUS, source -> sendStatus(environment, context)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> helpCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("help")
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context)))
+                .then(RequiredArgumentBuilder.<S, String>argument(PAGE_ARGUMENT, StringArgumentType.word())
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> reloadCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -203,6 +246,11 @@ public final class ClutchPermsCommands {
             @Override
             public int list(CommandContext<S> context) throws CommandSyntaxException {
                 return listBackups(environment, context);
+            }
+
+            @Override
+            public int listPageUsage(CommandContext<S> context) {
+                return sendUsage(environment, context, "Missing page number.", "Choose a backup list page.", List.of("backup list page <page>"));
             }
 
             @Override
@@ -346,7 +394,7 @@ public final class ClutchPermsCommands {
             }
 
             @Override
-            public int list(CommandContext<S> context) {
+            public int list(CommandContext<S> context) throws CommandSyntaxException {
                 return listGroups(environment, context);
             }
 
@@ -451,7 +499,7 @@ public final class ClutchPermsCommands {
             }
 
             @Override
-            public int list(CommandContext<S> context) {
+            public int list(CommandContext<S> context) throws CommandSyntaxException {
                 return listSubjects(environment, context);
             }
 
@@ -461,7 +509,7 @@ public final class ClutchPermsCommands {
             }
 
             @Override
-            public int search(CommandContext<S> context) {
+            public int search(CommandContext<S> context) throws CommandSyntaxException {
                 return searchSubjects(environment, context);
             }
 
@@ -481,7 +529,7 @@ public final class ClutchPermsCommands {
             }
 
             @Override
-            public int list(CommandContext<S> context) {
+            public int list(CommandContext<S> context) throws CommandSyntaxException {
                 return listKnownNodes(environment, context);
             }
 
@@ -491,7 +539,7 @@ public final class ClutchPermsCommands {
             }
 
             @Override
-            public int search(CommandContext<S> context) {
+            public int search(CommandContext<S> context) throws CommandSyntaxException {
                 return searchKnownNodes(environment, context);
             }
 
@@ -545,8 +593,16 @@ public final class ClutchPermsCommands {
         }
     }
 
-    private static <S> int sendCommandList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
-        CommandLang.commandList(rootLiteral(context)).forEach(message -> environment.sendMessage(context.getSource(), message));
+    private static <S> int sendCommandList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        int page = requestedPage(context, "help");
+        int totalPages = totalPages(COMMAND_HELP.size(), HELP_PAGE_SIZE);
+        requirePageInRange(context, page, totalPages, "help");
+
+        environment.sendMessage(context.getSource(), CommandLang.commandListHeader(page, totalPages));
+        String rootLiteral = rootLiteral(context);
+        pageItems(COMMAND_HELP, page, HELP_PAGE_SIZE)
+                .forEach(entry -> environment.sendMessage(context.getSource(), CommandLang.commandHelpEntry(rootLiteral, entry.syntax(), entry.permission(), entry.description())));
+        sendPageNavigation(environment, context, "help", page, totalPages);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -746,6 +802,71 @@ public final class ClutchPermsCommands {
         return 0;
     }
 
+    private static <S> void sendPagedRows(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String title, List<PagedRow> rows, String pageCommand)
+            throws CommandSyntaxException {
+        int page = requestedPage(context, pageCommand);
+        int totalPages = totalPages(rows.size(), RESULT_PAGE_SIZE);
+        requirePageInRange(context, page, totalPages, pageCommand);
+
+        environment.sendMessage(context.getSource(), CommandLang.listHeader(title, page, totalPages));
+        pageItems(rows, page, RESULT_PAGE_SIZE).forEach(row -> environment.sendMessage(context.getSource(), CommandLang.listRow(row.text(), row.command())));
+        sendPageNavigation(environment, context, pageCommand, page, totalPages);
+    }
+
+    private static <S> void sendPageNavigation(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String pageCommand, int page, int totalPages) {
+        if (totalPages <= 1) {
+            return;
+        }
+        String previousCommand = page > 1 ? fullCommand(rootLiteral(context), pageCommand + " " + (page - 1)) : null;
+        String nextCommand = page < totalPages ? fullCommand(rootLiteral(context), pageCommand + " " + (page + 1)) : null;
+        environment.sendMessage(context.getSource(), CommandLang.pageNavigation(previousCommand, page - 1, page, totalPages, nextCommand, page + 1));
+    }
+
+    private static <S> int requestedPage(CommandContext<S> context, String pageCommand) throws CommandSyntaxException {
+        if (!hasArgument(context, PAGE_ARGUMENT)) {
+            return 1;
+        }
+        String rawPage = StringArgumentType.getString(context, PAGE_ARGUMENT);
+        int page;
+        try {
+            page = Integer.parseInt(rawPage);
+        } catch (NumberFormatException exception) {
+            throw invalidPageFeedback(context, rawPage, pageCommand);
+        }
+        if (page < 1) {
+            throw invalidPageFeedback(context, rawPage, pageCommand);
+        }
+        return page;
+    }
+
+    private static <S> void requirePageInRange(CommandContext<S> context, int page, int totalPages, String pageCommand) throws CommandSyntaxException {
+        if (page <= totalPages) {
+            return;
+        }
+        int closestPage = Math.max(1, Math.min(page, totalPages));
+        throw feedback(List.of(CommandLang.pageOutOfRange(page), CommandLang.availablePages(totalPages), CommandLang.tryHeader(),
+                CommandLang.suggestion(rootLiteral(context), pageCommand + " " + closestPage)));
+    }
+
+    private static <S> CommandFeedbackException invalidPageFeedback(CommandContext<S> context, String rawPage, String pageCommand) {
+        return feedback(List.of(CommandLang.invalidPage(rawPage), CommandLang.pageStartsAtOne(), CommandLang.tryHeader(),
+                CommandLang.suggestion(rootLiteral(context), pageCommand + " 1")));
+    }
+
+    private static int totalPages(int itemCount, int pageSize) {
+        return Math.max(1, (itemCount + pageSize - 1) / pageSize);
+    }
+
+    private static <T> List<T> pageItems(List<T> items, int page, int pageSize) {
+        int from = (page - 1) * pageSize;
+        int to = Math.min(items.size(), from + pageSize);
+        return items.subList(from, to);
+    }
+
+    private static <S> boolean hasArgument(CommandContext<S> context, String argumentName) {
+        return context.getNodes().stream().anyMatch(node -> argumentName.equals(node.getNode().getName()));
+    }
+
     private static <S> String rootLiteral(CommandContext<S> context) {
         if (context.getNodes().isEmpty()) {
             return ROOT_LITERAL;
@@ -813,21 +934,19 @@ public final class ClutchPermsCommands {
         Optional<StorageFileKind> requestedKind = getOptionalBackupKind(environment, context);
         try {
             if (requestedKind.isPresent()) {
-                sendBackupList(environment, context, requestedKind.get(), backupService.listBackups(requestedKind.get()));
+                sendBackupList(environment, context, requestedKind.get(), backupService.listBackups(requestedKind.get()), "backup list " + requestedKind.get().token());
                 return Command.SINGLE_SUCCESS;
             }
 
             Map<StorageFileKind, List<StorageBackup>> backups = backupService.listBackups();
-            boolean hasBackups = backups.values().stream().anyMatch(list -> !list.isEmpty());
-            if (!hasBackups) {
+            List<PagedRow> rows = backups.entrySet().stream().sorted(Map.Entry.comparingByKey(Comparator.comparing(StorageFileKind::token))).flatMap(
+                    entry -> entry.getValue().stream().map(backup -> backupRow(rootLiteral(context), entry.getKey(), backup, entry.getKey().token() + ": " + backup.fileName())))
+                    .toList();
+            if (rows.isEmpty()) {
                 environment.sendMessage(context.getSource(), CommandLang.backupsEmpty());
                 return Command.SINGLE_SUCCESS;
             }
-            backups.forEach((kind, kindBackups) -> {
-                if (!kindBackups.isEmpty()) {
-                    sendBackupList(environment, context, kind, kindBackups);
-                }
-            });
+            sendPagedRows(environment, context, "Backups", rows, "backup list page");
         } catch (RuntimeException exception) {
             throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
         }
@@ -859,14 +978,16 @@ public final class ClutchPermsCommands {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static <S> void sendBackupList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, StorageFileKind kind, List<StorageBackup> backups) {
+    private static <S> void sendBackupList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, StorageFileKind kind, List<StorageBackup> backups,
+            String pageCommand) throws CommandSyntaxException {
         if (backups.isEmpty()) {
             environment.sendMessage(context.getSource(), CommandLang.backupsEmpty(kind.token()));
             return;
         }
 
-        String backupFiles = backups.stream().map(StorageBackup::fileName).collect(Collectors.joining(", "));
-        environment.sendMessage(context.getSource(), CommandLang.backupsList(kind.token(), backupFiles));
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = backups.stream().map(backup -> backupRow(rootLiteral, kind, backup, backup.fileName())).toList();
+        sendPagedRows(environment, context, "Backups for " + kind.token(), rows, pageCommand);
     }
 
     private static <S> boolean canUse(ClutchPermsCommandEnvironment<S> environment, S source, String requiredPermission) {
@@ -890,9 +1011,10 @@ public final class ClutchPermsCommands {
             return Command.SINGLE_SUCCESS;
         }
 
-        String assignments = permissions.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> entry.getKey() + "=" + entry.getValue().name())
-                .collect(Collectors.joining(", "));
-        environment.sendMessage(context.getSource(), CommandLang.permissionsList(formatSubject(subject), assignments));
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = permissions.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .map(entry -> new PagedRow(entry.getKey() + "=" + entry.getValue().name(), fullCommand(rootLiteral, "user " + subject.id() + " get " + entry.getKey()))).toList();
+        sendPagedRows(environment, context, "Permissions for " + formatSubject(subject), rows, "user " + StringArgumentType.getString(context, TARGET_ARGUMENT) + " list");
         return Command.SINGLE_SUCCESS;
     }
 
@@ -943,7 +1065,12 @@ public final class ClutchPermsCommands {
             return Command.SINGLE_SUCCESS;
         }
 
-        environment.sendMessage(context.getSource(), CommandLang.userGroupsList(formatSubject(subject), String.join(", ", groups)));
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = groups.stream().map(group -> {
+            String groupName = group.endsWith(" (implicit)") ? group.substring(0, group.indexOf(" (implicit)")) : group;
+            return new PagedRow(group, fullCommand(rootLiteral, "group " + groupName + " list"));
+        }).toList();
+        sendPagedRows(environment, context, "Groups for " + formatSubject(subject), rows, "user " + StringArgumentType.getString(context, TARGET_ARGUMENT) + " groups");
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1016,14 +1143,16 @@ public final class ClutchPermsCommands {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static <S> int listGroups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+    private static <S> int listGroups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         Set<String> groups = environment.groupService().getGroups();
         if (groups.isEmpty()) {
             environment.sendMessage(context.getSource(), CommandLang.groupsEmpty());
             return Command.SINGLE_SUCCESS;
         }
 
-        environment.sendMessage(context.getSource(), CommandLang.groupsList(String.join(", ", groups)));
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = groups.stream().sorted(Comparator.naturalOrder()).map(group -> new PagedRow(group, fullCommand(rootLiteral, "group " + group + " list"))).toList();
+        sendPagedRows(environment, context, "Groups", rows, "group list");
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1065,26 +1194,26 @@ public final class ClutchPermsCommands {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
-        if (permissions.isEmpty()) {
-            environment.sendMessage(context.getSource(), CommandLang.groupPermissionsEmpty(normalizedGroupName));
-        } else {
-            String assignments = permissions.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> entry.getKey() + "=" + entry.getValue().name())
-                    .collect(Collectors.joining(", "));
-            environment.sendMessage(context.getSource(), CommandLang.groupPermissionsList(normalizedGroupName, assignments));
-        }
-
-        if (!parents.isEmpty()) {
-            environment.sendMessage(context.getSource(), CommandLang.groupParentsList(normalizedGroupName, String.join(", ", parents)));
-        }
-
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = new ArrayList<>();
+        permissions.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> new PagedRow("permission " + entry.getKey() + "=" + entry.getValue().name(),
+                fullCommand(rootLiteral, "group " + normalizedGroupName + " get " + entry.getKey()))).forEach(rows::add);
+        parents.stream().sorted(Comparator.naturalOrder()).map(parent -> new PagedRow("parent " + parent, fullCommand(rootLiteral, "group " + parent + " list")))
+                .forEach(rows::add);
         if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
-            environment.sendMessage(context.getSource(), CommandLang.groupDefaultImplicit());
-        } else if (members.isEmpty()) {
-            environment.sendMessage(context.getSource(), CommandLang.groupMembersEmpty(normalizedGroupName));
+            rows.add(new PagedRow("default group applies implicitly", fullCommand(rootLiteral, "group default list")));
         } else {
-            String memberList = members.stream().map(subjectId -> formatSubject(subjectId, environment)).collect(Collectors.joining(", "));
-            environment.sendMessage(context.getSource(), CommandLang.groupMembersList(normalizedGroupName, memberList));
+            members.stream().sorted().map(subjectId -> new PagedRow("member " + formatSubject(subjectId, environment), fullCommand(rootLiteral, "user " + subjectId + " list")))
+                    .forEach(rows::add);
         }
+
+        if (rows.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.groupPermissionsEmpty(normalizedGroupName));
+            environment.sendMessage(context.getSource(), CommandLang.groupMembersEmpty(normalizedGroupName));
+            return Command.SINGLE_SUCCESS;
+        }
+
+        sendPagedRows(environment, context, "Group " + normalizedGroupName, rows, "group " + StringArgumentType.getString(context, GROUP_ARGUMENT) + " list");
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1101,7 +1230,10 @@ public final class ClutchPermsCommands {
         if (parents.isEmpty()) {
             environment.sendMessage(context.getSource(), CommandLang.groupParentsEmpty(normalizedGroupName));
         } else {
-            environment.sendMessage(context.getSource(), CommandLang.groupParentsList(normalizedGroupName, String.join(", ", parents)));
+            String rootLiteral = rootLiteral(context);
+            List<PagedRow> rows = parents.stream().sorted(Comparator.naturalOrder()).map(parent -> new PagedRow(parent, fullCommand(rootLiteral, "group " + parent + " list")))
+                    .toList();
+            sendPagedRows(environment, context, "Parents of group " + normalizedGroupName, rows, "group " + StringArgumentType.getString(context, GROUP_ARGUMENT) + " parents");
         }
         return Command.SINGLE_SUCCESS;
     }
@@ -1172,21 +1304,22 @@ public final class ClutchPermsCommands {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static <S> int listSubjects(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+    private static <S> int listSubjects(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         Map<UUID, SubjectMetadata> subjects = environment.subjectMetadataService().getSubjects();
         if (subjects.isEmpty()) {
             environment.sendMessage(context.getSource(), CommandLang.usersEmpty());
             return Command.SINGLE_SUCCESS;
         }
 
-        String subjectList = subjects.values().stream()
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = subjects.values().stream()
                 .sorted(Comparator.comparing(SubjectMetadata::lastKnownName, String.CASE_INSENSITIVE_ORDER).thenComparing(SubjectMetadata::subjectId))
-                .map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
-        environment.sendMessage(context.getSource(), CommandLang.usersList(subjectList));
+                .map(subject -> new PagedRow(formatSubjectMetadata(subject), fullCommand(rootLiteral, "user " + subject.subjectId() + " list"))).toList();
+        sendPagedRows(environment, context, "Known users", rows, "users list");
         return Command.SINGLE_SUCCESS;
     }
 
-    private static <S> int searchSubjects(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+    private static <S> int searchSubjects(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String query = StringArgumentType.getString(context, NAME_ARGUMENT).trim();
         String normalizedQuery = query.toLowerCase(Locale.ROOT);
         if (normalizedQuery.isEmpty()) {
@@ -1194,32 +1327,35 @@ public final class ClutchPermsCommands {
             return Command.SINGLE_SUCCESS;
         }
 
-        String matches = environment.subjectMetadataService().getSubjects().values().stream()
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = environment.subjectMetadataService().getSubjects().values().stream()
                 .filter(subject -> subject.lastKnownName().toLowerCase(Locale.ROOT).contains(normalizedQuery))
                 .sorted(Comparator.comparing(SubjectMetadata::lastKnownName, String.CASE_INSENSITIVE_ORDER).thenComparing(SubjectMetadata::subjectId))
-                .map(ClutchPermsCommands::formatSubjectMetadata).collect(Collectors.joining(", "));
+                .map(subject -> new PagedRow(formatSubjectMetadata(subject), fullCommand(rootLiteral, "user " + subject.subjectId() + " list"))).toList();
 
-        if (matches.isEmpty()) {
+        if (rows.isEmpty()) {
             environment.sendMessage(context.getSource(), CommandLang.usersSearchEmpty(query));
             return Command.SINGLE_SUCCESS;
         }
 
-        environment.sendMessage(context.getSource(), CommandLang.usersSearchMatches(matches));
+        sendPagedRows(environment, context, "Matched users", rows, "users search " + query);
         return Command.SINGLE_SUCCESS;
     }
 
-    private static <S> int listKnownNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+    private static <S> int listKnownNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         List<KnownPermissionNode> nodes = environment.permissionNodeRegistry().getKnownNodes().stream().sorted(Comparator.comparing(KnownPermissionNode::node)).toList();
         if (nodes.isEmpty()) {
             environment.sendMessage(context.getSource(), CommandLang.nodesEmpty());
             return Command.SINGLE_SUCCESS;
         }
 
-        environment.sendMessage(context.getSource(), CommandLang.nodesList(nodes.stream().map(ClutchPermsCommands::formatKnownNode).collect(Collectors.joining(", "))));
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = nodes.stream().map(node -> new PagedRow(formatKnownNode(node), knownNodeCommand(rootLiteral, node))).toList();
+        sendPagedRows(environment, context, "Known permission nodes", rows, "nodes list");
         return Command.SINGLE_SUCCESS;
     }
 
-    private static <S> int searchKnownNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+    private static <S> int searchKnownNodes(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String query = StringArgumentType.getString(context, QUERY_ARGUMENT).trim();
         String normalizedQuery = query.toLowerCase(Locale.ROOT);
         if (normalizedQuery.isEmpty()) {
@@ -1235,7 +1371,9 @@ public final class ClutchPermsCommands {
             return Command.SINGLE_SUCCESS;
         }
 
-        environment.sendMessage(context.getSource(), CommandLang.nodesSearchMatches(nodes.stream().map(ClutchPermsCommands::formatKnownNode).collect(Collectors.joining(", "))));
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = nodes.stream().map(node -> new PagedRow(formatKnownNode(node), knownNodeCommand(rootLiteral, node))).toList();
+        sendPagedRows(environment, context, "Matched known permission nodes", rows, "nodes search " + query);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1722,6 +1860,21 @@ public final class ClutchPermsCommands {
         return formattedNode;
     }
 
+    private static PagedRow backupRow(String rootLiteral, StorageFileKind kind, StorageBackup backup, String text) {
+        return new PagedRow(text, fullCommand(rootLiteral, "backup restore " + kind.token() + " " + backup.fileName()));
+    }
+
+    private static String knownNodeCommand(String rootLiteral, KnownPermissionNode node) {
+        if (node.source() == PermissionNodeSource.MANUAL) {
+            return fullCommand(rootLiteral, "nodes remove " + node.node());
+        }
+        return fullCommand(rootLiteral, "nodes search " + node.node());
+    }
+
+    private static String fullCommand(String rootLiteral, String command) {
+        return "/" + rootLiteral + (command.isBlank() ? "" : " " + command);
+    }
+
     private static String formatNodeSource(KnownPermissionNode node) {
         return node.source().name().toLowerCase(Locale.ROOT).replace('_', '-');
     }
@@ -1782,5 +1935,11 @@ public final class ClutchPermsCommands {
     }
 
     private record PermissionAssignment(String node, PermissionValue value) {
+    }
+
+    private record CommandHelpEntry(String syntax, String permission, String description) {
+    }
+
+    private record PagedRow(String text, String command) {
     }
 }

@@ -48,10 +48,12 @@ public final class NodesSubcommand {
 
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
         return LiteralArgumentBuilder.<S>literal("nodes").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::usage))
-                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::list)))
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::list))
+                        .then(NodesSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::list))))
                 .then(LiteralArgumentBuilder.<S>literal("search").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_SEARCH, handlers::searchUsage))
                         .then(RequiredArgumentBuilder.<S, String>argument(CommandArguments.QUERY, StringArgumentType.word())
-                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_SEARCH, handlers::search))))
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_SEARCH, handlers::search))
+                                .then(NodesSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_SEARCH, handlers::search)))))
                 .then(LiteralArgumentBuilder.<S>literal("add").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_ADD, handlers::addUsage))
                         .then(nodeArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_ADD, handlers::add))))
                 .then(LiteralArgumentBuilder.<S>literal("remove").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_REMOVE, handlers::removeUsage))
@@ -62,6 +64,10 @@ public final class NodesSubcommand {
     private static <S> RequiredArgumentBuilder<S, String> nodeArgument(ClutchPermsCommandEnvironment<S> environment) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.NODE, StringArgumentType.greedyString())
                 .suggests((context, builder) -> suggestKnownNodes(environment, builder));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> pageArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.PAGE, StringArgumentType.word());
     }
 
     private static <S> CompletableFuture<Suggestions> suggestKnownNodes(ClutchPermsCommandEnvironment<S> environment, SuggestionsBuilder builder) {

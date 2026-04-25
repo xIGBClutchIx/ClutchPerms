@@ -35,6 +35,8 @@ Paper is a Paper target. Spigot compatibility is not maintained.
 
 Use `/clutchperms`, `/cperms`, or `/perms`. The table uses `/clutchperms`, but every command also works through either alias.
 
+Command help and long list results are paged. In chat, command rows can be clicked to paste a command, page controls move between pages, and hover text shows concise command details.
+
 Console and remote console can run commands for bootstrap. Players need the exact effective command permission for the command they run.
 
 Useful grants:
@@ -52,41 +54,45 @@ Useful grants:
 
 | Command | Permission | Description |
 | --- | --- | --- |
-| `/clutchperms` | `clutchperms.admin.help` | Shows the command list. |
+| `/clutchperms` | `clutchperms.admin.help` | Shows command help page 1. |
+| `/clutchperms help [page]` | `clutchperms.admin.help` | Shows paged command help. |
 | `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, counts, resolver cache counts, and runtime bridge status. |
 | `/clutchperms reload` | `clutchperms.admin.reload` | Reloads all JSON files and refreshes runtime permissions. |
 | `/clutchperms validate` | `clutchperms.admin.validate` | Parses all JSON files without applying them. |
-| `/clutchperms backup list [kind]` | `clutchperms.admin.backup.list` | Lists backups for all files or one kind: `permissions`, `subjects`, `groups`, or `nodes`. |
+| `/clutchperms backup list` | `clutchperms.admin.backup.list` | Lists backups for all files on page 1. |
+| `/clutchperms backup list page <page>` | `clutchperms.admin.backup.list` | Lists all backups on a specific page. |
+| `/clutchperms backup list <kind> [page]` | `clutchperms.admin.backup.list` | Lists backups for one kind: `permissions`, `subjects`, `groups`, or `nodes`. |
 | `/clutchperms backup restore <kind> <backup-file>` | `clutchperms.admin.backup.restore` | Restores one backup file, validates all storage, and reloads if valid. |
-| `/clutchperms user <target> list` | `clutchperms.admin.user.list` | Lists direct permissions for a user. |
+| `/clutchperms user <target> list [page]` | `clutchperms.admin.user.list` | Lists direct permissions for a user. |
 | `/clutchperms user <target> get <node>` | `clutchperms.admin.user.get` | Shows one direct user permission. |
 | `/clutchperms user <target> set <node> <true\|false>` | `clutchperms.admin.user.set` | Sets one direct user permission. |
 | `/clutchperms user <target> clear <node>` | `clutchperms.admin.user.clear` | Removes one direct user permission. |
 | `/clutchperms user <target> check <node>` | `clutchperms.admin.user.check` | Shows the effective permission result. |
 | `/clutchperms user <target> explain <node>` | `clutchperms.admin.user.explain` | Explains matching assignments and the winner. |
-| `/clutchperms user <target> groups` | `clutchperms.admin.user.groups` | Lists explicit group memberships. |
+| `/clutchperms user <target> groups [page]` | `clutchperms.admin.user.groups` | Lists explicit group memberships and the implicit `default` group. |
 | `/clutchperms user <target> group add <group>` | `clutchperms.admin.user.group.add` | Adds an explicit group membership. |
 | `/clutchperms user <target> group remove <group>` | `clutchperms.admin.user.group.remove` | Removes an explicit group membership. |
-| `/clutchperms group list` | `clutchperms.admin.group.list` | Lists groups. |
+| `/clutchperms group list [page]` | `clutchperms.admin.group.list` | Lists groups. |
 | `/clutchperms group <group> create` | `clutchperms.admin.group.create` | Creates a group. |
 | `/clutchperms group <group> delete` | `clutchperms.admin.group.delete` | Deletes a group and related links. |
-| `/clutchperms group <group> list` | `clutchperms.admin.group.view` | Lists group permissions, parents, and members. |
+| `/clutchperms group <group> list [page]` | `clutchperms.admin.group.view` | Lists group permissions, parents, and members. |
 | `/clutchperms group <group> get <node>` | `clutchperms.admin.group.get` | Shows one direct group permission. |
 | `/clutchperms group <group> set <node> <true\|false>` | `clutchperms.admin.group.set` | Sets one direct group permission. |
 | `/clutchperms group <group> clear <node>` | `clutchperms.admin.group.clear` | Removes one direct group permission. |
-| `/clutchperms group <group> parents` | `clutchperms.admin.group.parents` | Lists parent groups. |
+| `/clutchperms group <group> parents [page]` | `clutchperms.admin.group.parents` | Lists parent groups. |
 | `/clutchperms group <group> parent add <parent>` | `clutchperms.admin.group.parent.add` | Adds an inheritance parent. |
 | `/clutchperms group <group> parent remove <parent>` | `clutchperms.admin.group.parent.remove` | Removes an inheritance parent. |
-| `/clutchperms users list` | `clutchperms.admin.users.list` | Lists stored subject metadata. |
-| `/clutchperms users search <name>` | `clutchperms.admin.users.search` | Searches stored last-known names. |
-| `/clutchperms nodes list` | `clutchperms.admin.nodes.list` | Lists known permission nodes. |
-| `/clutchperms nodes search <query>` | `clutchperms.admin.nodes.search` | Searches known nodes and descriptions. |
+| `/clutchperms users list [page]` | `clutchperms.admin.users.list` | Lists stored subject metadata. |
+| `/clutchperms users search <name> [page]` | `clutchperms.admin.users.search` | Searches stored last-known names. |
+| `/clutchperms nodes list [page]` | `clutchperms.admin.nodes.list` | Lists known permission nodes. |
+| `/clutchperms nodes search <query> [page]` | `clutchperms.admin.nodes.search` | Searches known nodes and descriptions. |
 | `/clutchperms nodes add <node> [description]` | `clutchperms.admin.nodes.add` | Adds or updates a manually known exact node. |
 | `/clutchperms nodes remove <node>` | `clutchperms.admin.nodes.remove` | Removes a manually known node. |
 
 Notes:
 
 - `<target>` resolves exact online name, then exact stored last-known name, then UUID.
+- Page numbers start at 1. Invalid or out-of-range pages return styled ClutchPerms feedback and a command to try.
 - Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
 - The `default` group always exists, applies implicitly to every subject, and cannot be deleted.

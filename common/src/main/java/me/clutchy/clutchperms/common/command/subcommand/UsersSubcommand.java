@@ -34,11 +34,17 @@ public final class UsersSubcommand {
 
     public static <S> LiteralArgumentBuilder<S> builder(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
         return LiteralArgumentBuilder.<S>literal("users").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_LIST, handlers::usage))
-                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_LIST, handlers::list)))
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_LIST, handlers::list))
+                        .then(UsersSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_LIST, handlers::list))))
                 .then(LiteralArgumentBuilder.<S>literal("search").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_SEARCH, handlers::searchUsage))
                         .then(RequiredArgumentBuilder.<S, String>argument(CommandArguments.NAME, StringArgumentType.word())
-                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_SEARCH, handlers::search))))
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_SEARCH, handlers::search))
+                                .then(UsersSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_SEARCH, handlers::search)))))
                 .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USERS_LIST, handlers::unknownUsage)));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> pageArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.PAGE, StringArgumentType.word());
     }
 
     private UsersSubcommand() {

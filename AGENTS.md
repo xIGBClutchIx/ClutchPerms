@@ -149,28 +149,37 @@ Command system layout:
 - Subcommand classes should build Brigadier literals/arguments, suggestions that are local to the branch, and handler interfaces. They should not introduce platform APIs or duplicate command behavior that belongs in `ClutchPermsCommands`.
 - Use `CommandArguments` constants for shared argument names so handlers and branch builders stay aligned.
 - Keep command feedback text centralized in `CommandLang`; branch builders should call handlers rather than formatting user-facing messages directly.
+- `CommandMessage` owns shared styling plus optional click/hover metadata. Keep `plainText()` stable for tests and string fallback output.
+- Interactive command output belongs in `common.command`. Platform adapters should only render native components: Paper Adventure components, and Minecraft components for Fabric, NeoForge, and Forge.
+- Do not use legacy section-sign formatting. Keep the restrained command palette: aqua headings, gray metadata/navigation, white command text, yellow placeholders/values, green success, and red errors.
+- Command rows and result rows should suggest/paste commands. Page controls are the only shared command output clicks that should run commands.
 
 Current command surface:
 
 - `/clutchperms`
 - `/cperms`
 - `/perms`
+- `/clutchperms help [page]`
 - `/clutchperms status`
 - `/clutchperms reload`
 - `/clutchperms validate`
 - `/clutchperms backup list`
-- `/clutchperms backup list <permissions|subjects|groups|nodes>`
+- `/clutchperms backup list page <page>`
+- `/clutchperms backup list <permissions|subjects|groups|nodes> [page]`
 - `/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>`
-- `/clutchperms user <target> list|get|set|clear|check|explain`
-- `/clutchperms user <target> groups`
+- `/clutchperms user <target> list [page]`
+- `/clutchperms user <target> get|set|clear|check|explain`
+- `/clutchperms user <target> groups [page]`
 - `/clutchperms user <target> group add|remove <group>`
-- `/clutchperms group list`
-- `/clutchperms group <group> create|delete|list|get|set|clear`
-- `/clutchperms group <group> parents`
+- `/clutchperms group list [page]`
+- `/clutchperms group <group> create|delete|get|set|clear`
+- `/clutchperms group <group> list [page]`
+- `/clutchperms group <group> parents [page]`
 - `/clutchperms group <group> parent add|remove <parent>`
-- `/clutchperms users list`
-- `/clutchperms users search <name>`
-- `/clutchperms nodes list|search <query>`
+- `/clutchperms users list [page]`
+- `/clutchperms users search <name> [page]`
+- `/clutchperms nodes list [page]`
+- `/clutchperms nodes search <query> [page]`
 - `/clutchperms nodes add <node> [description]`
 - `/clutchperms nodes remove <node>`
 

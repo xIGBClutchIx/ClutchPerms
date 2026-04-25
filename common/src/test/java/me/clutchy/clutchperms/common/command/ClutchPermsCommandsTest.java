@@ -123,7 +123,9 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(commandListMessages(), console.messages());
+        assertEquals(commandListPageOneMessages(), console.messages());
+        assertSuggests(console.commandMessages().get(1), "/clutchperms help [page]");
+        assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
     }
 
     /**
@@ -139,10 +141,47 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("cperms", cperms);
         dispatcher.execute("perms group", perms);
 
-        assertEquals(commandListMessages("cperms"), cperms.messages());
+        assertEquals(commandListPageOneMessages("cperms"), cperms.messages());
         assertEquals(List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
                 "  /perms group <group> <create|delete|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
                 "  /perms group <group> parent <add|remove> <parent>"), perms.messages());
+        assertSuggests(perms.commandMessages().get(3), "/perms group list");
+    }
+
+    /**
+     * Confirms explicit help pages use compact navigation and preserve the active root literal.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void helpCommandSupportsPagedOutputAndAliases() throws CommandSyntaxException {
+        TestSource helpPage = TestSource.console();
+        TestSource aliasPage = TestSource.console();
+
+        dispatcher.execute("clutchperms help 2", helpPage);
+        dispatcher.execute("perms help 2", aliasPage);
+
+        assertEquals(commandListPageTwoMessages(), helpPage.messages());
+        assertEquals(commandListPageTwoMessages("perms"), aliasPage.messages());
+        assertRuns(helpPage.commandMessages().getLast(), "/clutchperms help 3");
+        assertRuns(aliasPage.commandMessages().getLast(), "/perms help 3");
+    }
+
+    /**
+     * Confirms invalid and out-of-range help pages return styled ClutchPerms feedback.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void helpPagesRejectInvalidPages() throws CommandSyntaxException {
+        TestSource invalid = TestSource.console();
+        TestSource outOfRange = TestSource.console();
+
+        assertEquals(0, dispatcher.execute("clutchperms help nope", invalid));
+        assertEquals(List.of("Invalid page: nope", "Pages start at 1.", "Try one:", "  /clutchperms help 1"), invalid.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms help 99", outOfRange));
+        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-4.", "Try one:", "  /clutchperms help 4"), outOfRange.messages());
     }
 
     /**
@@ -159,6 +198,8 @@ class ClutchPermsCommandsTest {
         assertTrue(message.segments().stream().anyMatch(segment -> segment.text().equals("true") && segment.color() == CommandMessage.Color.GREEN));
         assertTrue(message.segments().stream().anyMatch(segment -> segment.text().equals("|") && segment.color() == CommandMessage.Color.GRAY));
         assertTrue(message.segments().stream().anyMatch(segment -> segment.text().equals("false") && segment.color() == CommandMessage.Color.GREEN));
+        assertSuggests(message, "/clutchperms group admin set <node> <true|false>");
+        assertTrue(message.segments().stream().anyMatch(segment -> segment.hover() != null && segment.hover().plainText().contains("Click to paste")));
     }
 
     /**
@@ -293,9 +334,9 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms backup list", console);
         dispatcher.execute("clutchperms backup list permissions", console);
 
-        assertEquals(List.of("Backups for permissions: permissions-20260424-120001000.json, permissions-20260424-120000000.json",
-                "Backups for groups: groups-20260424-120000000.json", "Backups for permissions: permissions-20260424-120001000.json, permissions-20260424-120000000.json"),
-                console.messages());
+        assertEquals(List.of("Backups (page 1/1):", "  groups: groups-20260424-120000000.json", "  permissions: permissions-20260424-120001000.json",
+                "  permissions: permissions-20260424-120000000.json", "Backups for permissions (page 1/1):", "  permissions-20260424-120001000.json",
+                "  permissions-20260424-120000000.json"), console.messages());
     }
 
     /**
@@ -391,7 +432,7 @@ class ClutchPermsCommandsTest {
         writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-120000000.json", "first");
         writeBackup(StorageFileKind.GROUPS, "groups-20260424-120000000.json", "groups");
 
-        assertEquals(List.of("groups", "nodes", "permissions", "subjects"), suggestionTexts("clutchperms backup list "));
+        assertEquals(List.of("groups", "nodes", "page", "permissions", "subjects"), suggestionTexts("clutchperms backup list "));
         assertEquals(List.of("permissions-20260424-120000000.json"), suggestionTexts("clutchperms backup restore permissions "));
     }
 
@@ -455,7 +496,7 @@ class ClutchPermsCommandsTest {
         assertEquals(PermissionValue.UNSET, permissionService.getPermission(TARGET_ID, "example.node"));
         assertEquals(
                 List.of("Set example.node for Target (00000000-0000-0000-0000-000000000002) to TRUE.", "Target (00000000-0000-0000-0000-000000000002) has example.node = TRUE.",
-                        "Permissions for Target (00000000-0000-0000-0000-000000000002): example.node=TRUE",
+                        "Permissions for Target (00000000-0000-0000-0000-000000000002) (page 1/1):", "  example.node=TRUE",
                         "Cleared example.node for Target (00000000-0000-0000-0000-000000000002).", "No permissions set for Target (00000000-0000-0000-0000-000000000002)."),
                 console.messages());
     }
@@ -601,11 +642,13 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms group admin delete", console);
 
         assertEquals(PermissionValue.UNSET, groupService.getGroups().contains("admin") ? groupService.getGroupPermission("admin", "example.node") : PermissionValue.UNSET);
-        assertEquals(List.of("Created group admin.", "Set example.node for group admin to TRUE.", "Added Target (00000000-0000-0000-0000-000000000002) to group admin.",
-                "Groups for Target (00000000-0000-0000-0000-000000000002): admin, default (implicit)",
-                "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.", "Permissions for group admin: example.node=TRUE",
-                "Members of group admin: Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.", "Cleared example.node for group admin.",
-                "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."), console.messages());
+        assertEquals(
+                List.of("Created group admin.", "Set example.node for group admin to TRUE.", "Added Target (00000000-0000-0000-0000-000000000002) to group admin.",
+                        "Groups for Target (00000000-0000-0000-0000-000000000002) (page 1/1):", "  admin", "  default (implicit)",
+                        "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.", "Group admin (page 1/1):",
+                        "  permission example.node=TRUE", "  member Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.",
+                        "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."),
+                console.messages());
     }
 
     /**
@@ -630,8 +673,8 @@ class ClutchPermsCommandsTest {
         assertEquals(PermissionValue.FALSE, permissionResolver.resolve(TARGET_ID, "other.node").value());
         assertEquals(List.of("Set example.* for Target (00000000-0000-0000-0000-000000000002) to TRUE.",
                 "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from direct via example.*.",
-                "Permissions for Target (00000000-0000-0000-0000-000000000002): example.*=TRUE", "Created group wildcard.", "Set other.* for group wildcard to FALSE.",
-                "Added Target (00000000-0000-0000-0000-000000000002) to group wildcard.",
+                "Permissions for Target (00000000-0000-0000-0000-000000000002) (page 1/1):", "  example.*=TRUE", "Created group wildcard.",
+                "Set other.* for group wildcard to FALSE.", "Added Target (00000000-0000-0000-0000-000000000002) to group wildcard.",
                 "Target (00000000-0000-0000-0000-000000000002) effective other.node = FALSE from group wildcard via other.*.",
                 "Cleared example.* for Target (00000000-0000-0000-0000-000000000002)."), console.messages());
     }
@@ -725,10 +768,10 @@ class ClutchPermsCommandsTest {
 
         assertEquals(PermissionValue.UNSET, permissionResolver.resolve(TARGET_ID, "example.inherited").value());
         assertEquals(List.of("Created group base.", "Set example.inherited for group base to TRUE.", "Created group staff.", "Added parent group base to group staff.",
-                "Parents of group staff: base", "Added Target (00000000-0000-0000-0000-000000000002) to group staff.",
-                "Target (00000000-0000-0000-0000-000000000002) effective example.inherited = TRUE from group base.", "No permissions set for group staff.",
-                "Parents of group staff: base", "Members of group staff: 00000000-0000-0000-0000-000000000002 (00000000-0000-0000-0000-000000000002)",
-                "Removed parent group base from group staff.", "Group staff has no parent groups."), console.messages());
+                "Parents of group staff (page 1/1):", "  base", "Added Target (00000000-0000-0000-0000-000000000002) to group staff.",
+                "Target (00000000-0000-0000-0000-000000000002) effective example.inherited = TRUE from group base.", "Group staff (page 1/1):", "  parent base",
+                "  member 00000000-0000-0000-0000-000000000002 (00000000-0000-0000-0000-000000000002)", "Removed parent group base from group staff.",
+                "Group staff has no parent groups."), console.messages());
     }
 
     /**
@@ -762,7 +805,7 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms user Target check example.default", console);
 
         assertEquals(PermissionValue.FALSE, permissionResolver.resolve(TARGET_ID, "example.default").value());
-        assertEquals(List.of("Set example.default for group default to FALSE.", "Groups for Target (00000000-0000-0000-0000-000000000002): default (implicit)",
+        assertEquals(List.of("Set example.default for group default to FALSE.", "Groups for Target (00000000-0000-0000-0000-000000000002) (page 1/1):", "  default (implicit)",
                 "Target (00000000-0000-0000-0000-000000000002) effective example.default = FALSE from default group."), console.messages());
     }
 
@@ -1093,8 +1136,8 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms users list", console);
 
-        assertEquals(List.of("Known users: Alpha (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T12:00:00Z), "
-                + "Zed (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T13:00:00Z)"), console.messages());
+        assertEquals(List.of("Known users (page 1/1):", "  Alpha (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T12:00:00Z)",
+                "  Zed (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T13:00:00Z)"), console.messages());
     }
 
     /**
@@ -1110,7 +1153,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms users search tar", console);
 
-        assertEquals(List.of("Matched users: Target (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T12:00:00Z)"), console.messages());
+        assertEquals(List.of("Matched users (page 1/1):", "  Target (00000000-0000-0000-0000-000000000002, last seen 2026-04-24T12:00:00Z)"), console.messages());
     }
 
     /**
@@ -1126,6 +1169,102 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms users search Missing", console);
 
         assertEquals(List.of("No users matched Missing."), console.messages());
+    }
+
+    /**
+     * Confirms list-style commands accept explicit pages and keep row clicks useful.
+     *
+     * @throws IOException when test backup setup fails
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void listCommandsSupportExplicitPages() throws IOException, CommandSyntaxException {
+        groupService.createGroup("paged");
+        for (int index = 1; index <= 9; index++) {
+            String suffix = String.format("%02d", index);
+            permissionService.setPermission(TARGET_ID, "example." + suffix, PermissionValue.TRUE);
+            groupService.createGroup("group" + suffix);
+            groupService.addSubjectGroup(TARGET_ID, "group" + suffix);
+            groupService.createGroup("parent" + suffix);
+            groupService.addGroupParent("group01", "parent" + suffix);
+            groupService.setGroupPermission("paged", "example." + suffix, PermissionValue.FALSE);
+            subjectMetadataService.recordSubject(new UUID(0L, 100L + index), "User" + suffix, FIRST_SEEN.plusSeconds(index));
+            manualPermissionNodeRegistry.addNode("example.page" + suffix);
+            writeBackup(StorageFileKind.PERMISSIONS, "permissions-20260424-12000" + index + "000.json", "backup " + index);
+        }
+
+        TestSource userPermissions = TestSource.console();
+        dispatcher.execute("clutchperms user Target list 2", userPermissions);
+        assertEquals(List.of("Permissions for Target (00000000-0000-0000-0000-000000000002) (page 2/2):", "  example.09", "< Prev | Page 2/2"),
+                userPermissions.messages().stream().map(message -> message.replace("=TRUE", "")).toList());
+        assertSuggests(userPermissions.commandMessages().get(1), "/clutchperms user 00000000-0000-0000-0000-000000000002 get example.09");
+
+        TestSource userGroups = TestSource.console();
+        dispatcher.execute("clutchperms user Target groups 2", userGroups);
+        assertEquals("Groups for Target (00000000-0000-0000-0000-000000000002) (page 2/2):", userGroups.messages().getFirst());
+        assertTrue(userGroups.messages().contains("  group09"));
+
+        TestSource groups = TestSource.console();
+        dispatcher.execute("clutchperms group list 2", groups);
+        assertTrue(groups.messages().getFirst().startsWith("Groups (page 2/"));
+        assertTrue(groups.messages().stream().anyMatch(message -> message.contains("group")));
+
+        TestSource groupDetails = TestSource.console();
+        dispatcher.execute("clutchperms group paged list 2", groupDetails);
+        assertEquals("Group paged (page 2/2):", groupDetails.messages().getFirst());
+        assertTrue(groupDetails.messages().stream().anyMatch(message -> message.contains("permission example.09=FALSE")));
+
+        TestSource groupParents = TestSource.console();
+        dispatcher.execute("clutchperms group group01 parents 2", groupParents);
+        assertEquals("Parents of group group01 (page 2/2):", groupParents.messages().getFirst());
+        assertTrue(groupParents.messages().contains("  parent09"));
+
+        TestSource users = TestSource.console();
+        dispatcher.execute("clutchperms users list 2", users);
+        assertEquals("Known users (page 2/2):", users.messages().getFirst());
+        assertTrue(users.messages().stream().anyMatch(message -> message.contains("User09")));
+
+        TestSource usersSearch = TestSource.console();
+        dispatcher.execute("clutchperms users search User 2", usersSearch);
+        assertEquals("Matched users (page 2/2):", usersSearch.messages().getFirst());
+        assertTrue(usersSearch.messages().stream().anyMatch(message -> message.contains("User09")));
+
+        TestSource nodes = TestSource.console();
+        dispatcher.execute("clutchperms nodes list 2", nodes);
+        assertTrue(nodes.messages().getFirst().startsWith("Known permission nodes (page 2/"));
+
+        TestSource nodesSearch = TestSource.console();
+        dispatcher.execute("clutchperms nodes search example.page 2", nodesSearch);
+        assertEquals("Matched known permission nodes (page 2/2):", nodesSearch.messages().getFirst());
+        assertTrue(nodesSearch.messages().contains("  example.page09 [manual]"));
+
+        TestSource backups = TestSource.console();
+        dispatcher.execute("clutchperms backup list permissions 2", backups);
+        assertEquals("Backups for permissions (page 2/2):", backups.messages().getFirst());
+        assertTrue(backups.messages().get(1).startsWith("  permissions-"));
+        assertSuggests(backups.commandMessages().get(1), "/clutchperms backup restore permissions " + backups.messages().get(1).trim());
+
+        TestSource allBackups = TestSource.console();
+        dispatcher.execute("clutchperms backup list page 2", allBackups);
+        assertTrue(allBackups.messages().getFirst().startsWith("Backups (page 2/"));
+    }
+
+    /**
+     * Confirms list pages reject invalid page tokens through styled feedback.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void listCommandsRejectInvalidPages() throws CommandSyntaxException {
+        permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
+        TestSource invalid = TestSource.console();
+        TestSource outOfRange = TestSource.console();
+
+        assertEquals(0, dispatcher.execute("clutchperms user Target list 0", invalid));
+        assertEquals(List.of("Invalid page: 0", "Pages start at 1.", "Try one:", "  /clutchperms user Target list 1"), invalid.messages());
+
+        assertEquals(0, dispatcher.execute("clutchperms user Target list 9", outOfRange));
+        assertEquals(List.of("Page 9 is out of range.", "Available pages: 1-1.", "Try one:", "  /clutchperms user Target list 1"), outOfRange.messages());
     }
 
     /**
@@ -1146,12 +1285,12 @@ class ClutchPermsCommandsTest {
 
         assertEquals("Registered known permission node example.fly.", console.messages().get(0));
         assertEquals("Registered known permission node example.build.", console.messages().get(1));
-        assertTrue(console.messages().get(2).contains(PermissionNodes.ADMIN_STATUS + " [built-in] - Allows the matching ClutchPerms admin command."));
-        assertTrue(console.messages().get(2).contains("example.build [manual]"));
-        assertTrue(console.messages().get(2).contains("example.fly [manual] - Allows flight"));
-        assertEquals("Matched known permission nodes: example.fly [manual] - Allows flight", console.messages().get(3));
-        assertEquals("Removed known permission node example.fly.", console.messages().get(4));
-        assertEquals("No known permission nodes matched flight.", console.messages().get(5));
+        assertTrue(console.messages().get(2).startsWith("Known permission nodes (page 1/"));
+        assertMessageContains(console, PermissionNodes.ADMIN_BACKUP_LIST + " [built-in] - Allows the matching ClutchPerms admin command.");
+        assertMessageContains(console, "Matched known permission nodes (page 1/1):");
+        assertMessageContains(console, "  example.fly [manual] - Allows flight");
+        assertMessageContains(console, "Removed known permission node example.fly.");
+        assertEquals("No known permission nodes matched flight.", console.messages().getLast());
         assertEquals(3, environment.runtimeRefreshes());
     }
 
@@ -1225,6 +1364,20 @@ class ClutchPermsCommandsTest {
                 () -> "Expected message to contain <" + expectedMessage + "> but was " + messages.subList(firstMessageIndex, messages.size()));
     }
 
+    private static void assertSuggests(CommandMessage message, String command) {
+        assertTrue(
+                message.segments().stream().anyMatch(
+                        segment -> segment.click() != null && segment.click().action() == CommandMessage.ClickAction.SUGGEST_COMMAND && segment.click().value().equals(command)),
+                () -> "Expected suggest click for " + command + " in " + message);
+    }
+
+    private static void assertRuns(CommandMessage message, String command) {
+        assertTrue(
+                message.segments().stream().anyMatch(
+                        segment -> segment.click() != null && segment.click().action() == CommandMessage.ClickAction.RUN_COMMAND && segment.click().value().equals(command)),
+                () -> "Expected run click for " + command + " in " + message);
+    }
+
     private void writeBackup(StorageFileKind kind, String fileName, String content) throws IOException {
         Path backupDirectory = temporaryDirectory.resolve("backups").resolve(kind.token());
         Files.createDirectories(backupDirectory);
@@ -1238,19 +1391,24 @@ class ClutchPermsCommandsTest {
                 "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 
-    private static List<String> commandListMessages() {
-        return commandListMessages("clutchperms");
+    private static List<String> commandListPageOneMessages() {
+        return commandListPageOneMessages("clutchperms");
     }
 
-    private static List<String> commandListMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands:", "/" + rootLiteral + " <status|reload|validate>", "/" + rootLiteral + " backup list [permissions|subjects|groups|nodes]",
-                "/" + rootLiteral + " backup restore <permissions|subjects|groups|nodes> <backup-file>", "/" + rootLiteral + " user <target> <list|groups>",
-                "/" + rootLiteral + " user <target> <get|clear|check|explain> <node>", "/" + rootLiteral + " user <target> set <node> <true|false>",
-                "/" + rootLiteral + " user <target> group <add|remove> <group>", "/" + rootLiteral + " group list",
-                "/" + rootLiteral + " group <group> <create|delete|list|parents>", "/" + rootLiteral + " group <group> <get|clear> <node>",
-                "/" + rootLiteral + " group <group> set <node> <true|false>", "/" + rootLiteral + " group <group> parent <add|remove> <parent>", "/" + rootLiteral + " users list",
-                "/" + rootLiteral + " users search <name>", "/" + rootLiteral + " nodes list", "/" + rootLiteral + " nodes search <query>",
-                "/" + rootLiteral + " nodes add <node> [description]", "/" + rootLiteral + " nodes remove <node>");
+    private static List<String> commandListPageOneMessages(String rootLiteral) {
+        return List.of("ClutchPerms commands (page 1/4):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
+                "/" + rootLiteral + " validate", "/" + rootLiteral + " backup list [kind] [page]", "/" + rootLiteral + " backup list page <page>",
+                "/" + rootLiteral + " backup restore <kind> <backup-file>", "Page 1/4 | Next >");
+    }
+
+    private static List<String> commandListPageTwoMessages() {
+        return commandListPageTwoMessages("clutchperms");
+    }
+
+    private static List<String> commandListPageTwoMessages(String rootLiteral) {
+        return List.of("ClutchPerms commands (page 2/4):", "/" + rootLiteral + " user <target> list [page]", "/" + rootLiteral + " user <target> get <node>",
+                "/" + rootLiteral + " user <target> set <node> <true|false>", "/" + rootLiteral + " user <target> clear <node>", "/" + rootLiteral + " user <target> check <node>",
+                "/" + rootLiteral + " user <target> explain <node>", "/" + rootLiteral + " user <target> groups [page]", "< Prev | Page 2/4 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {
@@ -1459,17 +1617,24 @@ class ClutchPermsCommandsTest {
         @Override
         public void sendMessage(TestSource source, String message) {
             source.messages().add(message);
+            source.commandMessages().add(CommandMessage.plain(message));
+        }
+
+        @Override
+        public void sendMessage(TestSource source, CommandMessage message) {
+            source.messages().add(message.plainText());
+            source.commandMessages().add(message);
         }
     }
 
-    private record TestSource(CommandSourceKind kind, UUID subjectId, List<String> messages) {
+    private record TestSource(CommandSourceKind kind, UUID subjectId, List<String> messages, List<CommandMessage> commandMessages) {
 
         private static TestSource console() {
-            return new TestSource(CommandSourceKind.CONSOLE, null, new ArrayList<>());
+            return new TestSource(CommandSourceKind.CONSOLE, null, new ArrayList<>(), new ArrayList<>());
         }
 
         private static TestSource player(UUID subjectId) {
-            return new TestSource(CommandSourceKind.PLAYER, subjectId, new ArrayList<>());
+            return new TestSource(CommandSourceKind.PLAYER, subjectId, new ArrayList<>(), new ArrayList<>());
         }
     }
 }

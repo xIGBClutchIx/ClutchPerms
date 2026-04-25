@@ -26,6 +26,8 @@ import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 
@@ -153,9 +155,22 @@ final class PaperClutchPermsCommand {
                 if (segment.bold()) {
                     part = part.decorate(TextDecoration.BOLD);
                 }
+                if (segment.click() != null) {
+                    part = part.clickEvent(toClickEvent(segment.click()));
+                }
+                if (segment.hover() != null) {
+                    part = part.hoverEvent(HoverEvent.showText(toComponent(segment.hover())));
+                }
                 component = component.append(part);
             }
             return component;
+        }
+
+        private static ClickEvent toClickEvent(CommandMessage.Click click) {
+            return switch (click.action()) {
+                case SUGGEST_COMMAND -> ClickEvent.suggestCommand(click.value());
+                case RUN_COMMAND -> ClickEvent.runCommand(click.value());
+            };
         }
 
         private static NamedTextColor color(CommandMessage.Color color) {

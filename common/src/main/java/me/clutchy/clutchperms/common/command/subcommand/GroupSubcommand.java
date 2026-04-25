@@ -76,14 +76,18 @@ public final class GroupSubcommand {
         RequiredArgumentBuilder<S, String> group = groupArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::targetUsage))
                 .then(LiteralArgumentBuilder.<S>literal("create").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_CREATE, handlers::create)))
                 .then(LiteralArgumentBuilder.<S>literal("delete").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_DELETE, handlers::delete)))
-                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::show)))
-                .then(LiteralArgumentBuilder.<S>literal("parents").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents)))
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::show))
+                        .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::show))))
+                .then(LiteralArgumentBuilder.<S>literal("parents").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents))
+                        .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents))))
                 .then(parentCommand(environment, authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
                 .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
                 .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::unknownTargetUsage)));
 
         return LiteralArgumentBuilder.<S>literal("group").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::rootUsage))
-                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::list))).then(group);
+                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::list))
+                        .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_LIST, handlers::list))))
+                .then(group);
     }
 
     private static <S> LiteralArgumentBuilder<S> parentCommand(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
@@ -117,6 +121,10 @@ public final class GroupSubcommand {
 
     private static <S> RequiredArgumentBuilder<S, String> assignmentArgument(SuggestionProvider<S> permissionAssignment) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.ASSIGNMENT, StringArgumentType.greedyString()).suggests(permissionAssignment);
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> pageArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.PAGE, StringArgumentType.word());
     }
 
     private static <S> RequiredArgumentBuilder<S, String> groupArgument(ClutchPermsCommandEnvironment<S> environment) {

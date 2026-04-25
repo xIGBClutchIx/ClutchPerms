@@ -19,9 +19,29 @@ final class CommandLang {
 
     static final String ERROR_OTHER_SOURCE_DENIED = "Only players and console sources can use ClutchPerms commands.";
 
-    private static final String COMMANDS_HEADER = "ClutchPerms commands:";
+    private static final String COMMANDS_HEADER = "ClutchPerms commands (page %s/%s):";
 
     private static final String TRY = "Try one:";
+
+    private static final String CLICK_TO_PASTE = "Click to paste: %s";
+
+    private static final String CLICK_TO_OPEN = "Click to open page %s.";
+
+    private static final String PERMISSION = "Permission: %s";
+
+    private static final String PAGE_STATUS = "Page %s/%s";
+
+    private static final String PREVIOUS_PAGE = "< Prev";
+
+    private static final String NEXT_PAGE = "Next >";
+
+    private static final String INVALID_PAGE = "Invalid page: %s";
+
+    private static final String PAGE_STARTS_AT_ONE = "Pages start at 1.";
+
+    private static final String PAGE_OUT_OF_RANGE = "Page %s is out of range.";
+
+    private static final String AVAILABLE_PAGES = "Available pages: 1-%s.";
 
     private static final String STATUS_PERMISSIONS_FILE = "Permissions file: %s";
 
@@ -205,17 +225,6 @@ final class CommandLang {
 
     private static final String TARGET_MATCH = "  %s";
 
-    static List<CommandMessage> commandList(String rootLiteral) {
-        return List.of(heading(COMMANDS_HEADER), usage(rootLiteral, "<status|reload|validate>"), usage(rootLiteral, "backup list [permissions|subjects|groups|nodes]"),
-                usage(rootLiteral, "backup restore <permissions|subjects|groups|nodes> <backup-file>"), usage(rootLiteral, "user <target> <list|groups>"),
-                usage(rootLiteral, "user <target> <get|clear|check|explain> <node>"), usage(rootLiteral, "user <target> set <node> <true|false>"),
-                usage(rootLiteral, "user <target> group <add|remove> <group>"), usage(rootLiteral, "group list"), usage(rootLiteral, "group <group> <create|delete|list|parents>"),
-                usage(rootLiteral, "group <group> <get|clear> <node>"), usage(rootLiteral, "group <group> set <node> <true|false>"),
-                usage(rootLiteral, "group <group> parent <add|remove> <parent>"), usage(rootLiteral, "users list"), usage(rootLiteral, "users search <name>"),
-                usage(rootLiteral, "nodes list"), usage(rootLiteral, "nodes search <query>"), usage(rootLiteral, "nodes add <node> [description]"),
-                usage(rootLiteral, "nodes remove <node>"));
-    }
-
     static CommandMessage heading(String message) {
         return CommandMessage.of(CommandMessage.bold(message, Color.AQUA));
     }
@@ -233,11 +242,61 @@ final class CommandLang {
     }
 
     static CommandMessage usage(String rootLiteral, String command) {
-        return commandSyntax("", rootLiteral, command);
+        return interactiveCommandSyntax("", rootLiteral, command, CommandMessage.clickSuggest(fullCommand(rootLiteral, command)), pasteHover(fullCommand(rootLiteral, command)));
     }
 
     static CommandMessage suggestion(String rootLiteral, String command) {
-        return commandSyntax("  ", rootLiteral, command);
+        return interactiveCommandSyntax("  ", rootLiteral, command, CommandMessage.clickSuggest(fullCommand(rootLiteral, command)), pasteHover(fullCommand(rootLiteral, command)));
+    }
+
+    static CommandMessage commandListHeader(int page, int totalPages) {
+        return heading(format(COMMANDS_HEADER, page, totalPages));
+    }
+
+    static CommandMessage commandHelpEntry(String rootLiteral, String command, String permission, String description) {
+        String fullCommand = fullCommand(rootLiteral, command);
+        return interactiveCommandSyntax("", rootLiteral, command, CommandMessage.clickSuggest(fullCommand),
+                CommandMessage.of(CommandMessage.segment(description + "\n", Color.GRAY), CommandMessage.segment(format(PERMISSION, permission) + "\n", Color.GRAY),
+                        CommandMessage.segment(format(CLICK_TO_PASTE, fullCommand), Color.WHITE)));
+    }
+
+    static CommandMessage listHeader(String title, int page, int totalPages) {
+        return heading(title + " (page " + page + "/" + totalPages + "):");
+    }
+
+    static CommandMessage listRow(String text, String command) {
+        return CommandMessage.of(CommandMessage.segment("  ", Color.GRAY), CommandMessage.segment(text, Color.WHITE)).withInteraction(CommandMessage.clickSuggest(command),
+                pasteHover(command));
+    }
+
+    static CommandMessage pageNavigation(String previousCommand, int previousPage, int page, int totalPages, String nextCommand, int nextPage) {
+        CommandMessage message = null;
+        if (previousCommand != null) {
+            message = append(message, navigationAction(PREVIOUS_PAGE, previousCommand, previousPage));
+            message = append(message, CommandMessage.text(" | ", Color.GRAY));
+        }
+        message = append(message, CommandMessage.text(format(PAGE_STATUS, page, totalPages), Color.GRAY));
+        if (nextCommand != null) {
+            message = append(message, CommandMessage.text(" | ", Color.GRAY));
+            message = append(message, navigationAction(NEXT_PAGE, nextCommand, nextPage));
+        }
+        return message;
+    }
+
+    static CommandMessage invalidPage(String page) {
+        return error(INVALID_PAGE, page);
+    }
+
+    static CommandMessage pageStartsAtOne() {
+        return detail(PAGE_STARTS_AT_ONE);
+    }
+
+    static CommandMessage pageOutOfRange(int page) {
+        return error(PAGE_OUT_OF_RANGE, page);
+    }
+
+    static CommandMessage availablePages(int totalPages) {
+        return detail(AVAILABLE_PAGES, totalPages);
     }
 
     static CommandMessage status() {
@@ -683,6 +742,10 @@ final class CommandLang {
         return CommandMessage.of(segments.toArray(Segment[]::new));
     }
 
+    private static CommandMessage interactiveCommandSyntax(String prefix, String rootLiteral, String command, CommandMessage.Click click, CommandMessage hover) {
+        return commandSyntax(prefix, rootLiteral, command).withInteraction(click, hover);
+    }
+
     private static void appendSyntaxArgument(List<Segment> segments, String argument) {
         if (argument.length() < 2) {
             segments.add(CommandMessage.segment(argument, Color.YELLOW));
@@ -718,6 +781,22 @@ final class CommandLang {
 
     private static String format(String template, Object... arguments) {
         return String.format(Locale.ROOT, template, arguments);
+    }
+
+    private static String fullCommand(String rootLiteral, String command) {
+        return "/" + rootLiteral + (command.isBlank() ? "" : " " + command);
+    }
+
+    private static CommandMessage pasteHover(String command) {
+        return CommandMessage.text(format(CLICK_TO_PASTE, command), Color.GRAY);
+    }
+
+    private static CommandMessage navigationAction(String label, String command, int page) {
+        return CommandMessage.text(label, Color.WHITE).withInteraction(CommandMessage.clickRun(command), CommandMessage.text(format(CLICK_TO_OPEN, page), Color.GRAY));
+    }
+
+    private static CommandMessage append(CommandMessage current, CommandMessage next) {
+        return current == null ? next : current.append(next);
     }
 
     private static String exceptionMessage(Throwable exception) {

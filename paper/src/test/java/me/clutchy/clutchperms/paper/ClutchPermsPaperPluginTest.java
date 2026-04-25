@@ -53,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 /**
@@ -232,6 +233,34 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("perms status", new TestCommandSourceStack(permsAdmin)));
         assertNextMessage(permsAdmin, ClutchPermsCommands.STATUS_MESSAGE);
+    }
+
+    /**
+     * Confirms Paper renders shared command interactions as native Adventure click and hover events.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void helpOutputRendersClickAndHoverComponents() throws Exception {
+        PlayerMock player = server.addPlayer("Admin");
+        plugin.getPermissionService().setPermission(player.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = dispatcherWithAllCommandRoots();
+
+        assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
+
+        assertNextMessage(player, "ClutchPerms commands (page 1/4):");
+        Component firstCommand = player.nextComponentMessage();
+        assertEquals("/clutchperms help [page]", PlainTextComponentSerializer.plainText().serialize(firstCommand));
+        assertComponentClick(firstCommand, ClickEvent.Action.SUGGEST_COMMAND, "/clutchperms help [page]");
+        assertComponentHover(firstCommand);
+
+        for (int index = 0; index < 6; index++) {
+            player.nextComponentMessage();
+        }
+        Component navigation = player.nextComponentMessage();
+        assertEquals("Page 1/4 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
+        assertComponentClick(navigation, ClickEvent.Action.RUN_COMMAND, "/clutchperms help 2");
+        assertComponentHover(navigation);
     }
 
     /**
@@ -924,6 +953,29 @@ class ClutchPermsPaperPluginTest {
     private static void assertNextMessageContains(PlayerMock player, String expectedMessage) {
         String message = PlainTextComponentSerializer.plainText().serialize(player.nextComponentMessage());
         assertTrue(message.contains(expectedMessage), () -> "Expected message to contain <" + expectedMessage + "> but was <" + message + ">");
+    }
+
+    private static void assertComponentClick(Component component, ClickEvent.Action action, String value) {
+        assertTrue(hasClick(component, action, value), () -> "Expected click " + action + " " + value + " in " + component);
+    }
+
+    private static void assertComponentHover(Component component) {
+        assertTrue(hasHover(component), () -> "Expected hover text in " + component);
+    }
+
+    private static boolean hasClick(Component component, ClickEvent.Action action, String value) {
+        ClickEvent clickEvent = component.clickEvent();
+        if (clickEvent != null && clickEvent.action() == action && value.equals(clickEvent.value())) {
+            return true;
+        }
+        return component.children().stream().anyMatch(child -> hasClick(child, action, value));
+    }
+
+    private static boolean hasHover(Component component) {
+        if (component.hoverEvent() != null) {
+            return true;
+        }
+        return component.children().stream().anyMatch(ClutchPermsPaperPluginTest::hasHover);
     }
 
     private record TestCommandSourceStack(CommandSender sender) implements CommandSourceStack {

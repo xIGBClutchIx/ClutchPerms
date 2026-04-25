@@ -21,7 +21,9 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -166,9 +168,22 @@ final class ForgeClutchPermsCommand {
                 if (segment.bold()) {
                     part = part.withStyle(style -> style.withBold(true));
                 }
+                if (segment.click() != null) {
+                    part = part.withStyle(style -> style.withClickEvent(toClickEvent(segment.click())));
+                }
+                if (segment.hover() != null) {
+                    part = part.withStyle(style -> style.withHoverEvent(new HoverEvent.ShowText(toComponent(segment.hover()))));
+                }
                 component.append(part);
             }
             return component;
+        }
+
+        private static ClickEvent toClickEvent(CommandMessage.Click click) {
+            return switch (click.action()) {
+                case SUGGEST_COMMAND -> new ClickEvent.SuggestCommand(click.value());
+                case RUN_COMMAND -> new ClickEvent.RunCommand(click.value());
+            };
         }
 
         private static ChatFormatting color(CommandMessage.Color color) {

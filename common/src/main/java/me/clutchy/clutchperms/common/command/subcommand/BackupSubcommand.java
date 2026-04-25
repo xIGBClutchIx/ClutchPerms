@@ -33,6 +33,8 @@ public final class BackupSubcommand {
 
         int list(CommandContext<S> context) throws CommandSyntaxException;
 
+        int listPageUsage(CommandContext<S> context) throws CommandSyntaxException;
+
         int restoreKindUsage(CommandContext<S> context) throws CommandSyntaxException;
 
         int restoreFileUsage(CommandContext<S> context) throws CommandSyntaxException;
@@ -45,7 +47,10 @@ public final class BackupSubcommand {
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
         return LiteralArgumentBuilder.<S>literal("backup").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::usage))
                 .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list))
-                        .then(backupKindArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list))))
+                        .then(LiteralArgumentBuilder.<S>literal("page").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::listPageUsage))
+                                .then(BackupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list))))
+                        .then(backupKindArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list))
+                                .then(BackupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list)))))
                 .then(LiteralArgumentBuilder.<S>literal("restore").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_RESTORE, handlers::restoreKindUsage))
                         .then(backupKindArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_RESTORE, handlers::restoreFileUsage))
                                 .then(backupFileArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_RESTORE, handlers::restore)))))
@@ -60,6 +65,10 @@ public final class BackupSubcommand {
     private static <S> RequiredArgumentBuilder<S, String> backupFileArgument(ClutchPermsCommandEnvironment<S> environment) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.BACKUP_FILE, StringArgumentType.word())
                 .suggests((context, builder) -> suggestBackupFiles(environment, context, builder));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> pageArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.PAGE, StringArgumentType.word());
     }
 
     private static <S> CompletableFuture<Suggestions> suggestBackupKinds(ClutchPermsCommandEnvironment<S> environment, SuggestionsBuilder builder) {

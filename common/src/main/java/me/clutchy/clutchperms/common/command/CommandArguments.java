@@ -26,6 +26,8 @@ public final class CommandArguments {
 
     public static final String BACKUP_FILE = "backupFile";
 
+    public static final String PAGE = "page";
+
     public static final String UNKNOWN = "unknown";
 
     /**
