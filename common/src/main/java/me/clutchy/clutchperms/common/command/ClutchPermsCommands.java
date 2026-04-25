@@ -183,6 +183,7 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("group <group> <create|delete>", PermissionNodes.ADMIN_GROUP_VIEW, "Creates or deletes a group."),
             new CommandHelpEntry("group <group> rename <new-group>", PermissionNodes.ADMIN_GROUP_RENAME, "Renames a group and updates references."),
             new CommandHelpEntry("group <group> list [page]", PermissionNodes.ADMIN_GROUP_VIEW, "Lists group permissions, parents, and members."),
+            new CommandHelpEntry("group <group> members [page]", PermissionNodes.ADMIN_GROUP_MEMBERS, "Lists explicit group members."),
             new CommandHelpEntry("group <group> parents [page]", PermissionNodes.ADMIN_GROUP_PARENTS, "Lists parent groups."),
             new CommandHelpEntry("group <group> <get|clear> <node>", PermissionNodes.ADMIN_GROUP_GET, "Reads or clears one group permission."),
             new CommandHelpEntry("group <group> set <node> <true|false>", PermissionNodes.ADMIN_GROUP_SET, "Sets one group permission."),
@@ -603,6 +604,11 @@ public final class ClutchPermsCommands {
             @Override
             public int show(CommandContext<S> context) throws CommandSyntaxException {
                 return listGroup(environment, context);
+            }
+
+            @Override
+            public int members(CommandContext<S> context) throws CommandSyntaxException {
+                return listGroupMembers(environment, context);
             }
 
             @Override
@@ -1197,12 +1203,12 @@ public final class ClutchPermsCommands {
     }
 
     private static List<String> groupRootUsages() {
-        return List.of("group list", "group <group> <create|delete|info|list|parents>", "group <group> <get|clear> <node>", "group <group> set <node> <true|false>",
+        return List.of("group list", "group <group> <create|delete|info|list|members|parents>", "group <group> <get|clear> <node>", "group <group> set <node> <true|false>",
                 "group <group> clear-all", "group <group> rename <new-group>", "group <group> parent <add|remove> <parent>", "group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsages(String group) {
-        return List.of("group " + group + " <create|delete|info|list|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
+        return List.of("group " + group + " <create|delete|info|list|members|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
                 "group " + group + " clear-all", "group " + group + " rename <new-group>", "group " + group + " parent <add|remove> <parent>",
                 "group " + group + " <prefix|suffix> get|set|clear");
     }
@@ -1692,6 +1698,7 @@ public final class ClutchPermsCommands {
 
         String rootLiteral = rootLiteral(context);
         String groupListCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " list");
+        String groupMembersCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " members");
         String groupParentsCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " parents");
         String groupPrefixCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " prefix get");
         String groupSuffixCommand = fullCommand(rootLiteral, "group " + normalizedGroupName + " suffix get");
@@ -1704,7 +1711,7 @@ public final class ClutchPermsCommands {
         rows.add(new PagedRow("direct permissions " + permissions.size(), groupListCommand));
         rows.add(new PagedRow("parents " + summarizeValues(parents), groupParentsCommand));
         rows.add(new PagedRow("child groups " + summarizeValues(childGroups), fullCommand(rootLiteral, "group list")));
-        rows.add(new PagedRow("explicit members " + summarizeGroupMembers(environment, members), groupListCommand));
+        rows.add(new PagedRow("explicit members " + summarizeGroupMembers(environment, members), groupMembersCommand));
         rows.add(new PagedRow("prefix " + formatDisplayValue(groupDisplayValue(environment, normalizedGroupName, DisplaySlot.PREFIX)), groupPrefixCommand));
         rows.add(new PagedRow("suffix " + formatDisplayValue(groupDisplayValue(environment, normalizedGroupName, DisplaySlot.SUFFIX)), groupSuffixCommand));
 
@@ -1747,6 +1754,29 @@ public final class ClutchPermsCommands {
         }
 
         sendPagedRows(environment, context, "Group " + normalizedGroupName, rows, "group " + StringArgumentType.getString(context, GROUP_ARGUMENT) + " list");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int listGroupMembers(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        String normalizedGroupName = normalizeGroupName(groupName);
+        Set<UUID> members;
+        try {
+            members = environment.groupService().getGroupMembers(groupName);
+        } catch (RuntimeException exception) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
+        }
+
+        if (members.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.groupMembersEmpty(normalizedGroupName));
+            return Command.SINGLE_SUCCESS;
+        }
+
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = members.stream()
+                .sorted(Comparator.comparing((UUID subjectId) -> formatSubject(subjectId, environment), String.CASE_INSENSITIVE_ORDER).thenComparing(UUID::toString))
+                .map(subjectId -> new PagedRow(formatSubject(subjectId, environment), fullCommand(rootLiteral, "user " + subjectId + " list"))).toList();
+        sendPagedRows(environment, context, "Members of group " + normalizedGroupName, rows, "group " + StringArgumentType.getString(context, GROUP_ARGUMENT) + " members");
         return Command.SINGLE_SUCCESS;
     }
 

@@ -151,7 +151,7 @@ class ClutchPermsCommandsTest {
 
         assertEquals(commandListPageOneMessages("cperms"), cperms.messages());
         assertEquals(List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /perms group list",
-                "  /perms group <group> <create|delete|info|list|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
+                "  /perms group <group> <create|delete|info|list|members|parents>", "  /perms group <group> <get|clear> <node>", "  /perms group <group> set <node> <true|false>",
                 "  /perms group <group> clear-all", "  /perms group <group> rename <new-group>", "  /perms group <group> parent <add|remove> <parent>",
                 "  /perms group <group> <prefix|suffix> get|set|clear"), perms.messages());
         assertSuggests(perms.commandMessages().get(3), "/perms group list");
@@ -174,6 +174,20 @@ class ClutchPermsCommandsTest {
         assertEquals(commandListPageTwoMessages("perms"), aliasPage.messages());
         assertRuns(helpPage.commandMessages().getLast(), "/clutchperms help 3");
         assertRuns(aliasPage.commandMessages().getLast(), "/perms help 3");
+    }
+
+    /**
+     * Confirms command help includes the dedicated group members list command.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void helpCommandIncludesGroupMembersCommand() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms help 5", console);
+
+        assertMessageContains(console, "/clutchperms group <group> members [page]");
     }
 
     /**
@@ -853,6 +867,7 @@ class ClutchPermsCommandsTest {
                 "  explicit members Target (00000000-0000-0000-0000-000000000002)", "  prefix &7[Staff]", "  suffix unset"), console.messages());
         assertSuggests(console.commandMessages().get(2), "/clutchperms group staff list");
         assertSuggests(console.commandMessages().get(3), "/clutchperms group staff parents");
+        assertSuggests(console.commandMessages().get(5), "/clutchperms group staff members");
         assertSuggests(console.commandMessages().get(6), "/clutchperms group staff prefix get");
         assertSuggests(console.commandMessages().get(7), "/clutchperms group staff suffix get");
     }
@@ -1074,6 +1089,28 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms exact group member-list permission authorizes only that group member view.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void playerWithGroupMembersPermissionCanListMembersOnly() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertCommandFails("clutchperms group staff members", player, "You do not have permission to use ClutchPerms commands.");
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_MEMBERS, PermissionValue.TRUE);
+        TestSource permittedPlayer = TestSource.player(ADMIN_ID);
+        dispatcher.execute("clutchperms group staff members", permittedPlayer);
+
+        assertEquals(List.of("Members of group staff (page 1/1):", "  00000000-0000-0000-0000-000000000002 (00000000-0000-0000-0000-000000000002)"), permittedPlayer.messages());
+        assertCommandFails("clutchperms group staff list", permittedPlayer, "You do not have permission to use ClutchPerms commands.");
+        assertCommandFails("clutchperms group staff parents", permittedPlayer, "You do not have permission to use ClutchPerms commands.");
+    }
+
+    /**
      * Confirms wildcard admin permissions authorize command execution through the shared resolver.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -1094,6 +1131,7 @@ class ClutchPermsCommandsTest {
         groupService.createGroup("staff");
         groupService.setGroupPermission("staff", "group.bulk", PermissionValue.TRUE);
         permissionService.setPermission(ADMIN_ID, "clutchperms.admin.group.*", PermissionValue.TRUE);
+        dispatcher.execute("clutchperms group staff members", player);
         dispatcher.execute("clutchperms group staff clear-all", player);
 
         assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
@@ -1144,6 +1182,50 @@ class ClutchPermsCommandsTest {
                         "  permission example.node=TRUE", "  member Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.",
                         "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."),
                 console.messages());
+    }
+
+    /**
+     * Confirms explicit group members can be listed with stored names and UUID-only subjects.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void consoleCanListExplicitGroupMembers() throws CommandSyntaxException {
+        environment.setConfig(new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), new ClutchPermsCommandConfig(7, 2)));
+        subjectMetadataService.recordSubject(TARGET_ID, "Target", FIRST_SEEN);
+        subjectMetadataService.recordSubject(SECOND_TARGET_ID, "alpha", SECOND_SEEN);
+        groupService.createGroup("staff");
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        groupService.addSubjectGroup(UUID_NAMED_PLAYER_ID, "staff");
+        groupService.addSubjectGroup(SECOND_TARGET_ID, "staff");
+        TestSource pageOne = TestSource.console();
+        TestSource pageTwo = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff members", pageOne);
+        dispatcher.execute("clutchperms group staff members 2", pageTwo);
+
+        assertEquals(List.of("Members of group staff (page 1/2):", "  00000000-0000-0000-0000-000000000003 (00000000-0000-0000-0000-000000000003)",
+                "  alpha (00000000-0000-0000-0000-000000000004)", "Page 1/2 | Next >"), pageOne.messages());
+        assertEquals(List.of("Members of group staff (page 2/2):", "  Target (00000000-0000-0000-0000-000000000002)", "< Prev | Page 2/2"), pageTwo.messages());
+        assertSuggests(pageOne.commandMessages().get(1), "/clutchperms user 00000000-0000-0000-0000-000000000003 list");
+        assertSuggests(pageOne.commandMessages().get(2), "/clutchperms user 00000000-0000-0000-0000-000000000004 list");
+        assertSuggests(pageTwo.commandMessages().get(1), "/clutchperms user 00000000-0000-0000-0000-000000000002 list");
+    }
+
+    /**
+     * Confirms empty explicit member lists report direct-membership absence, including default.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void groupMembersReportEmptyExplicitMemberships() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff members", console);
+        dispatcher.execute("clutchperms group default members", console);
+
+        assertEquals(List.of("Group staff has no explicit members.", "Group default has no explicit members."), console.messages());
     }
 
     /**
@@ -1556,6 +1638,7 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
 
         assertCommandFails("clutchperms group staf list", console, "Unknown group: staf");
+        assertCommandFails("clutchperms group staf members", console, "Unknown group: staf");
 
         assertMessageContains(console, "Closest groups: staff");
     }
@@ -2104,16 +2187,17 @@ class ClutchPermsCommandsTest {
 
     private static List<String> groupRootUsageMessages() {
         return List.of("Missing group command.", "List groups or choose a group to inspect or mutate.", "Try one:", "  /clutchperms group list",
-                "  /clutchperms group <group> <create|delete|info|list|parents>", "  /clutchperms group <group> <get|clear> <node>",
+                "  /clutchperms group <group> <create|delete|info|list|members|parents>", "  /clutchperms group <group> <get|clear> <node>",
                 "  /clutchperms group <group> set <node> <true|false>", "  /clutchperms group <group> clear-all", "  /clutchperms group <group> rename <new-group>",
                 "  /clutchperms group <group> parent <add|remove> <parent>", "  /clutchperms group <group> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupTargetUsageMessages(String group) {
-        return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try one:", "  /clutchperms group " + group + " <create|delete|info|list|parents>",
-                "  /clutchperms group " + group + " <get|clear> <node>", "  /clutchperms group " + group + " set <node> <true|false>",
-                "  /clutchperms group " + group + " clear-all", "  /clutchperms group " + group + " rename <new-group>",
-                "  /clutchperms group " + group + " parent <add|remove> <parent>", "  /clutchperms group " + group + " <prefix|suffix> get|set|clear");
+        return List.of("Missing group command.", "Choose what to do with group " + group + ".", "Try one:",
+                "  /clutchperms group " + group + " <create|delete|info|list|members|parents>", "  /clutchperms group " + group + " <get|clear> <node>",
+                "  /clutchperms group " + group + " set <node> <true|false>", "  /clutchperms group " + group + " clear-all",
+                "  /clutchperms group " + group + " rename <new-group>", "  /clutchperms group " + group + " parent <add|remove> <parent>",
+                "  /clutchperms group " + group + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userRootUsageMessages() {

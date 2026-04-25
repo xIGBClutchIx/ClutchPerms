@@ -150,6 +150,7 @@ class ClutchPermsPaperPluginTest {
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_CONFIG_RESET));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_SET));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_DISPLAY_SET));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_GROUP_MEMBERS));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_GROUP_DISPLAY_SET));
     }
 

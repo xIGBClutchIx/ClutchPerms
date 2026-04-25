@@ -50,6 +50,8 @@ public final class GroupSubcommand {
 
         int show(CommandContext<S> context) throws CommandSyntaxException;
 
+        int members(CommandContext<S> context) throws CommandSyntaxException;
+
         int parents(CommandContext<S> context) throws CommandSyntaxException;
 
         int parentUsage(CommandContext<S> context) throws CommandSyntaxException;
@@ -107,6 +109,8 @@ public final class GroupSubcommand {
                 .then(renameCommand(authorized, handlers)).then(infoCommand(authorized, handlers))
                 .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::show))
                         .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_VIEW, handlers::show))))
+                .then(LiteralArgumentBuilder.<S>literal("members").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_MEMBERS, handlers::members))
+                        .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_MEMBERS, handlers::members))))
                 .then(LiteralArgumentBuilder.<S>literal("parents").executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents))
                         .then(GroupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_GROUP_PARENTS, handlers::parents))))
                 .then(parentCommand(environment, authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))

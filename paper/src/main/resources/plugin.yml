@@ -109,6 +109,9 @@ permissions:
   clutchperms.admin.group.clear-all:
     description: Allows clearing all direct group permissions.
     default: false
+  clutchperms.admin.group.members:
+    description: Allows listing group members.
+    default: false
   clutchperms.admin.group.parents:
     description: Allows listing group parents.
     default: false

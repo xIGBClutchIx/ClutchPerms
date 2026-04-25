@@ -47,7 +47,7 @@ Useful grants:
 | --- | --- |
 | `clutchperms.admin.*` | Every ClutchPerms admin command |
 | `clutchperms.admin.user.*` | Direct user permissions, user group membership, and user display values |
-| `clutchperms.admin.group.*` | Group definitions, group permissions, group parents, and group display values |
+| `clutchperms.admin.group.*` | Group definitions, group permissions, group members, group parents, and group display values |
 | `clutchperms.admin.config.*` | Runtime config view, set, and reset |
 | `clutchperms.admin.backup.*` | Backup list and restore |
 | `clutchperms.admin.users.*` | Stored user list and search |
@@ -119,6 +119,7 @@ The built-in `default` group always exists, applies implicitly to every subject,
 | `/clutchperms group <group> info` | `clutchperms.admin.group.info` | Shows a quick group summary. |
 | `/clutchperms group <group> rename <new-group>` | `clutchperms.admin.group.rename` | Renames a group and updates related links. |
 | `/clutchperms group <group> list [page]` | `clutchperms.admin.group.view` | Lists group permissions, display metadata, parents, and members. |
+| `/clutchperms group <group> members [page]` | `clutchperms.admin.group.members` | Lists explicit group members. |
 | `/clutchperms group <group> get <node>` | `clutchperms.admin.group.get` | Shows one direct group permission. |
 | `/clutchperms group <group> set <node> <true\|false>` | `clutchperms.admin.group.set` | Sets one direct group permission. |
 | `/clutchperms group <group> clear <node>` | `clutchperms.admin.group.clear` | Removes one direct group permission. |

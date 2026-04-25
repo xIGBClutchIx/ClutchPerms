@@ -200,6 +200,7 @@ Current command surface:
 - `/clutchperms group <group> info`
 - `/clutchperms group <group> rename <new-group>`
 - `/clutchperms group <group> list [page]`
+- `/clutchperms group <group> members [page]`
 - `/clutchperms group <group> clear-all`
 - `/clutchperms group <group> prefix get|set|clear`
 - `/clutchperms group <group> suffix get|set|clear`
@@ -220,6 +221,7 @@ Authorization:
 - Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
 - Config command permissions are `clutchperms.admin.config.view`, `clutchperms.admin.config.set`, and `clutchperms.admin.config.reset`; `clutchperms.admin.config.*` should work through wildcard resolution.
 - User display command permissions are `clutchperms.admin.user.display.view`, `clutchperms.admin.user.display.set`, and `clutchperms.admin.user.display.clear`; `clutchperms.admin.user.*` should cover them.
+- Group member listing uses `clutchperms.admin.group.members`; `clutchperms.admin.group.*` should cover it.
 - Group display command permissions are `clutchperms.admin.group.display.view`, `clutchperms.admin.group.display.set`, and `clutchperms.admin.group.display.clear`; `clutchperms.admin.group.*` should cover them.
 - `clutchperms.admin` is only the namespace root and does not authorize commands.
 - Other source types should be denied where the platform can distinguish them.
