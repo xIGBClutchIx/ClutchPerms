@@ -54,7 +54,7 @@ Shared package ownership:
 - `common.config` - runtime config parsing, defaults, validation, and materialization
 - `common.storage` - storage exceptions, atomic file writes, backup listing, and restore rollback helpers
 - `common.audit` - command-layer audit entries, SQLite audit history storage, and in-memory test storage
-- `common.runtime` - platform-neutral storage paths, active service snapshots, reload/validate/backup wiring, resolver cache invalidation, and runtime refresh hooks
+- `common.runtime` - platform-neutral storage paths, active service snapshots, reload/validate/backup wiring, scheduled backups, resolver cache invalidation, and runtime refresh hooks
 - `common.command` - shared Brigadier root wiring, command behavior, command messages, and platform command environment contract
 - `common.command.subcommand` - shared Brigadier branch builders for `/backup`, `/user`, `/group`, `/users`, and `/nodes`
 
@@ -100,7 +100,7 @@ Do not add contexts, priorities, imports, migrations, or LuckPerms bridges unles
 
 Current persisted files:
 
-- `config.json` for runtime settings such as backup retention, command page sizes, and chat formatting
+- `config.json` for runtime settings such as backup retention/scheduling, command page sizes, and chat formatting
 - `database.db` for direct user permission assignments, group definitions, group permissions, prefix/suffix display values, parent links, memberships, subject metadata, manually registered known permission nodes, and command audit history
 
 Locations:
@@ -120,7 +120,8 @@ Storage expectations:
 - If a mutation transaction fails, keep the previous in-memory state, resolver cache notifications, runtime bridge notifications, and live database unchanged.
 - Create parent directories as needed.
 - Keep backup retention controlled by `config.json` `backups.retentionLimit`, defaulting to 10 newest database backups.
-- In-game config management covers `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
+- Automatic database backups are controlled by `backups.schedule.enabled`, `backups.schedule.intervalMinutes`, and `backups.schedule.runOnStartup`. They are disabled by default, default to a 60-minute interval when enabled, accept intervals from 5 to 10080 minutes, and use the same retention pruning as manual backups.
+- In-game config management covers `backups.retentionLimit`, `backups.schedule.enabled`, `backups.schedule.intervalMinutes`, `backups.schedule.runOnStartup`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
 - Backup layout is `backups/database/database-YYYYMMDD-HHMMSSSSS.db`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
 - Fail startup, validate, or reload on malformed config, unsupported schema versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, invalid protected `op` definitions, unknown parent groups, and parent cycles.
@@ -195,6 +196,11 @@ Current command surface:
 - `/clutchperms backup create`
 - `/clutchperms backup list`
 - `/clutchperms backup list page <page>`
+- `/clutchperms backup schedule status`
+- `/clutchperms backup schedule enable`
+- `/clutchperms backup schedule disable`
+- `/clutchperms backup schedule interval <minutes>`
+- `/clutchperms backup schedule run-now`
 - `/clutchperms backup restore <backup-file>`
 - `/clutchperms user <target> info`
 - `/clutchperms user <target> list [page]`
@@ -239,7 +245,7 @@ Authorization:
 - Paper `/op <target>` uses `clutchperms.admin.user.group.add`; Paper `/deop <target>` uses `clutchperms.admin.user.group.remove`.
 - `clutchperms.admin` is only the namespace root and does not authorize commands.
 - Other source types should be denied where the platform can distinguish them.
-- `status` should include storage paths, subject/group/node counts, resolver cache counts, and platform bridge status.
+- `status` should include storage paths, backup retention/schedule state, subject/group/node counts, resolver cache counts, and platform bridge status.
 - Config command changes should save `config.json`, reload runtime immediately, refresh runtime bridges, and roll `config.json` back if reload fails. Same-value config changes should not write or reload.
 - `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.
 - Bad user, group, parent group, backup file, and manual known-node targets should return styled shared feedback with deterministic closest matches: case-insensitive prefix matches first, then substring matches, then small edit-distance matches, capped at 5 suggestions.

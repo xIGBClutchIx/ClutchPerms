@@ -19,8 +19,11 @@ import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupService;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupStatus;
 import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.SqliteStore;
+import me.clutchy.clutchperms.common.storage.StorageBackup;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
@@ -145,6 +148,38 @@ public interface ClutchPermsCommandEnvironment<S> {
      */
     default StorageBackupService storageBackupService() {
         throw new UnsupportedOperationException("Storage backups are not available for this command environment");
+    }
+
+    /**
+     * Returns scheduled backup runner status.
+     *
+     * @return scheduled backup status
+     */
+    default ScheduledBackupStatus scheduledBackupStatus() {
+        return new ScheduledBackupStatus(config().backups().schedule().enabled(), config().backups().schedule().intervalMinutes(), config().backups().schedule().runOnStartup(),
+                false, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+    }
+
+    /**
+     * Returns the scheduled backup runner used by backup schedule commands.
+     *
+     * @return scheduled backup runner
+     */
+    default ScheduledBackupService scheduledBackupService() {
+        throw new UnsupportedOperationException("Scheduled backups are not available for this command environment");
+    }
+
+    /**
+     * Creates an immediate backup through the scheduler when available, so schedule status reflects run-now activity.
+     *
+     * @return created backup, or empty when the live database is missing
+     */
+    default Optional<StorageBackup> createScheduledBackupNow() {
+        try {
+            return scheduledBackupService().runNow();
+        } catch (UnsupportedOperationException exception) {
+            return storageBackupService().createBackup();
+        }
     }
 
     /**

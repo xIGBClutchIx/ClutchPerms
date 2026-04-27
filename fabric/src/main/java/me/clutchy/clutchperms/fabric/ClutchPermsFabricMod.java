@@ -24,6 +24,7 @@ import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntime;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupService;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
@@ -67,6 +68,11 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     private static MinecraftServer activeServer;
 
     /**
+     * Runs automatic database backups for the active server lifecycle.
+     */
+    private static ScheduledBackupService scheduledBackupService;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the Fabric lifecycle.
      */
     @Override
@@ -80,15 +86,15 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         } catch (PermissionStorageException exception) {
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
+        scheduledBackupService = new ScheduledBackupService(ClutchPermsFabricMod::getClutchPermsConfig, ClutchPermsFabricMod::getStorageBackupService, LOGGER::info, LOGGER::error);
 
-        CommandRegistrationCallback.EVENT
-                .register((dispatcher, registryAccess,
-                        environment) -> ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> dispatcher.register(FabricClutchPermsCommand.create(
-                                ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService, ClutchPermsFabricMod::getGroupService,
-                                ClutchPermsFabricMod::getPermissionNodeRegistry, ClutchPermsFabricMod::getManualPermissionNodeRegistry, ClutchPermsFabricMod::getPermissionResolver,
-                                ClutchPermsFabricMod::getStatusDiagnostics, ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::validateStorage,
-                                ClutchPermsFabricMod::getStorageBackupService, ClutchPermsFabricMod::getClutchPermsConfig, ClutchPermsFabricMod::updateConfig,
-                                ClutchPermsFabricMod::getAuditLogService, ClutchPermsFabricMod::restoreBackup, ClutchPermsFabricMod::refreshRuntimePermissions, rootLiteral))));
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> ClutchPermsCommands.ROOT_LITERALS
+                .forEach(rootLiteral -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService,
+                        ClutchPermsFabricMod::getSubjectMetadataService, ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionNodeRegistry,
+                        ClutchPermsFabricMod::getManualPermissionNodeRegistry, ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics,
+                        ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::validateStorage, ClutchPermsFabricMod::getStorageBackupService,
+                        ClutchPermsFabricMod::getClutchPermsConfig, ClutchPermsFabricMod::updateConfig, ClutchPermsFabricMod::getAuditLogService,
+                        ClutchPermsFabricMod::restoreBackup, ClutchPermsFabricMod::refreshRuntimePermissions, ClutchPermsFabricMod::getScheduledBackupService, rootLiteral))));
         FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionResolver);
         runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
@@ -96,11 +102,13 @@ public final class ClutchPermsFabricMod implements ModInitializer {
             activeServer = server;
             server.getPlayerList().getPlayers().forEach(ClutchPermsFabricMod::recordSubject);
             refreshRuntimePermissions();
+            getScheduledBackupService().start();
         });
 
         // Clear the static reference when the server stops so stale state is not retained.
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             if (runtime != null) {
+                closeScheduledBackups();
                 runtime.clear();
                 runtime = null;
             }
@@ -198,12 +206,22 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     }
 
     /**
+     * Returns the scheduled backup runner used by shared backup schedule commands.
+     *
+     * @return active scheduled backup runner
+     */
+    public static ScheduledBackupService getScheduledBackupService() {
+        return Objects.requireNonNull(scheduledBackupService, "Scheduled backup service has not been initialized");
+    }
+
+    /**
      * Updates config through the shared runtime.
      *
      * @param updater config updater
      */
     public static void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
         getRuntime().updateConfig(updater);
+        restartScheduledBackups();
     }
 
     /**
@@ -223,6 +241,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         logStorageLoadStart();
         try {
             getRuntime().reload();
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             LOGGER.error("Failed to load ClutchPerms storage from {}", storageRoot(), exception);
@@ -257,6 +276,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         try {
             getRuntime().restoreBackup(kind, backupFileName);
             refreshRuntimePermissions();
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             LOGGER.error("Failed to restore ClutchPerms database backup {} from {}", backupFileName, storageRoot(), exception);
@@ -311,6 +331,19 @@ public final class ClutchPermsFabricMod implements ModInitializer {
 
     private static void logStorageLoadStart() {
         LOGGER.debug("ClutchPerms database file: {}", getRuntime().storagePaths().databaseFile());
+    }
+
+    private static void restartScheduledBackups() {
+        if (activeServer != null && scheduledBackupService != null) {
+            scheduledBackupService.restart();
+        }
+    }
+
+    private static void closeScheduledBackups() {
+        if (scheduledBackupService != null) {
+            scheduledBackupService.close();
+            scheduledBackupService = null;
+        }
     }
 
     private static void logStorageLoadSuccess() {

@@ -34,6 +34,20 @@ public final class BackupSubcommand {
 
         int create(CommandContext<S> context) throws CommandSyntaxException;
 
+        int scheduleStatus(CommandContext<S> context) throws CommandSyntaxException;
+
+        int scheduleEnable(CommandContext<S> context) throws CommandSyntaxException;
+
+        int scheduleDisable(CommandContext<S> context) throws CommandSyntaxException;
+
+        int scheduleIntervalUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int scheduleInterval(CommandContext<S> context) throws CommandSyntaxException;
+
+        int scheduleRunNow(CommandContext<S> context) throws CommandSyntaxException;
+
+        int scheduleUnknownUsage(CommandContext<S> context) throws CommandSyntaxException;
+
         int listPageUsage(CommandContext<S> context) throws CommandSyntaxException;
 
         int restoreFileUsage(CommandContext<S> context) throws CommandSyntaxException;
@@ -48,6 +62,22 @@ public final class BackupSubcommand {
                 .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::usage))
                 .then(authorized.literal("create", PermissionNodes.ADMIN_BACKUP_CREATE)
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_CREATE, handlers::create)))
+                .then(authorized.branch("schedule", PermissionNodes.ADMIN_BACKUP_LIST, PermissionNodes.ADMIN_BACKUP_CREATE, PermissionNodes.ADMIN_CONFIG_SET)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::scheduleStatus))
+                        .then(authorized.literal("status", PermissionNodes.ADMIN_BACKUP_LIST)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::scheduleStatus)))
+                        .then(authorized.literal("enable", PermissionNodes.ADMIN_CONFIG_SET)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_SET, handlers::scheduleEnable)))
+                        .then(authorized.literal("disable", PermissionNodes.ADMIN_CONFIG_SET)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_SET, handlers::scheduleDisable)))
+                        .then(authorized.literal("interval", PermissionNodes.ADMIN_CONFIG_SET)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_SET, handlers::scheduleIntervalUsage))
+                                .then(BackupSubcommand.<S>intervalArgument()
+                                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_SET, handlers::scheduleInterval))))
+                        .then(authorized.literal("run-now", PermissionNodes.ADMIN_BACKUP_CREATE)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_CREATE, handlers::scheduleRunNow)))
+                        .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_BACKUP_LIST)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::scheduleUnknownUsage))))
                 .then(authorized.literal("list", PermissionNodes.ADMIN_BACKUP_LIST).executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list))
                         .then(authorized.literal("page", PermissionNodes.ADMIN_BACKUP_LIST)
                                 .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::listPageUsage))
@@ -66,6 +96,10 @@ public final class BackupSubcommand {
 
     private static <S> RequiredArgumentBuilder<S, String> pageArgument() {
         return RequiredArgumentBuilder.argument(CommandArguments.PAGE, StringArgumentType.word());
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> intervalArgument() {
+        return RequiredArgumentBuilder.argument(CommandArguments.CONFIG_VALUE, StringArgumentType.word());
     }
 
     private static <S> CompletableFuture<Suggestions> suggestBackupFiles(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, SuggestionsBuilder builder) {

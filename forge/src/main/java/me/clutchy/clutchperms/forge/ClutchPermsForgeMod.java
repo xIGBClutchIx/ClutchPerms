@@ -26,6 +26,7 @@ import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntime;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupService;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
@@ -69,6 +70,11 @@ public final class ClutchPermsForgeMod {
     private static MinecraftServer activeServer;
 
     /**
+     * Runs automatic database backups for the active server lifecycle.
+     */
+    private static ScheduledBackupService scheduledBackupService;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the Forge lifecycle.
      */
     public ClutchPermsForgeMod() {
@@ -82,6 +88,7 @@ public final class ClutchPermsForgeMod {
         } catch (PermissionStorageException exception) {
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
+        scheduledBackupService = new ScheduledBackupService(ClutchPermsForgeMod::getClutchPermsConfig, ClutchPermsForgeMod::getStorageBackupService, LOGGER::info, LOGGER::error);
 
         RegisterCommandsEvent.BUS.addListener(this::registerCommands);
         PermissionGatherEvent.Handler.BUS.addListener(this::registerPermissionHandler);
@@ -99,7 +106,7 @@ public final class ClutchPermsForgeMod {
                         ClutchPermsForgeMod::getPermissionResolver, ClutchPermsForgeMod::getStatusDiagnostics, ClutchPermsForgeMod::reloadStorage,
                         ClutchPermsForgeMod::validateStorage, ClutchPermsForgeMod::getStorageBackupService, ClutchPermsForgeMod::getClutchPermsConfig,
                         ClutchPermsForgeMod::updateConfig, ClutchPermsForgeMod::getAuditLogService, ClutchPermsForgeMod::restoreBackup,
-                        ClutchPermsForgeMod::refreshRuntimePermissions, rootLiteral)));
+                        ClutchPermsForgeMod::refreshRuntimePermissions, ClutchPermsForgeMod::getScheduledBackupService, rootLiteral)));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -115,6 +122,7 @@ public final class ClutchPermsForgeMod {
         activeServer = event.getServer();
         event.getServer().getPlayerList().getPlayers().forEach(this::recordSubject);
         refreshRuntimePermissions();
+        getScheduledBackupService().start();
 
         if (ForgeClutchPermsPermissionHandler.IDENTIFIER.equals(PermissionAPI.getActivePermissionHandler())) {
             LOGGER.info("ClutchPerms Forge runtime permission bridge is active.");
@@ -143,6 +151,7 @@ public final class ClutchPermsForgeMod {
 
     private void onServerStopped(ServerStoppedEvent event) {
         if (runtime != null) {
+            closeScheduledBackups();
             runtime.clear();
             runtime = null;
         }
@@ -224,12 +233,22 @@ public final class ClutchPermsForgeMod {
     }
 
     /**
+     * Returns the scheduled backup runner used by shared backup schedule commands.
+     *
+     * @return active scheduled backup runner
+     */
+    public static ScheduledBackupService getScheduledBackupService() {
+        return Objects.requireNonNull(scheduledBackupService, "Scheduled backup service has not been initialized");
+    }
+
+    /**
      * Updates config through the shared runtime.
      *
      * @param updater config updater
      */
     public static void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
         getRuntime().updateConfig(updater);
+        restartScheduledBackups();
     }
 
     /**
@@ -248,6 +267,7 @@ public final class ClutchPermsForgeMod {
         logStorageLoadStart();
         try {
             getRuntime().reload();
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             LOGGER.error("Failed to load ClutchPerms storage from {}", storageRoot(), exception);
@@ -282,6 +302,7 @@ public final class ClutchPermsForgeMod {
         try {
             getRuntime().restoreBackup(kind, backupFileName);
             refreshRuntimePermissions();
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             LOGGER.error("Failed to restore ClutchPerms database backup {} from {}", backupFileName, storageRoot(), exception);
@@ -347,6 +368,19 @@ public final class ClutchPermsForgeMod {
 
     private static void logStorageLoadStart() {
         LOGGER.debug("ClutchPerms database file: {}", getRuntime().storagePaths().databaseFile());
+    }
+
+    private static void restartScheduledBackups() {
+        if (activeServer != null && scheduledBackupService != null) {
+            scheduledBackupService.restart();
+        }
+    }
+
+    private static void closeScheduledBackups() {
+        if (scheduledBackupService != null) {
+            scheduledBackupService.close();
+            scheduledBackupService = null;
+        }
     }
 
     private static void logStorageLoadSuccess() {

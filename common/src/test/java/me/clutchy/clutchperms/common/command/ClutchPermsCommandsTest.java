@@ -49,6 +49,7 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupStatus;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.SqliteStore;
@@ -207,7 +208,7 @@ class ClutchPermsCommandsTest {
     void helpCommandIncludesGroupMembersCommand() throws CommandSyntaxException {
         TestSource console = TestSource.console();
 
-        dispatcher.execute("clutchperms help 5", console);
+        dispatcher.execute("clutchperms help 6", console);
 
         assertMessageContains(console, "/clutchperms group <group> members [page]");
     }
@@ -224,7 +225,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(List.of("ClutchPerms commands (page 1/16):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/16 | Next >"),
+        assertEquals(List.of("ClutchPerms commands (page 1/17):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/17 | Next >"),
                 console.messages());
         assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
     }
@@ -243,7 +244,7 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("Invalid page: nope", "Pages start at 1.", "Try one:", "  /clutchperms help 1"), invalid.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms help 99", outOfRange));
-        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-7.", "Try one:", "  /clutchperms help 7"), outOfRange.messages());
+        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-8.", "Try one:", "  /clutchperms help 8"), outOfRange.messages());
     }
 
     /**
@@ -355,6 +356,9 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms config get paper.replaceOpCommands", console);
 
         assertEquals(List.of("ClutchPerms config:", "backups.retentionLimit = 3 (newest database backups kept; range 1-1000)",
+                "backups.schedule.enabled = false (automatic database backups; values true/false or on/off)",
+                "backups.schedule.intervalMinutes = 60 (minutes between automatic database backups; range 5-10080)",
+                "backups.schedule.runOnStartup = false (startup database backup; values true/false or on/off)",
                 "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)", "commands.resultPageSize = 5 (rows shown per list-result page; range 1-50)",
                 "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)",
                 "paper.replaceOpCommands = false (Paper /op and /deop ClutchPerms replacements; values true/false or on/off)",
@@ -389,7 +393,7 @@ class ClutchPermsCommandsTest {
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
-        assertEquals(List.of("ClutchPerms commands (page 1/16):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/16 | Next >"), help.messages());
+        assertEquals(List.of("ClutchPerms commands (page 1/17):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/17 | Next >"), help.messages());
 
         permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
         permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
@@ -653,6 +657,58 @@ class ClutchPermsCommandsTest {
         assertEquals("Backups (page 1/1):", console.messages().get(1));
         assertTrue(console.messages().contains("  database-20260424-120001000.db"));
         assertTrue(console.messages().contains("  database-20260424-120000000.db"));
+    }
+
+    /**
+     * Confirms backup schedule commands expose status and mutate schedule config through the config update path.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void backupScheduleCommandsReportStatusAndUpdateConfig() throws CommandSyntaxException {
+        environment.setScheduledBackupStatus(
+                new ScheduledBackupStatus(false, 60, false, false, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms backup schedule status", console);
+        dispatcher.execute("clutchperms backup schedule enable", console);
+        dispatcher.execute("clutchperms backup schedule interval 120", console);
+        dispatcher.execute("clutchperms backup schedule disable", console);
+
+        assertEquals(false, environment.config().backups().schedule().enabled());
+        assertEquals(120, environment.config().backups().schedule().intervalMinutes());
+        assertEquals(3, environment.configUpdates());
+        assertEquals(3, environment.runtimeRefreshes());
+        assertTrue(console.messages().contains("Scheduled database backups:"));
+        assertTrue(console.messages().contains("Updated config backups.schedule.enabled: false -> true. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config backups.schedule.intervalMinutes: 60 -> 120. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config backups.schedule.enabled: true -> false. Runtime reloaded."));
+        assertEquals("backups.schedule.enabled", environment.auditLogService().listNewestFirst().getFirst().targetKey());
+    }
+
+    /**
+     * Confirms schedule run-now creates a database backup even when automatic backups are disabled.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void backupScheduleRunNowCreatesImmediateBackup() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms backup schedule run-now", console);
+
+        assertTrue(console.messages().getFirst().startsWith("Created database backup database-"));
+        assertEquals(1, environment.storageBackupService().listBackups(StorageFileKind.DATABASE).size());
+    }
+
+    /**
+     * Confirms schedule interval validation uses the shared config validation range.
+     */
+    @Test
+    void backupScheduleIntervalRejectsInvalidValues() {
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms backup schedule interval 4", console, "backups.schedule.intervalMinutes must be an integer between 5 and 10080.");
     }
 
     /**
@@ -2526,9 +2582,9 @@ class ClutchPermsCommandsTest {
 
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Database file: " + STATUS_DIAGNOSTICS.databaseFile(), "Config file: " + STATUS_DIAGNOSTICS.configFile(),
-                "Backup retention: newest 10 database backups.", "Command page sizes: help 7, lists 8.", "Chat formatting: enabled.", "Known subjects: " + knownSubjects,
-                "Known groups: 2", "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
-                "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
+                "Backup retention: newest 10 database backups.", "Enabled: false; timer running: false.", "Command page sizes: help 7, lists 8.", "Chat formatting: enabled.",
+                "Known subjects: " + knownSubjects, "Known groups: 2", "Known permission nodes: " + PermissionNodes.commandNodes().size(),
+                "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.", "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 
     private static List<String> commandListPageOneMessages() {
@@ -2536,8 +2592,8 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageOneMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 1/7):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
-                "/" + rootLiteral + " validate", "/" + rootLiteral + " history [page]", "/" + rootLiteral + " undo <id>", "/" + rootLiteral + " config list", "Page 1/7 | Next >");
+        return List.of("ClutchPerms commands (page 1/8):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
+                "/" + rootLiteral + " validate", "/" + rootLiteral + " history [page]", "/" + rootLiteral + " undo <id>", "/" + rootLiteral + " config list", "Page 1/8 | Next >");
     }
 
     private static List<String> commandListPageTwoMessages() {
@@ -2545,9 +2601,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageTwoMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 2/7):", "/" + rootLiteral + " config get <key>", "/" + rootLiteral + " config set <key> <value>",
+        return List.of("ClutchPerms commands (page 2/8):", "/" + rootLiteral + " config get <key>", "/" + rootLiteral + " config set <key> <value>",
                 "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup create", "/" + rootLiteral + " backup list [page]",
-                "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup restore <backup-file>", "< Prev | Page 2/7 | Next >");
+                "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup schedule status", "< Prev | Page 2/8 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {
@@ -2630,6 +2686,8 @@ class ClutchPermsCommandsTest {
 
         private StorageBackupService storageBackupService;
 
+        private ScheduledBackupStatus scheduledBackupStatus;
+
         private ClutchPermsConfig config = ClutchPermsConfig.defaults();
 
         private int reloads;
@@ -2677,6 +2735,10 @@ class ClutchPermsCommandsTest {
 
         private void setStorageBackupService(StorageBackupService storageBackupService) {
             this.storageBackupService = storageBackupService;
+        }
+
+        private void setScheduledBackupStatus(ScheduledBackupStatus scheduledBackupStatus) {
+            this.scheduledBackupStatus = scheduledBackupStatus;
         }
 
         private void setConfig(ClutchPermsConfig config) {
@@ -2773,6 +2835,14 @@ class ClutchPermsCommandsTest {
         @Override
         public StorageBackupService storageBackupService() {
             return storageBackupService;
+        }
+
+        @Override
+        public ScheduledBackupStatus scheduledBackupStatus() {
+            if (scheduledBackupStatus != null) {
+                return scheduledBackupStatus;
+            }
+            return ClutchPermsCommandEnvironment.super.scheduledBackupStatus();
         }
 
         @Override

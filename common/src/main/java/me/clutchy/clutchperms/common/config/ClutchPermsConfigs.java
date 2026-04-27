@@ -29,7 +29,9 @@ public final class ClutchPermsConfigs {
 
     private static final Set<String> ROOT_KEYS = Set.of("version", "backups", "commands", "chat", "paper");
 
-    private static final Set<String> BACKUP_KEYS = Set.of("retentionLimit");
+    private static final Set<String> BACKUP_KEYS = Set.of("retentionLimit", "schedule");
+
+    private static final Set<String> BACKUP_SCHEDULE_KEYS = Set.of("enabled", "intervalMinutes", "runOnStartup");
 
     private static final Set<String> COMMAND_KEYS = Set.of("helpPageSize", "resultPageSize");
 
@@ -139,6 +141,11 @@ public final class ClutchPermsConfigs {
 
         JsonObject backups = new JsonObject();
         backups.addProperty("retentionLimit", config.backups().retentionLimit());
+        JsonObject backupSchedule = new JsonObject();
+        backupSchedule.addProperty("enabled", config.backups().schedule().enabled());
+        backupSchedule.addProperty("intervalMinutes", config.backups().schedule().intervalMinutes());
+        backupSchedule.addProperty("runOnStartup", config.backups().schedule().runOnStartup());
+        backups.add("schedule", backupSchedule);
         root.add("backups", backups);
 
         JsonObject commands = new JsonObject();
@@ -171,6 +178,14 @@ public final class ClutchPermsConfigs {
 
         JsonObject backups = readObject(root, "backups", "backups");
         rejectUnknownKeys("backups", backups, BACKUP_KEYS);
+        ClutchPermsBackupScheduleConfig backupScheduleConfig = ClutchPermsBackupScheduleConfig.defaults();
+        JsonObject backupSchedule = readOptionalObject(backups, "schedule", "backups.schedule");
+        if (backupSchedule != null) {
+            rejectUnknownKeys("backups.schedule", backupSchedule, BACKUP_SCHEDULE_KEYS);
+            backupScheduleConfig = new ClutchPermsBackupScheduleConfig(readBoolean(backupSchedule, "enabled", "backups.schedule.enabled"),
+                    readInteger(backupSchedule, "intervalMinutes", "backups.schedule.intervalMinutes"),
+                    readBoolean(backupSchedule, "runOnStartup", "backups.schedule.runOnStartup"));
+        }
         JsonObject commands = readObject(root, "commands", "commands");
         rejectUnknownKeys("commands", commands, COMMAND_KEYS);
         ClutchPermsChatConfig chatConfig = ClutchPermsChatConfig.defaults();
@@ -186,7 +201,7 @@ public final class ClutchPermsConfigs {
             paperConfig = new ClutchPermsPaperConfig(readBoolean(paper, "replaceOpCommands", "paper.replaceOpCommands"));
         }
 
-        return new ClutchPermsConfig(new ClutchPermsBackupConfig(readInteger(backups, "retentionLimit", "backups.retentionLimit")),
+        return new ClutchPermsConfig(new ClutchPermsBackupConfig(readInteger(backups, "retentionLimit", "backups.retentionLimit"), backupScheduleConfig),
                 new ClutchPermsCommandConfig(readInteger(commands, "helpPageSize", "commands.helpPageSize"), readInteger(commands, "resultPageSize", "commands.resultPageSize")),
                 chatConfig, paperConfig);
     }

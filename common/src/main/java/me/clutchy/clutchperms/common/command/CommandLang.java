@@ -161,6 +161,20 @@ final class CommandLang {
 
     private static final String BACKUP_RESTORED = "Restored database from backup %s.";
 
+    private static final String BACKUP_SCHEDULE_HEADER = "Scheduled database backups:";
+
+    private static final String BACKUP_SCHEDULE_ENABLED = "Enabled: %s; timer running: %s.";
+
+    private static final String BACKUP_SCHEDULE_INTERVAL = "Interval: every %s minutes.";
+
+    private static final String BACKUP_SCHEDULE_RUN_ON_STARTUP = "Run on startup: %s.";
+
+    private static final String BACKUP_SCHEDULE_NEXT_RUN = "Next run: %s.";
+
+    private static final String BACKUP_SCHEDULE_LAST_SUCCESS = "Last success: %s; file: %s.";
+
+    private static final String BACKUP_SCHEDULE_LAST_FAILURE = "Last failure: %s; reason: %s.";
+
     private static final String PERMISSIONS_EMPTY = "No permissions set for %s.";
 
     private static final String PERMISSIONS_LIST = "Permissions for %s: %s";
@@ -603,6 +617,34 @@ final class CommandLang {
 
     static CommandMessage backupRestored(String backupFileName) {
         return success(BACKUP_RESTORED, backupFileName);
+    }
+
+    static CommandMessage backupScheduleHeader() {
+        return heading(BACKUP_SCHEDULE_HEADER);
+    }
+
+    static CommandMessage backupScheduleEnabled(boolean enabled, boolean running) {
+        return detail(BACKUP_SCHEDULE_ENABLED, enabled, running);
+    }
+
+    static CommandMessage backupScheduleInterval(int intervalMinutes) {
+        return detail(BACKUP_SCHEDULE_INTERVAL, intervalMinutes);
+    }
+
+    static CommandMessage backupScheduleRunOnStartup(boolean runOnStartup) {
+        return detail(BACKUP_SCHEDULE_RUN_ON_STARTUP, runOnStartup);
+    }
+
+    static CommandMessage backupScheduleNextRun(String nextRun) {
+        return detail(BACKUP_SCHEDULE_NEXT_RUN, nextRun);
+    }
+
+    static CommandMessage backupScheduleLastSuccess(String lastSuccess, String fileName) {
+        return detail(BACKUP_SCHEDULE_LAST_SUCCESS, lastSuccess, fileName);
+    }
+
+    static CommandMessage backupScheduleLastFailure(String lastFailure, String reason) {
+        return detail(BACKUP_SCHEDULE_LAST_FAILURE, lastFailure, reason);
     }
 
     static CommandMessage permissionsEmpty(String subject) {

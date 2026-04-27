@@ -50,6 +50,10 @@ class ClutchPermsConfigsTest {
         String content = Files.readString(configFile);
         assertTrue(content.contains("\"version\": 1"));
         assertTrue(content.contains("\"retentionLimit\": 10"));
+        assertTrue(content.contains("\"schedule\""));
+        assertTrue(content.contains("\"enabled\": false"));
+        assertTrue(content.contains("\"intervalMinutes\": 60"));
+        assertTrue(content.contains("\"runOnStartup\": false"));
         assertTrue(content.contains("\"helpPageSize\": 7"));
         assertTrue(content.contains("\"resultPageSize\": 8"));
         assertTrue(content.contains("\"chat\""));
@@ -83,7 +87,12 @@ class ClutchPermsConfigsTest {
                 {
                   "version": 1,
                   "backups": {
-                    "retentionLimit": 3
+                    "retentionLimit": 3,
+                    "schedule": {
+                      "enabled": true,
+                      "intervalMinutes": 120,
+                      "runOnStartup": true
+                    }
                   },
                   "commands": {
                     "helpPageSize": 4,
@@ -101,6 +110,9 @@ class ClutchPermsConfigsTest {
         ClutchPermsConfig config = ClutchPermsConfigs.jsonFile(configFile);
 
         assertEquals(3, config.backups().retentionLimit());
+        assertEquals(true, config.backups().schedule().enabled());
+        assertEquals(120, config.backups().schedule().intervalMinutes());
+        assertEquals(true, config.backups().schedule().runOnStartup());
         assertEquals(4, config.commands().helpPageSize());
         assertEquals(5, config.commands().resultPageSize());
         assertEquals(false, config.chat().enabled());
@@ -132,6 +144,7 @@ class ClutchPermsConfigsTest {
 
         assertEquals(true, config.chat().enabled());
         assertEquals(true, config.paper().replaceOpCommands());
+        assertEquals(ClutchPermsBackupScheduleConfig.defaults(), config.backups().schedule());
     }
 
     /**
@@ -329,6 +342,83 @@ class ClutchPermsConfigsTest {
                   },
                   "paper": {
                     "replaceOpCommands": "false"
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10,
+                    "schedule": true
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10,
+                    "schedule": {
+                      "enabled": false,
+                      "intervalMinutes": 60,
+                      "runOnStartup": false,
+                      "unknown": true
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10,
+                    "schedule": {
+                      "enabled": "false",
+                      "intervalMinutes": 60,
+                      "runOnStartup": false
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10,
+                    "schedule": {
+                      "enabled": false,
+                      "intervalMinutes": 4,
+                      "runOnStartup": false
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10,
+                    "schedule": {
+                      "enabled": false,
+                      "intervalMinutes": 10081,
+                      "runOnStartup": false
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
                   }
                 }
                 """);

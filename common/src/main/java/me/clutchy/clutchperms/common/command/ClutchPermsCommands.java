@@ -50,6 +50,7 @@ import me.clutchy.clutchperms.common.command.subcommand.NodesSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UserSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UsersSubcommand;
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsBackupScheduleConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
@@ -66,6 +67,7 @@ import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolution;
 import me.clutchy.clutchperms.common.permission.PermissionResolverCacheStats;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupStatus;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.StorageBackup;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
@@ -167,8 +169,28 @@ public final class ClutchPermsCommands {
 
     private static final List<ConfigEntry> CONFIG_ENTRIES = List.of(
             integerConfig("backups.retentionLimit", "newest database backups kept", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT, ClutchPermsBackupConfig.MAX_RETENTION_LIMIT,
-                    ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(),
-                    (config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value), config.commands(), config.chat(), config.paper())),
+                    ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(), (
+                            config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value, config.backups().schedule()), config.commands(), config.chat(),
+                                    config.paper())),
+            booleanConfig("backups.schedule.enabled", "automatic database backups", ClutchPermsBackupScheduleConfig.DEFAULT_ENABLED,
+                    config -> config.backups().schedule().enabled(),
+                    (config, value) -> new ClutchPermsConfig(
+                            new ClutchPermsBackupConfig(config.backups().retentionLimit(),
+                                    new ClutchPermsBackupScheduleConfig(value, config.backups().schedule().intervalMinutes(), config.backups().schedule().runOnStartup())),
+                            config.commands(), config.chat(), config.paper())),
+            integerConfig("backups.schedule.intervalMinutes", "minutes between automatic database backups", ClutchPermsBackupScheduleConfig.MIN_INTERVAL_MINUTES,
+                    ClutchPermsBackupScheduleConfig.MAX_INTERVAL_MINUTES, ClutchPermsBackupScheduleConfig.DEFAULT_INTERVAL_MINUTES,
+                    config -> config.backups().schedule().intervalMinutes(),
+                    (config, value) -> new ClutchPermsConfig(
+                            new ClutchPermsBackupConfig(config.backups().retentionLimit(),
+                                    new ClutchPermsBackupScheduleConfig(config.backups().schedule().enabled(), value, config.backups().schedule().runOnStartup())),
+                            config.commands(), config.chat(), config.paper())),
+            booleanConfig("backups.schedule.runOnStartup", "startup database backup", ClutchPermsBackupScheduleConfig.DEFAULT_RUN_ON_STARTUP,
+                    config -> config.backups().schedule().runOnStartup(),
+                    (config, value) -> new ClutchPermsConfig(
+                            new ClutchPermsBackupConfig(config.backups().retentionLimit(),
+                                    new ClutchPermsBackupScheduleConfig(config.backups().schedule().enabled(), config.backups().schedule().intervalMinutes(), value)),
+                            config.commands(), config.chat(), config.paper())),
             integerConfig("commands.helpPageSize", "command rows shown per help page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
                     ClutchPermsCommandConfig.DEFAULT_HELP_PAGE_SIZE, config -> config.commands().helpPageSize(),
                     (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(value, config.commands().resultPageSize()), config.chat(),
@@ -198,6 +220,10 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("backup create", PermissionNodes.ADMIN_BACKUP_CREATE, "Creates a database backup."),
             new CommandHelpEntry("backup list [page]", PermissionNodes.ADMIN_BACKUP_LIST, "Lists database backups."),
             new CommandHelpEntry("backup list page <page>", PermissionNodes.ADMIN_BACKUP_LIST, "Lists all backups on a specific page."),
+            new CommandHelpEntry("backup schedule status", PermissionNodes.ADMIN_BACKUP_LIST, "Shows automatic backup schedule status."),
+            new CommandHelpEntry("backup schedule <enable|disable>", PermissionNodes.ADMIN_CONFIG_SET, "Toggles automatic database backups."),
+            new CommandHelpEntry("backup schedule interval <minutes>", PermissionNodes.ADMIN_CONFIG_SET, "Sets automatic backup interval."),
+            new CommandHelpEntry("backup schedule run-now", PermissionNodes.ADMIN_BACKUP_CREATE, "Creates an immediate scheduled backup."),
             new CommandHelpEntry("backup restore <backup-file>", PermissionNodes.ADMIN_BACKUP_RESTORE, "Restores one validated database backup."),
             new CommandHelpEntry("user <target> info", PermissionNodes.ADMIN_USER_INFO, "Shows a quick user summary."),
             new CommandHelpEntry("user <target> list [page]", PermissionNodes.ADMIN_USER_LIST, "Lists direct user permissions."),
@@ -455,6 +481,42 @@ public final class ClutchPermsCommands {
             @Override
             public int create(CommandContext<S> context) throws CommandSyntaxException {
                 return createBackup(environment, context);
+            }
+
+            @Override
+            public int scheduleStatus(CommandContext<S> context) throws CommandSyntaxException {
+                return showBackupScheduleStatus(environment, context);
+            }
+
+            @Override
+            public int scheduleEnable(CommandContext<S> context) throws CommandSyntaxException {
+                return setBackupScheduleEnabled(environment, context, true);
+            }
+
+            @Override
+            public int scheduleDisable(CommandContext<S> context) throws CommandSyntaxException {
+                return setBackupScheduleEnabled(environment, context, false);
+            }
+
+            @Override
+            public int scheduleIntervalUsage(CommandContext<S> context) {
+                return sendUsage(environment, context, "Missing interval minutes.", "Set automatic backup interval in minutes.", List.of("backup schedule interval <minutes>"));
+            }
+
+            @Override
+            public int scheduleInterval(CommandContext<S> context) throws CommandSyntaxException {
+                return setBackupScheduleInterval(environment, context);
+            }
+
+            @Override
+            public int scheduleRunNow(CommandContext<S> context) throws CommandSyntaxException {
+                return createScheduledBackup(environment, context);
+            }
+
+            @Override
+            public int scheduleUnknownUsage(CommandContext<S> context) {
+                return sendUsage(environment, context, "Unknown backup schedule command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                        "Backup schedule supports status, enable, disable, interval, and run-now.", backupScheduleUsages());
             }
 
             @Override
@@ -953,6 +1015,8 @@ public final class ClutchPermsCommands {
         environment.sendMessage(context.getSource(), CommandLang.statusConfigFile(diagnostics.configFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusBackupRetention(environment.config().backups().retentionLimit()));
         environment.sendMessage(context.getSource(),
+                CommandLang.backupScheduleEnabled(environment.config().backups().schedule().enabled(), environment.scheduledBackupStatus().running()));
+        environment.sendMessage(context.getSource(),
                 CommandLang.statusCommandPageSizes(environment.config().commands().helpPageSize(), environment.config().commands().resultPageSize()));
         environment.sendMessage(context.getSource(), CommandLang.statusChatFormatting(environment.config().chat().enabled()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownSubjects(environment.subjectMetadataService().getSubjects().size()));
@@ -1296,7 +1360,12 @@ public final class ClutchPermsCommands {
     }
 
     private static List<String> backupUsages() {
-        return List.of("backup create", "backup list [page]", "backup restore <backup-file>");
+        return List.of("backup create", "backup list [page]", "backup schedule status", "backup schedule <enable|disable>", "backup schedule interval <minutes>",
+                "backup schedule run-now", "backup restore <backup-file>");
+    }
+
+    private static List<String> backupScheduleUsages() {
+        return List.of("backup schedule status", "backup schedule enable", "backup schedule disable", "backup schedule interval <minutes>", "backup schedule run-now");
     }
 
     private static List<String> configUsages() {
@@ -1373,6 +1442,11 @@ public final class ClutchPermsCommands {
         ConfigEntry entry = getConfigEntry(context);
         String rawValue = StringArgumentType.getString(context, CONFIG_VALUE_ARGUMENT);
         String newValue = parseConfigValue(context, entry, rawValue);
+        return setConfigValue(environment, context, entry, newValue);
+    }
+
+    private static <S> int setConfigValue(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, ConfigEntry entry, String newValue)
+            throws CommandSyntaxException {
         String oldValue = entry.value(environment.config());
         if (oldValue.equals(newValue)) {
             environment.sendMessage(context.getSource(), CommandLang.configAlreadySet(entry.key(), oldValue));
@@ -1463,6 +1537,47 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
         }
+    }
+
+    private static <S> int createScheduledBackup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        try {
+            StorageBackup backup = environment.createScheduledBackupNow()
+                    .orElseThrow(() -> new PermissionStorageException("Cannot create database backup because database.db does not exist"));
+            environment.sendMessage(context.getSource(), CommandLang.backupCreated(backup.fileName()));
+            return Command.SINGLE_SUCCESS;
+        } catch (RuntimeException exception) {
+            throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
+        }
+    }
+
+    private static <S> int showBackupScheduleStatus(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        try {
+            ScheduledBackupStatus status = environment.scheduledBackupStatus();
+            environment.sendMessage(context.getSource(), CommandLang.backupScheduleHeader());
+            environment.sendMessage(context.getSource(), CommandLang.backupScheduleEnabled(status.enabled(), status.running()));
+            environment.sendMessage(context.getSource(), CommandLang.backupScheduleInterval(status.intervalMinutes()));
+            environment.sendMessage(context.getSource(), CommandLang.backupScheduleRunOnStartup(status.runOnStartup()));
+            environment.sendMessage(context.getSource(), CommandLang.backupScheduleNextRun(status.nextRun().map(Instant::toString).orElse("none")));
+            environment.sendMessage(context.getSource(),
+                    CommandLang.backupScheduleLastSuccess(status.lastSuccess().map(Instant::toString).orElse("none"), status.lastBackupFile().orElse("none")));
+            environment.sendMessage(context.getSource(),
+                    CommandLang.backupScheduleLastFailure(status.lastFailure().map(Instant::toString).orElse("none"), status.lastFailureMessage().orElse("none")));
+            return Command.SINGLE_SUCCESS;
+        } catch (RuntimeException exception) {
+            throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
+        }
+    }
+
+    private static <S> int setBackupScheduleEnabled(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, boolean enabled) throws CommandSyntaxException {
+        ConfigEntry entry = configEntry("backups.schedule.enabled");
+        return setConfigValue(environment, context, entry, Boolean.toString(enabled));
+    }
+
+    private static <S> int setBackupScheduleInterval(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        ConfigEntry entry = configEntry("backups.schedule.intervalMinutes");
+        String rawValue = StringArgumentType.getString(context, CONFIG_VALUE_ARGUMENT);
+        String newValue = parseConfigValue(context, entry, rawValue);
+        return setConfigValue(environment, context, entry, newValue);
     }
 
     private static <S> int restoreBackup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
@@ -2302,6 +2417,10 @@ public final class ClutchPermsCommands {
         return CONFIG_ENTRIES.stream().filter(entry -> entry.key().toLowerCase(Locale.ROOT).equals(normalizedKey)).findFirst();
     }
 
+    private static ConfigEntry configEntry(String key) {
+        return findConfigEntry(key).orElseThrow(() -> new IllegalStateException("Missing config entry " + key));
+    }
+
     private static <S> String parseConfigValue(CommandContext<S> context, ConfigEntry entry, String rawValue) throws CommandSyntaxException {
         try {
             return entry.normalizeValue(rawValue);
@@ -2728,6 +2847,9 @@ public final class ClutchPermsCommands {
     private static String configSnapshot(ClutchPermsConfig config) {
         JsonObject root = new JsonObject();
         root.addProperty("backups.retentionLimit", config.backups().retentionLimit());
+        root.addProperty("backups.schedule.enabled", config.backups().schedule().enabled());
+        root.addProperty("backups.schedule.intervalMinutes", config.backups().schedule().intervalMinutes());
+        root.addProperty("backups.schedule.runOnStartup", config.backups().schedule().runOnStartup());
         root.addProperty("commands.helpPageSize", config.commands().helpPageSize());
         root.addProperty("commands.resultPageSize", config.commands().resultPageSize());
         root.addProperty("chat.enabled", config.chat().enabled());
@@ -2737,10 +2859,23 @@ public final class ClutchPermsCommands {
 
     private static <S> void applyConfigSnapshot(ClutchPermsCommandEnvironment<S> environment, String snapshotJson) {
         JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
-        ClutchPermsConfig restoredConfig = new ClutchPermsConfig(new ClutchPermsBackupConfig(root.get("backups.retentionLimit").getAsInt()),
+        ClutchPermsBackupScheduleConfig defaultSchedule = ClutchPermsBackupScheduleConfig.defaults();
+        ClutchPermsConfig restoredConfig = new ClutchPermsConfig(
+                new ClutchPermsBackupConfig(root.get("backups.retentionLimit").getAsInt(),
+                        new ClutchPermsBackupScheduleConfig(booleanSnapshotValue(root, "backups.schedule.enabled", defaultSchedule.enabled()),
+                                integerSnapshotValue(root, "backups.schedule.intervalMinutes", defaultSchedule.intervalMinutes()),
+                                booleanSnapshotValue(root, "backups.schedule.runOnStartup", defaultSchedule.runOnStartup()))),
                 new ClutchPermsCommandConfig(root.get("commands.helpPageSize").getAsInt(), root.get("commands.resultPageSize").getAsInt()),
                 new ClutchPermsChatConfig(root.get("chat.enabled").getAsBoolean()), new ClutchPermsPaperConfig(root.get("paper.replaceOpCommands").getAsBoolean()));
         environment.updateConfig(ignored -> restoredConfig);
+    }
+
+    private static boolean booleanSnapshotValue(JsonObject root, String key, boolean defaultValue) {
+        return root.has(key) ? root.get(key).getAsBoolean() : defaultValue;
+    }
+
+    private static int integerSnapshotValue(JsonObject root, String key, int defaultValue) {
+        return root.has(key) ? root.get(key).getAsInt() : defaultValue;
     }
 
     private static JsonObject permissionsJson(Map<String, PermissionValue> permissions) {

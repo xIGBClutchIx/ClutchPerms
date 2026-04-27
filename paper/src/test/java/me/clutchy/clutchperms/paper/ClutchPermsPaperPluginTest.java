@@ -219,6 +219,7 @@ class ClutchPermsPaperPluginTest {
         assertNextMessage(player, "Database file: " + plugin.getDataFolder().toPath().resolve("database.db").toAbsolutePath().normalize());
         assertNextMessage(player, "Config file: " + plugin.getDataFolder().toPath().resolve("config.json").toAbsolutePath().normalize());
         assertNextMessage(player, "Backup retention: newest 10 database backups.");
+        assertNextMessage(player, "Enabled: false; timer running: false.");
         assertNextMessage(player, "Command page sizes: help 7, lists 8.");
         assertNextMessage(player, "Chat formatting: enabled.");
         assertNextMessage(player, "Known subjects: 1");
@@ -263,7 +264,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
 
-        assertNextMessage(player, "ClutchPerms commands (page 1/7):");
+        assertNextMessage(player, "ClutchPerms commands (page 1/8):");
         Component firstCommand = player.nextComponentMessage();
         assertEquals("/clutchperms help [page]", PlainTextComponentSerializer.plainText().serialize(firstCommand));
         assertComponentClick(firstCommand, ClickEvent.Action.SUGGEST_COMMAND, "/clutchperms help [page]");
@@ -273,7 +274,7 @@ class ClutchPermsPaperPluginTest {
             player.nextComponentMessage();
         }
         Component navigation = player.nextComponentMessage();
-        assertEquals("Page 1/7 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
+        assertEquals("Page 1/8 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
         assertComponentClick(navigation, ClickEvent.Action.RUN_COMMAND, "/clutchperms help 2");
         assertComponentHover(navigation);
     }

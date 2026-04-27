@@ -29,6 +29,7 @@ import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntime;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeServices;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupService;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
@@ -61,6 +62,11 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     private PaperPermissionManagerBridge permissionManagerBridge;
 
     /**
+     * Runs automatic database backups while this plugin is enabled.
+     */
+    private ScheduledBackupService scheduledBackupService;
+
+    /**
      * Boots the persisted permission service and registers the shared Brigadier command tree.
      */
     @Override
@@ -74,6 +80,8 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         logStorageLoadStart();
         try {
             runtime.reload();
+            scheduledBackupService = new ScheduledBackupService(this::getClutchPermsConfig, this::getStorageBackupService, message -> getLogger().info(message),
+                    (message, exception) -> getLogger().log(Level.SEVERE, message, exception));
             logStorageLoadSuccess();
         } catch (PermissionStorageException exception) {
             getLogger().log(Level.SEVERE, "Failed to load ClutchPerms storage from " + getDataFolder(), exception);
@@ -91,6 +99,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PaperChatDisplayListener(this::getClutchPermsConfig, this::getDisplayResolver), this);
         runtimePermissionBridge.refreshOnlinePlayers();
         subjectMetadataListener.recordOnlinePlayers(getServer().getOnlinePlayers());
+        scheduledBackupService.start();
 
         getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
             ClutchPermsCommands.ROOT_LITERALS
@@ -109,6 +118,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     public void onDisable() {
         getServer().getServicesManager().unregisterAll(this);
         closeRuntimeBridges();
+        closeScheduledBackups();
         if (runtime != null) {
             runtime.clear();
             runtime = null;
@@ -217,6 +227,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
             ClutchPermsRuntimeServices previousServices = getRuntime().reload();
             unregisterServices(previousServices);
             registerServices();
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE, "Failed to load ClutchPerms storage from " + getDataFolder(), exception);
@@ -237,6 +248,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
                 unregisterServices(previousServices);
                 registerServices();
             }
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE, "Failed to update ClutchPerms config from " + getDataFolder(), exception);
@@ -261,6 +273,15 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     }
 
     /**
+     * Returns the scheduled backup runner used by shared backup schedule commands.
+     *
+     * @return active scheduled backup runner
+     */
+    ScheduledBackupService getScheduledBackupService() {
+        return Objects.requireNonNull(scheduledBackupService, "Scheduled backup service is not available");
+    }
+
+    /**
      * Restores one database backup after closing the active SQLite pool.
      *
      * @param kind selected storage kind
@@ -273,6 +294,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
             unregisterServices(previousServices);
             registerServices();
             refreshRuntimePermissions();
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             getLogger().log(Level.SEVERE, "Failed to restore ClutchPerms database backup " + backupFileName + " from " + getDataFolder(), exception);
@@ -351,6 +373,19 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         if (permissionManagerBridge != null) {
             permissionManagerBridge.close();
             permissionManagerBridge = null;
+        }
+    }
+
+    private void restartScheduledBackups() {
+        if (scheduledBackupService != null) {
+            scheduledBackupService.restart();
+        }
+    }
+
+    private void closeScheduledBackups() {
+        if (scheduledBackupService != null) {
+            scheduledBackupService.close();
+            scheduledBackupService = null;
         }
     }
 

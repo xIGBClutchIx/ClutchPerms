@@ -26,6 +26,7 @@ import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupService;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
@@ -125,6 +126,11 @@ final class PaperClutchPermsCommand {
         @Override
         public StorageBackupService storageBackupService() {
             return plugin.getStorageBackupService();
+        }
+
+        @Override
+        public ScheduledBackupService scheduledBackupService() {
+            return plugin.getScheduledBackupService();
         }
 
         @Override

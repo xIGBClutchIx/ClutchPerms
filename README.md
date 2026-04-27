@@ -52,7 +52,7 @@ Useful grants:
 | `clutchperms.admin.user.*` | Direct user permissions, user group membership, and user display values |
 | `clutchperms.admin.group.*` | Group definitions, group permissions, group members, group parents, and group display values |
 | `clutchperms.admin.config.*` | Runtime config view, set, and reset |
-| `clutchperms.admin.backup.*` | Backup create, list, and restore |
+| `clutchperms.admin.backup.*` | Backup create, list, schedule status, run-now, and restore |
 | `clutchperms.admin.users.*` | Stored user list and search |
 | `clutchperms.admin.nodes.*` | Known permission node registry |
 | `clutchperms.admin.history` | Audit history listing |
@@ -99,6 +99,11 @@ This replacement is enabled by default. Set `paper.replaceOpCommands` to `false`
 | `/clutchperms backup create` | `clutchperms.admin.backup.create` | Creates a consistent database snapshot. |
 | `/clutchperms backup list [page]` | `clutchperms.admin.backup.list` | Lists database backups. |
 | `/clutchperms backup list page <page>` | `clutchperms.admin.backup.list` | Lists database backups on a specific page. |
+| `/clutchperms backup schedule status` | `clutchperms.admin.backup.list` | Shows automatic backup schedule state and last run/failure details. |
+| `/clutchperms backup schedule enable` | `clutchperms.admin.config.set` | Enables automatic database backups. |
+| `/clutchperms backup schedule disable` | `clutchperms.admin.config.set` | Disables automatic database backups. |
+| `/clutchperms backup schedule interval <minutes>` | `clutchperms.admin.config.set` | Sets automatic backup interval, from 5 to 10080 minutes. |
+| `/clutchperms backup schedule run-now` | `clutchperms.admin.backup.create` | Creates an immediate backup, even when automatic backups are disabled. |
 | `/clutchperms backup restore <backup-file>` | `clutchperms.admin.backup.restore` | Restores one validated database backup and reloads if valid. |
 
 ### User Commands
@@ -171,7 +176,7 @@ The built-in `default` group always exists, applies implicitly to every subject,
 Notes:
 
 - `<target>` resolves exact online name, then exact stored last-known name, then UUID.
-- Config keys are `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
+- Config keys are `backups.retentionLimit`, `backups.schedule.enabled`, `backups.schedule.intervalMinutes`, `backups.schedule.runOnStartup`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
 - Config changes apply immediately through save-and-reload. If reload fails, `config.json` is rolled back.
 - Page numbers start at 1. Invalid or out-of-range pages return styled ClutchPerms feedback and a command to try.
 - Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
@@ -194,7 +199,7 @@ ClutchPerms writes one config file and one SQLite database:
 
 | File | Purpose |
 | --- | --- |
-| `config.json` | Runtime settings for backup retention, command page sizes, and chat formatting |
+| `config.json` | Runtime settings for backup retention/scheduling, command page sizes, and chat formatting |
 | `database.db` | Direct permissions, group definitions, memberships, subject metadata, display values, manually registered known nodes, and command audit history |
 
 Default `config.json`:
@@ -203,7 +208,12 @@ Default `config.json`:
 {
   "version": 1,
   "backups": {
-    "retentionLimit": 10
+    "retentionLimit": 10,
+    "schedule": {
+      "enabled": false,
+      "intervalMinutes": 60,
+      "runOnStartup": false
+    }
   },
   "commands": {
     "helpPageSize": 7,
@@ -228,7 +238,7 @@ Effective prefix and suffix are resolved independently: direct user value first,
 
 Chat display is active by default on all supported platforms, can be toggled with `chat.enabled`, and renders as `prefix name suffix: message`. When no prefix or suffix is set, the output stays close to vanilla chat. Because ClutchPerms formats the full chat line, some loaders or clients may treat the line as modified or unsigned.
 
-Backups are manual whole-database snapshots created with `/clutchperms backup create`.
+Backups are whole-database snapshots created manually with `/clutchperms backup create` or automatically when `backups.schedule.enabled` is true. Scheduled backups are disabled by default, run every 60 minutes when enabled, can optionally run once on startup, and use the same retention pruning as manual backups.
 
 Backup restore validates the selected backup file before replacing live storage. ClutchPerms closes the active SQLite pool, replaces `database.db`, removes stale WAL/SHM sidecar files, reloads config and database storage, and rolls the restored database back if reload fails. `config.json` is not included in backup restore.
 
@@ -239,7 +249,7 @@ backups/
   database/database-YYYYMMDD-HHMMSSSSS.db
 ```
 
-By default, ClutchPerms keeps the newest 10 database backups. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally. Use `/clutchperms config set paper.replaceOpCommands off` or edit `config.json` to disable Paper's `/op` and `/deop` replacements.
+By default, ClutchPerms keeps the newest 10 database backups. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups. Use `/clutchperms backup schedule enable`, `/clutchperms backup schedule disable`, and `/clutchperms backup schedule interval <minutes>` to manage automatic backups. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally. Use `/clutchperms config set paper.replaceOpCommands off` or edit `config.json` to disable Paper's `/op` and `/deop` replacements.
 
 ## Forge And NeoForge
 
@@ -298,7 +308,7 @@ Version pins live in `gradle.properties`. Platform metadata lives in each module
 - No contexts
 - No group priorities
 - No LuckPerms bridge or migration tooling
-- No scheduled backups or multi-file restore command
+- No multi-file restore command
 - No cross-server or cross-platform synchronization
 - Command targets are exact online names, exact stored last-known names, or UUIDs only
 - Fabric enforcement only affects mods that query fabric-permissions-api

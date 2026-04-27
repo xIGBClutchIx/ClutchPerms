@@ -26,6 +26,7 @@ import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntime;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
+import me.clutchy.clutchperms.common.runtime.ScheduledBackupService;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
 import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
@@ -70,6 +71,11 @@ public final class ClutchPermsNeoForgeMod {
     private static MinecraftServer activeServer;
 
     /**
+     * Runs automatic database backups for the active server lifecycle.
+     */
+    private static ScheduledBackupService scheduledBackupService;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the NeoForge lifecycle.
      */
     public ClutchPermsNeoForgeMod() {
@@ -83,6 +89,8 @@ public final class ClutchPermsNeoForgeMod {
         } catch (PermissionStorageException exception) {
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
+        scheduledBackupService = new ScheduledBackupService(ClutchPermsNeoForgeMod::getClutchPermsConfig, ClutchPermsNeoForgeMod::getStorageBackupService, LOGGER::info,
+                LOGGER::error);
 
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::registerPermissionHandler);
@@ -100,7 +108,7 @@ public final class ClutchPermsNeoForgeMod {
                         ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage,
                         ClutchPermsNeoForgeMod::validateStorage, ClutchPermsNeoForgeMod::getStorageBackupService, ClutchPermsNeoForgeMod::getClutchPermsConfig,
                         ClutchPermsNeoForgeMod::updateConfig, ClutchPermsNeoForgeMod::getAuditLogService, ClutchPermsNeoForgeMod::restoreBackup,
-                        ClutchPermsNeoForgeMod::refreshRuntimePermissions, rootLiteral)));
+                        ClutchPermsNeoForgeMod::refreshRuntimePermissions, ClutchPermsNeoForgeMod::getScheduledBackupService, rootLiteral)));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -116,6 +124,7 @@ public final class ClutchPermsNeoForgeMod {
         activeServer = event.getServer();
         event.getServer().getPlayerList().getPlayers().forEach(this::recordSubject);
         refreshRuntimePermissions();
+        getScheduledBackupService().start();
 
         if (NeoForgeClutchPermsPermissionHandler.IDENTIFIER.equals(PermissionAPI.getActivePermissionHandler())) {
             LOGGER.info("ClutchPerms NeoForge runtime permission bridge is active.");
@@ -144,6 +153,7 @@ public final class ClutchPermsNeoForgeMod {
 
     private void onServerStopped(ServerStoppedEvent event) {
         if (runtime != null) {
+            closeScheduledBackups();
             runtime.clear();
             runtime = null;
         }
@@ -225,12 +235,22 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     /**
+     * Returns the scheduled backup runner used by shared backup schedule commands.
+     *
+     * @return active scheduled backup runner
+     */
+    public static ScheduledBackupService getScheduledBackupService() {
+        return Objects.requireNonNull(scheduledBackupService, "Scheduled backup service has not been initialized");
+    }
+
+    /**
      * Updates config through the shared runtime.
      *
      * @param updater config updater
      */
     public static void updateConfig(UnaryOperator<ClutchPermsConfig> updater) {
         getRuntime().updateConfig(updater);
+        restartScheduledBackups();
     }
 
     /**
@@ -249,6 +269,7 @@ public final class ClutchPermsNeoForgeMod {
         logStorageLoadStart();
         try {
             getRuntime().reload();
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             LOGGER.error("Failed to load ClutchPerms storage from {}", storageRoot(), exception);
@@ -283,6 +304,7 @@ public final class ClutchPermsNeoForgeMod {
         try {
             getRuntime().restoreBackup(kind, backupFileName);
             refreshRuntimePermissions();
+            restartScheduledBackups();
             logStorageLoadSuccess();
         } catch (RuntimeException exception) {
             LOGGER.error("Failed to restore ClutchPerms database backup {} from {}", backupFileName, storageRoot(), exception);
@@ -348,6 +370,19 @@ public final class ClutchPermsNeoForgeMod {
 
     private static void logStorageLoadStart() {
         LOGGER.debug("ClutchPerms database file: {}", getRuntime().storagePaths().databaseFile());
+    }
+
+    private static void restartScheduledBackups() {
+        if (activeServer != null && scheduledBackupService != null) {
+            scheduledBackupService.restart();
+        }
+    }
+
+    private static void closeScheduledBackups() {
+        if (scheduledBackupService != null) {
+            scheduledBackupService.close();
+            scheduledBackupService = null;
+        }
     }
 
     private static void logStorageLoadSuccess() {
