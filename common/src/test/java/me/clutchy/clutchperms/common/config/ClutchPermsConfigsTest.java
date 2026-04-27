@@ -54,6 +54,8 @@ class ClutchPermsConfigsTest {
         assertTrue(content.contains("\"resultPageSize\": 8"));
         assertTrue(content.contains("\"chat\""));
         assertTrue(content.contains("\"enabled\": true"));
+        assertTrue(content.contains("\"paper\""));
+        assertTrue(content.contains("\"replaceOpCommands\": true"));
     }
 
     /**
@@ -89,6 +91,9 @@ class ClutchPermsConfigsTest {
                   },
                   "chat": {
                     "enabled": false
+                  },
+                  "paper": {
+                    "replaceOpCommands": false
                   }
                 }
                 """);
@@ -99,6 +104,7 @@ class ClutchPermsConfigsTest {
         assertEquals(4, config.commands().helpPageSize());
         assertEquals(5, config.commands().resultPageSize());
         assertEquals(false, config.chat().enabled());
+        assertEquals(false, config.paper().replaceOpCommands());
     }
 
     /**
@@ -125,6 +131,7 @@ class ClutchPermsConfigsTest {
         ClutchPermsConfig config = ClutchPermsConfigs.jsonFile(configFile);
 
         assertEquals(true, config.chat().enabled());
+        assertEquals(true, config.paper().replaceOpCommands());
     }
 
     /**
@@ -284,6 +291,44 @@ class ClutchPermsConfigsTest {
                   },
                   "chat": {
                     "enabled": "true"
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  },
+                  "paper": true
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  },
+                  "paper": {}
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  },
+                  "paper": {
+                    "replaceOpCommands": "false"
                   }
                 }
                 """);

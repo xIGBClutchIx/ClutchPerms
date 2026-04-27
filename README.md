@@ -39,7 +39,7 @@ Use `/clutchperms`, `/cperms`, or `/perms`. The table uses `/clutchperms`, but e
 
 Command help and long list results are paged. In chat, command rows can be clicked to paste a command, page controls move between pages, and hover text shows concise command details.
 
-Console and remote console can run commands for bootstrap. Players need the exact effective command permission for the command they run.
+Console and remote console can run commands for bootstrap. Players need the exact effective command permission for the command they run, and player command trees/completions only expose branches backed by permissions they currently have.
 
 Useful grants:
 
@@ -64,6 +64,17 @@ Useful grants:
 | `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, config values, counts, resolver cache counts, and runtime bridge status. |
 | `/clutchperms reload` | `clutchperms.admin.reload` | Reloads config and database storage, then refreshes runtime permissions. |
 | `/clutchperms validate` | `clutchperms.admin.validate` | Parses config and database storage without applying them. |
+
+### Paper Shortcuts
+
+On Paper, ClutchPerms can register unqualified `/op` and `/deop` command roots. These commands replace the Paper command labels with ClutchPerms-backed shortcuts: they add or remove explicit membership in the protected `op` group and do not change Bukkit server-op state or `ops.json`.
+
+This replacement is enabled by default. Set `paper.replaceOpCommands` to `false` before startup to leave Paper's command labels alone.
+
+| Command | Permission | Description |
+| --- | --- | --- |
+| `/op <target>` | `clutchperms.admin.user.group.add` | Adds a user to the protected `op` group. |
+| `/deop <target>` | `clutchperms.admin.user.group.remove` | Removes a user from the protected `op` group. |
 
 ### Config
 
@@ -153,7 +164,7 @@ The built-in `default` group always exists, applies implicitly to every subject,
 Notes:
 
 - `<target>` resolves exact online name, then exact stored last-known name, then UUID.
-- Config keys are `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, and `chat.enabled`.
+- Config keys are `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
 - Config changes apply immediately through save-and-reload. If reload fails, `config.json` is rolled back.
 - Page numbers start at 1. Invalid or out-of-range pages return styled ClutchPerms feedback and a command to try.
 - Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
@@ -161,6 +172,7 @@ Notes:
 - The `default` group always exists, applies implicitly to every subject, and cannot be deleted or renamed.
 - Users cannot be explicitly added to or removed from `default`.
 - The `op` group always exists, grants `* = TRUE` to explicit members only, and rejects definition, permission, display, and parent-link edits.
+- On Paper, `/op <target>` and `/deop <target>` are ClutchPerms shortcuts for adding or removing explicit `op` group membership when `paper.replaceOpCommands` is enabled. They do not write Bukkit server-op state.
 - Display text accepts `&0-9`, `&a-f`, `&k-o`, `&r`, and `&&`; raw section signs, blank values, invalid codes, and values over 128 raw characters are rejected.
 - Permission assignments may use exact nodes, `*`, or terminal wildcards like `example.*`.
 - Mid-node wildcards such as `example.*.edit` are rejected.
@@ -189,6 +201,9 @@ Default `config.json`:
   },
   "chat": {
     "enabled": true
+  },
+  "paper": {
+    "replaceOpCommands": true
   }
 }
 ```
@@ -214,7 +229,7 @@ backups/
   database/database-YYYYMMDD-HHMMSSSSS.db
 ```
 
-By default, ClutchPerms keeps the newest 10 database backups. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally.
+By default, ClutchPerms keeps the newest 10 database backups. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally. Use `/clutchperms config set paper.replaceOpCommands off` or edit `config.json` to disable Paper's `/op` and `/deop` replacements.
 
 ## Forge And NeoForge
 

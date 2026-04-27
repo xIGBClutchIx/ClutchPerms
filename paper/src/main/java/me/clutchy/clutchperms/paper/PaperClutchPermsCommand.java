@@ -22,6 +22,7 @@ import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
+import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
@@ -45,6 +46,14 @@ final class PaperClutchPermsCommand {
 
     static com.mojang.brigadier.tree.LiteralCommandNode<CommandSourceStack> create(ClutchPermsPaperPlugin plugin, String rootLiteral) {
         return ClutchPermsCommands.create(new PaperCommandEnvironment(plugin), rootLiteral);
+    }
+
+    static com.mojang.brigadier.tree.LiteralCommandNode<CommandSourceStack> createOp(ClutchPermsPaperPlugin plugin) {
+        return ClutchPermsCommands.createOpGroupShortcut(new PaperCommandEnvironment(plugin), "op", true, PermissionNodes.ADMIN_USER_GROUP_ADD);
+    }
+
+    static com.mojang.brigadier.tree.LiteralCommandNode<CommandSourceStack> createDeop(ClutchPermsPaperPlugin plugin) {
+        return ClutchPermsCommands.createOpGroupShortcut(new PaperCommandEnvironment(plugin), "deop", false, PermissionNodes.ADMIN_USER_GROUP_REMOVE);
     }
 
     private PaperClutchPermsCommand() {

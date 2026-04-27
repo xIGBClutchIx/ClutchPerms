@@ -40,6 +40,7 @@ import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsPaperConfig;
 import me.clutchy.clutchperms.common.display.DisplayResolution;
 import me.clutchy.clutchperms.common.display.DisplaySlot;
 import me.clutchy.clutchperms.common.display.DisplayText;
@@ -139,15 +140,20 @@ public final class ClutchPermsCommands {
     private static final List<ConfigEntry> CONFIG_ENTRIES = List.of(
             integerConfig("backups.retentionLimit", "newest database backups kept", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT, ClutchPermsBackupConfig.MAX_RETENTION_LIMIT,
                     ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(),
-                    (config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value), config.commands(), config.chat())),
+                    (config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value), config.commands(), config.chat(), config.paper())),
             integerConfig("commands.helpPageSize", "command rows shown per help page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
                     ClutchPermsCommandConfig.DEFAULT_HELP_PAGE_SIZE, config -> config.commands().helpPageSize(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(value, config.commands().resultPageSize()), config.chat())),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(value, config.commands().resultPageSize()), config.chat(),
+                            config.paper())),
             integerConfig("commands.resultPageSize", "rows shown per list-result page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
                     ClutchPermsCommandConfig.DEFAULT_RESULT_PAGE_SIZE, config -> config.commands().resultPageSize(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(config.commands().helpPageSize(), value), config.chat())),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(config.commands().helpPageSize(), value), config.chat(),
+                            config.paper())),
             booleanConfig("chat.enabled", "prefix and suffix chat formatting", ClutchPermsChatConfig.DEFAULT_ENABLED, config -> config.chat().enabled(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), config.commands(), new ClutchPermsChatConfig(value))));
+                    (config, value) -> new ClutchPermsConfig(config.backups(), config.commands(), new ClutchPermsChatConfig(value), config.paper())),
+            booleanConfig("paper.replaceOpCommands", "Paper /op and /deop ClutchPerms replacements", ClutchPermsPaperConfig.DEFAULT_REPLACE_OP_COMMANDS,
+                    config -> config.paper().replaceOpCommands(),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), config.commands(), config.chat(), new ClutchPermsPaperConfig(value))));
 
     private static final List<String> CONFIG_KEYS = CONFIG_ENTRIES.stream().map(ConfigEntry::key).toList();
 
@@ -221,6 +227,29 @@ public final class ClutchPermsCommands {
     }
 
     /**
+     * Creates a direct shortcut command that mutates explicit membership in the protected {@code op} group.
+     *
+     * @param environment platform command environment
+     * @param rootLiteral root command literal
+     * @param addMembership {@code true} to add the target to {@code op}; {@code false} to remove the target
+     * @param requiredPermission permission required for player sources
+     * @param <S> platform command source type
+     * @return built shortcut command node
+     */
+    public static <S> LiteralCommandNode<S> createOpGroupShortcut(ClutchPermsCommandEnvironment<S> environment, String rootLiteral, boolean addMembership,
+            String requiredPermission) {
+        Objects.requireNonNull(environment, "environment");
+        Objects.requireNonNull(requiredPermission, "requiredPermission");
+        String literal = normalizeRootLiteral(rootLiteral);
+        return LiteralArgumentBuilder.<S>literal(literal).requires(source -> canUse(environment, source, requiredPermission))
+                .executes(context -> executeAuthorized(environment, context, requiredPermission, source -> sendOpShortcutUsage(environment, context)))
+                .then(RequiredArgumentBuilder.<S, String>argument(TARGET_ARGUMENT, StringArgumentType.word())
+                        .suggests((context, builder) -> UserSubcommand.suggestUserTargets(environment, context.getSource(), builder))
+                        .executes(context -> executeAuthorized(environment, context, requiredPermission, source -> mutateOpGroupMembership(environment, context, addMembership))))
+                .build();
+    }
+
+    /**
      * Creates the root ClutchPerms command builder for platform dispatchers that register builders directly.
      *
      * @param environment platform command environment
@@ -242,7 +271,18 @@ public final class ClutchPermsCommands {
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, String rootLiteral) {
         Objects.requireNonNull(environment, "environment");
         String literal = normalizeRootLiteral(rootLiteral);
-        AuthorizedCommand<S> authorized = (context, requiredPermission, command) -> executeAuthorized(environment, context, requiredPermission, source -> command.run(context));
+        AuthorizedCommand<S> authorized = new AuthorizedCommand<>() {
+
+            @Override
+            public int run(CommandContext<S> context, String requiredPermission, Command<S> command) throws CommandSyntaxException {
+                return executeAuthorized(environment, context, requiredPermission, source -> command.run(context));
+            }
+
+            @Override
+            public boolean canUse(S source, String requiredPermission) {
+                return ClutchPermsCommands.canUse(environment, source, requiredPermission);
+            }
+        };
 
         return LiteralArgumentBuilder.<S>literal(literal)
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context)))
@@ -265,24 +305,24 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("status")
+        return LiteralArgumentBuilder.<S>literal("status").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_STATUS))
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_STATUS, source -> sendStatus(environment, context)));
     }
 
     private static <S> LiteralArgumentBuilder<S> helpCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("help")
+        return LiteralArgumentBuilder.<S>literal("help").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_HELP))
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context)))
                 .then(RequiredArgumentBuilder.<S, String>argument(PAGE_ARGUMENT, StringArgumentType.word())
                         .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context))));
     }
 
     private static <S> LiteralArgumentBuilder<S> reloadCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("reload")
+        return LiteralArgumentBuilder.<S>literal("reload").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_RELOAD))
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_RELOAD, source -> reloadStorage(environment, context)));
     }
 
     private static <S> LiteralArgumentBuilder<S> validateCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("validate")
+        return LiteralArgumentBuilder.<S>literal("validate").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_VALIDATE))
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_VALIDATE, source -> validateStorage(environment, context)));
     }
 
@@ -1066,6 +1106,10 @@ public final class ClutchPermsCommands {
         return sendUsage(environment, context, "Missing nodes command.", "List, search, add, or remove known permission nodes.", nodesUsages());
     }
 
+    private static <S> int sendOpShortcutUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing user target.", "Provide an online name, stored last-known name, or UUID.", List.of("<target>"));
+    }
+
     private static <S> int sendNodesSearchUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         return sendUsage(environment, context, "Missing node search query.", "Provide part of a known node or description.", List.of("nodes search <query>"));
     }
@@ -1558,6 +1602,27 @@ public final class ClutchPermsCommands {
         }
 
         environment.sendMessage(context.getSource(), CommandLang.userGroupRemoved(formatSubject(subject), normalizeGroupName(groupName)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int mutateOpGroupMembership(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, boolean addMembership) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        try {
+            if (addMembership) {
+                environment.groupService().addSubjectGroup(subject.id(), GroupService.OP_GROUP);
+            } else {
+                environment.groupService().removeSubjectGroup(subject.id(), GroupService.OP_GROUP);
+            }
+        } catch (RuntimeException exception) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
+        }
+
+        environment.refreshRuntimePermissions();
+        if (addMembership) {
+            environment.sendMessage(context.getSource(), CommandLang.userGroupAdded(formatSubject(subject), GroupService.OP_GROUP));
+        } else {
+            environment.sendMessage(context.getSource(), CommandLang.userGroupRemoved(formatSubject(subject), GroupService.OP_GROUP));
+        }
         return Command.SINGLE_SUCCESS;
     }
 

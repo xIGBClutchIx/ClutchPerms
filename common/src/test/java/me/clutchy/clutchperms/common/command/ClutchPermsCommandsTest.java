@@ -22,11 +22,13 @@ import org.junit.jupiter.api.io.TempDir;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestion;
+import com.mojang.brigadier.tree.CommandNode;
 
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
+import me.clutchy.clutchperms.common.config.ClutchPermsPaperConfig;
 import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.group.GroupChangeListener;
 import me.clutchy.clutchperms.common.group.GroupService;
@@ -52,6 +54,7 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -335,17 +338,21 @@ class ClutchPermsCommandsTest {
      */
     @Test
     void configCommandsListAndGetValues() throws CommandSyntaxException {
-        environment.setConfig(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false)));
+        environment.setConfig(
+                new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false), new ClutchPermsPaperConfig(false)));
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms config", console);
         dispatcher.execute("clutchperms config get commands.helpPageSize", console);
         dispatcher.execute("clutchperms config get chat.enabled", console);
+        dispatcher.execute("clutchperms config get paper.replaceOpCommands", console);
 
         assertEquals(List.of("ClutchPerms config:", "backups.retentionLimit = 3 (newest database backups kept; range 1-1000)",
                 "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)", "commands.resultPageSize = 5 (rows shown per list-result page; range 1-50)",
-                "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)", "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)",
-                "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)"), console.messages());
+                "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)",
+                "paper.replaceOpCommands = false (Paper /op and /deop ClutchPerms replacements; values true/false or on/off)",
+                "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)", "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)",
+                "paper.replaceOpCommands = false (Paper /op and /deop ClutchPerms replacements; values true/false or on/off)"), console.messages());
     }
 
     /**
@@ -361,14 +368,17 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms config set commands.helpPageSize 3", console);
         dispatcher.execute("clutchperms config set commands.resultPageSize 2", console);
         dispatcher.execute("clutchperms config set chat.enabled off", console);
+        dispatcher.execute("clutchperms config set paper.replaceOpCommands disabled", console);
 
-        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(3, 2), new ClutchPermsChatConfig(false)), environment.config());
-        assertEquals(4, environment.configUpdates());
-        assertEquals(4, environment.runtimeRefreshes());
+        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(3, 2), new ClutchPermsChatConfig(false), new ClutchPermsPaperConfig(false)),
+                environment.config());
+        assertEquals(5, environment.configUpdates());
+        assertEquals(5, environment.runtimeRefreshes());
         assertTrue(console.messages().contains("Updated config backups.retentionLimit: 10 -> 3. Runtime reloaded."));
         assertTrue(console.messages().contains("Updated config commands.helpPageSize: 7 -> 3. Runtime reloaded."));
         assertTrue(console.messages().contains("Updated config commands.resultPageSize: 8 -> 2. Runtime reloaded."));
         assertTrue(console.messages().contains("Updated config chat.enabled: true -> false. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config paper.replaceOpCommands: true -> false. Runtime reloaded."));
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
@@ -412,12 +422,14 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms config set backups.retentionLimit 10", console);
         dispatcher.execute("clutchperms config set chat.enabled on", console);
+        dispatcher.execute("clutchperms config set paper.replaceOpCommands true", console);
         dispatcher.execute("clutchperms config reset all", console);
 
         assertEquals(ClutchPermsConfig.defaults(), environment.config());
         assertEquals(0, environment.configUpdates());
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of("Config backups.retentionLimit is already 10.", "Config chat.enabled is already true.", "Config already matches defaults."), console.messages());
+        assertEquals(List.of("Config backups.retentionLimit is already 10.", "Config chat.enabled is already true.", "Config paper.replaceOpCommands is already true.",
+                "Config already matches defaults."), console.messages());
     }
 
     /**
@@ -431,6 +443,7 @@ class ClutchPermsCommandsTest {
         assertCommandFails("clutchperms config set commands.helpPageSize nope", console, "Invalid config value for commands.helpPageSize: nope");
         assertCommandFails("clutchperms config set commands.helpPageSize 51", console, "commands.helpPageSize must be an integer between 1 and 50.");
         assertCommandFails("clutchperms config set chat.enabled maybe", console, "chat.enabled must be true/false or on/off.");
+        assertCommandFails("clutchperms config set paper.replaceOpCommands maybe", console, "paper.replaceOpCommands must be true/false or on/off.");
 
         environment.failConfigUpdate(new PermissionStorageException("disk blocked"));
         assertCommandFails("clutchperms config set backups.retentionLimit 3", console, "Config operation failed: disk blocked");
@@ -449,14 +462,14 @@ class ClutchPermsCommandsTest {
     void configCommandsUseGranularPermissions() throws CommandSyntaxException {
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertCommandFails("clutchperms config list", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms config list", player);
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_CONFIG_VIEW, PermissionValue.TRUE);
         assertEquals(1, dispatcher.execute("clutchperms config list", player));
-        assertCommandFails("clutchperms config set backups.retentionLimit 3", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms config set backups.retentionLimit 3", player);
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_CONFIG_SET, PermissionValue.TRUE);
         assertEquals(1, dispatcher.execute("clutchperms config set backups.retentionLimit 3", player));
-        assertCommandFails("clutchperms config reset backups.retentionLimit", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms config reset backups.retentionLimit", player);
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_CONFIG_RESET, PermissionValue.TRUE);
         assertEquals(1, dispatcher.execute("clutchperms config reset backups.retentionLimit", player));
@@ -611,7 +624,7 @@ class ClutchPermsCommandsTest {
     void playerWithoutAdminPermissionCannotUseBackupCommands() {
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertCommandFails("clutchperms backup list", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms backup list", player);
     }
 
     /**
@@ -930,7 +943,7 @@ class ClutchPermsCommandsTest {
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN, PermissionValue.TRUE);
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertCommandFails("clutchperms status", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms status", player);
     }
 
     /**
@@ -945,7 +958,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms status", player);
 
-        assertCommandFails("clutchperms reload", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms reload", player);
     }
 
     /**
@@ -1014,7 +1027,7 @@ class ClutchPermsCommandsTest {
 
         assertFalse(groupService.hasGroup("staff"));
         assertTrue(groupService.hasGroup("moderator"));
-        assertCommandFails("clutchperms group moderator delete", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms group moderator delete", player);
     }
 
     /**
@@ -1027,18 +1040,18 @@ class ClutchPermsCommandsTest {
         groupService.createGroup("staff");
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertCommandFails("clutchperms user Target info", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms user Target info", player);
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_USER_INFO, PermissionValue.TRUE);
         dispatcher.execute("clutchperms user Target info", player);
 
-        assertCommandFails("clutchperms user Target list", player, "You do not have permission to use ClutchPerms commands.");
-        assertCommandFails("clutchperms group staff info", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms user Target list", player);
+        assertCommandUnavailable("clutchperms group staff info", player);
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_INFO, PermissionValue.TRUE);
         dispatcher.execute("clutchperms group staff info", player);
 
-        assertCommandFails("clutchperms group staff list", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms group staff list", player);
     }
 
     /**
@@ -1053,20 +1066,20 @@ class ClutchPermsCommandsTest {
         groupService.setGroupPermission("staff", "group.node", PermissionValue.TRUE);
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertCommandFails("clutchperms user Target clear-all", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms user Target clear-all", player);
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_USER_CLEAR_ALL, PermissionValue.TRUE);
         dispatcher.execute("clutchperms user Target clear-all", player);
 
         assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
-        assertCommandFails("clutchperms user Target clear example.node", player, "You do not have permission to use ClutchPerms commands.");
-        assertCommandFails("clutchperms group staff clear-all", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms user Target clear example.node", player);
+        assertCommandUnavailable("clutchperms group staff clear-all", player);
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_CLEAR_ALL, PermissionValue.TRUE);
         dispatcher.execute("clutchperms group staff clear-all", player);
 
         assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
-        assertCommandFails("clutchperms group staff clear group.node", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms group staff clear group.node", player);
     }
 
     /**
@@ -1080,15 +1093,15 @@ class ClutchPermsCommandsTest {
         groupService.addSubjectGroup(TARGET_ID, "staff");
         TestSource player = TestSource.player(ADMIN_ID);
 
-        assertCommandFails("clutchperms group staff members", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms group staff members", player);
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_MEMBERS, PermissionValue.TRUE);
         TestSource permittedPlayer = TestSource.player(ADMIN_ID);
         dispatcher.execute("clutchperms group staff members", permittedPlayer);
 
         assertEquals(List.of("Members of group staff (page 1/1):", "  00000000-0000-0000-0000-000000000002 (00000000-0000-0000-0000-000000000002)"), permittedPlayer.messages());
-        assertCommandFails("clutchperms group staff list", permittedPlayer, "You do not have permission to use ClutchPerms commands.");
-        assertCommandFails("clutchperms group staff parents", permittedPlayer, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms group staff list", permittedPlayer);
+        assertCommandUnavailable("clutchperms group staff parents", permittedPlayer);
     }
 
     /**
@@ -1107,7 +1120,7 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms user Target clear-all", player);
 
         assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
-        assertCommandFails("clutchperms group list", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms group list", player);
 
         groupService.createGroup("staff");
         groupService.setGroupPermission("staff", "group.bulk", PermissionValue.TRUE);
@@ -1131,7 +1144,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms user Target get example.node", player);
 
-        assertCommandFails("clutchperms user Target set example.node false", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable("clutchperms user Target set example.node false", player);
     }
 
     /**
@@ -1665,6 +1678,51 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms player command completions hide root children that the player cannot run.
+     */
+    @Test
+    void playerCommandTreeHidesUnauthorizedRootChildren() {
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertEquals(List.of(), visibleChildNames(clutchPermsNode(), player));
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_STATUS, PermissionValue.TRUE);
+
+        assertEquals(List.of("status"), visibleChildNames(clutchPermsNode(), player));
+    }
+
+    /**
+     * Confirms player command trees expose only authorized nested user commands.
+     */
+    @Test
+    void playerCommandTreeShowsOnlyAuthorizedNestedUserCommands() {
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_USER_INFO, PermissionValue.TRUE);
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertEquals(List.of("user"), visibleChildNames(clutchPermsNode(), player));
+        assertTrue(userTargetNode().canUse(player));
+        assertEquals(List.of("info"), visibleChildNames(userTargetNode(), player));
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_USER_SET, PermissionValue.TRUE);
+
+        assertEquals(List.of("info", "set"), visibleChildNames(userTargetNode(), player));
+    }
+
+    /**
+     * Confirms player command trees expose only authorized nested group commands.
+     */
+    @Test
+    void playerCommandTreeShowsOnlyAuthorizedNestedGroupCommands() {
+        groupService.createGroup("staff");
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_RENAME, PermissionValue.TRUE);
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        assertEquals(List.of("group"), visibleChildNames(clutchPermsNode(), player));
+        assertTrue(groupTargetNode().canUse(player));
+        assertEquals(List.of("rename"), visibleChildNames(groupTargetNode(), player));
+    }
+
+    /**
      * Confirms unknown group targets show close group matches.
      */
     @Test
@@ -2149,7 +2207,27 @@ class ClutchPermsCommandsTest {
     }
 
     private List<String> suggestionTexts(String command) {
-        return dispatcher.getCompletionSuggestions(dispatcher.parse(command, TestSource.console())).join().getList().stream().map(Suggestion::getText).toList();
+        return suggestionTexts(command, TestSource.console());
+    }
+
+    private List<String> suggestionTexts(String command, TestSource source) {
+        return dispatcher.getCompletionSuggestions(dispatcher.parse(command, source)).join().getList().stream().map(Suggestion::getText).toList();
+    }
+
+    private CommandNode<TestSource> clutchPermsNode() {
+        return dispatcher.getRoot().getChild(ClutchPermsCommands.ROOT_LITERAL);
+    }
+
+    private CommandNode<TestSource> userTargetNode() {
+        return clutchPermsNode().getChild("user").getChild(CommandArguments.TARGET);
+    }
+
+    private CommandNode<TestSource> groupTargetNode() {
+        return clutchPermsNode().getChild("group").getChild(CommandArguments.GROUP);
+    }
+
+    private static List<String> visibleChildNames(CommandNode<TestSource> node, TestSource source) {
+        return node.getChildren().stream().filter(child -> child.canUse(source)).map(CommandNode::getName).sorted().toList();
     }
 
     private void assertCommandFails(String command, TestSource source, String expectedMessage) {
@@ -2160,6 +2238,13 @@ class ClutchPermsCommandsTest {
             throw new AssertionError("Expected styled command failure for " + command, exception);
         }
         assertMessageContains(source, firstNewMessage, expectedMessage);
+    }
+
+    private void assertCommandUnavailable(String command, TestSource source) {
+        int firstNewMessage = source.messages().size();
+
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute(command, source));
+        assertEquals(firstNewMessage, source.messages().size());
     }
 
     private static void assertMessageContains(TestSource source, String expectedMessage) {

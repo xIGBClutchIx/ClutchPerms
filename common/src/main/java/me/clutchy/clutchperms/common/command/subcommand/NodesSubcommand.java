@@ -47,18 +47,22 @@ public final class NodesSubcommand {
     }
 
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("nodes").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::usage))
-                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::list))
+        return authorized.branch("nodes", PermissionNodes.ADMIN_NODES_LIST, PermissionNodes.ADMIN_NODES_SEARCH, PermissionNodes.ADMIN_NODES_ADD, PermissionNodes.ADMIN_NODES_REMOVE)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::usage))
+                .then(authorized.literal("list", PermissionNodes.ADMIN_NODES_LIST).executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::list))
                         .then(NodesSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::list))))
-                .then(LiteralArgumentBuilder.<S>literal("search").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_SEARCH, handlers::searchUsage))
+                .then(authorized.literal("search", PermissionNodes.ADMIN_NODES_SEARCH)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_SEARCH, handlers::searchUsage))
                         .then(RequiredArgumentBuilder.<S, String>argument(CommandArguments.QUERY, StringArgumentType.word())
                                 .executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_SEARCH, handlers::search))
                                 .then(NodesSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_SEARCH, handlers::search)))))
-                .then(LiteralArgumentBuilder.<S>literal("add").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_ADD, handlers::addUsage))
+                .then(authorized.literal("add", PermissionNodes.ADMIN_NODES_ADD).executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_ADD, handlers::addUsage))
                         .then(nodeArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_ADD, handlers::add))))
-                .then(LiteralArgumentBuilder.<S>literal("remove").executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_REMOVE, handlers::removeUsage))
+                .then(authorized.literal("remove", PermissionNodes.ADMIN_NODES_REMOVE)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_REMOVE, handlers::removeUsage))
                         .then(nodeArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_REMOVE, handlers::remove))))
-                .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::unknownUsage)));
+                .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_NODES_LIST)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_NODES_LIST, handlers::unknownUsage)));
     }
 
     private static <S> RequiredArgumentBuilder<S, String> nodeArgument(ClutchPermsCommandEnvironment<S> environment) {

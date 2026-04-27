@@ -111,81 +111,95 @@ public final class UserSubcommand {
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers,
             SuggestionProvider<S> permissionNodes, SuggestionProvider<S> permissionAssignment) {
         RequiredArgumentBuilder<S, String> target = RequiredArgumentBuilder.<S, String>argument(CommandArguments.TARGET, StringArgumentType.word())
-                .suggests((context, builder) -> suggestUserTargets(environment, context.getSource(), builder));
+                .requires(source -> authorized.canUseAny(source, userPermissions())).suggests((context, builder) -> suggestUserTargets(environment, context.getSource(), builder));
 
-        return LiteralArgumentBuilder.<S>literal("user").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::rootUsage))
+        return authorized.branch("user", userPermissions()).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::rootUsage))
                 .then(target.then(infoCommand(authorized, handlers)).then(listCommand(authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
                         .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
                         .then(clearAllCommand(authorized, handlers)).then(groupsCommand(authorized, handlers)).then(displayCommand("prefix", authorized, handlers, true))
                         .then(displayCommand("suffix", authorized, handlers, false)).then(groupCommand(environment, authorized, handlers))
                         .then(checkCommand(authorized, handlers, permissionNodes)).then(explainCommand(authorized, handlers, permissionNodes))
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::targetUsage))
-                        .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::unknownTargetUsage))));
+                        .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_USER_LIST)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::unknownTargetUsage))));
     }
 
     private static <S> LiteralArgumentBuilder<S> infoCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("info").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_INFO, handlers::info));
+        return authorized.literal("info", PermissionNodes.ADMIN_USER_INFO).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_INFO, handlers::info));
     }
 
     private static <S> LiteralArgumentBuilder<S> listCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::list))
+        return authorized.literal("list", PermissionNodes.ADMIN_USER_LIST).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::list))
                 .then(UserSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::list)));
     }
 
     private static <S> LiteralArgumentBuilder<S> getCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
-        return LiteralArgumentBuilder.<S>literal("get").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GET, handlers::getUsage))
+        return authorized.literal("get", PermissionNodes.ADMIN_USER_GET).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GET, handlers::getUsage))
                 .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GET, handlers::get)));
     }
 
     private static <S> LiteralArgumentBuilder<S> setCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionAssignment) {
-        return LiteralArgumentBuilder.<S>literal("set").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_SET, handlers::setUsage))
+        return authorized.literal("set", PermissionNodes.ADMIN_USER_SET).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_SET, handlers::setUsage))
                 .then(assignmentArgument(permissionAssignment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_SET, handlers::set)));
     }
 
     private static <S> LiteralArgumentBuilder<S> clearCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
-        return LiteralArgumentBuilder.<S>literal("clear").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CLEAR, handlers::clearUsage))
+        return authorized.literal("clear", PermissionNodes.ADMIN_USER_CLEAR).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CLEAR, handlers::clearUsage))
                 .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CLEAR, handlers::clear)));
     }
 
     private static <S> LiteralArgumentBuilder<S> clearAllCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("clear-all").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CLEAR_ALL, handlers::clearAll));
+        return authorized.literal("clear-all", PermissionNodes.ADMIN_USER_CLEAR_ALL)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CLEAR_ALL, handlers::clearAll));
     }
 
     private static <S> LiteralArgumentBuilder<S> groupsCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("groups").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groups))
+        return authorized.literal("groups", PermissionNodes.ADMIN_USER_GROUPS).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groups))
                 .then(UserSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groups)));
     }
 
     private static <S> LiteralArgumentBuilder<S> displayCommand(String literal, AuthorizedCommand<S> authorized, Handlers<S> handlers, boolean prefix) {
-        return LiteralArgumentBuilder.<S>literal(literal)
+        return authorized.branch(literal, PermissionNodes.ADMIN_USER_DISPLAY_VIEW, PermissionNodes.ADMIN_USER_DISPLAY_SET, PermissionNodes.ADMIN_USER_DISPLAY_CLEAR)
                 .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_VIEW, prefix ? handlers::prefixUsage : handlers::suffixUsage))
-                .then(LiteralArgumentBuilder.<S>literal("get")
+                .then(authorized.literal("get", PermissionNodes.ADMIN_USER_DISPLAY_VIEW)
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_VIEW, prefix ? handlers::prefixGet : handlers::suffixGet)))
-                .then(LiteralArgumentBuilder.<S>literal("set")
+                .then(authorized.literal("set", PermissionNodes.ADMIN_USER_DISPLAY_SET)
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_SET, prefix ? handlers::prefixSetUsage : handlers::suffixSetUsage))
                         .then(UserSubcommand.<S>displayValueArgument()
                                 .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_SET, prefix ? handlers::prefixSet : handlers::suffixSet))))
-                .then(LiteralArgumentBuilder.<S>literal("clear")
+                .then(authorized.literal("clear", PermissionNodes.ADMIN_USER_DISPLAY_CLEAR)
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_CLEAR, prefix ? handlers::prefixClear : handlers::suffixClear)));
     }
 
     private static <S> LiteralArgumentBuilder<S> groupCommand(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("group").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groupUsage))
-                .then(LiteralArgumentBuilder.<S>literal("add").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_ADD, handlers::groupAddUsage))
+        return authorized.branch("group", PermissionNodes.ADMIN_USER_GROUPS, PermissionNodes.ADMIN_USER_GROUP_ADD, PermissionNodes.ADMIN_USER_GROUP_REMOVE)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groupUsage))
+                .then(authorized.literal("add", PermissionNodes.ADMIN_USER_GROUP_ADD)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_ADD, handlers::groupAddUsage))
                         .then(groupAddArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_ADD, handlers::groupAdd))))
-                .then(LiteralArgumentBuilder.<S>literal("remove").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, handlers::groupRemoveUsage))
+                .then(authorized.literal("remove", PermissionNodes.ADMIN_USER_GROUP_REMOVE)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, handlers::groupRemoveUsage))
                         .then(groupRemoveArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUP_REMOVE, handlers::groupRemove))))
-                .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::unknownGroupUsage)));
+                .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_USER_GROUPS)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::unknownGroupUsage)));
     }
 
     private static <S> LiteralArgumentBuilder<S> checkCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
-        return LiteralArgumentBuilder.<S>literal("check").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CHECK, handlers::checkUsage))
+        return authorized.literal("check", PermissionNodes.ADMIN_USER_CHECK).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CHECK, handlers::checkUsage))
                 .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CHECK, handlers::check)));
     }
 
     private static <S> LiteralArgumentBuilder<S> explainCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
-        return LiteralArgumentBuilder.<S>literal("explain").executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_EXPLAIN, handlers::explainUsage))
+        return authorized.literal("explain", PermissionNodes.ADMIN_USER_EXPLAIN)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_EXPLAIN, handlers::explainUsage))
                 .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_EXPLAIN, handlers::explain)));
+    }
+
+    private static String[] userPermissions() {
+        return new String[]{PermissionNodes.ADMIN_USER_INFO, PermissionNodes.ADMIN_USER_LIST, PermissionNodes.ADMIN_USER_GET, PermissionNodes.ADMIN_USER_SET,
+                PermissionNodes.ADMIN_USER_CLEAR, PermissionNodes.ADMIN_USER_CLEAR_ALL, PermissionNodes.ADMIN_USER_CHECK, PermissionNodes.ADMIN_USER_EXPLAIN,
+                PermissionNodes.ADMIN_USER_GROUPS, PermissionNodes.ADMIN_USER_GROUP_ADD, PermissionNodes.ADMIN_USER_GROUP_REMOVE, PermissionNodes.ADMIN_USER_DISPLAY_VIEW,
+                PermissionNodes.ADMIN_USER_DISPLAY_SET, PermissionNodes.ADMIN_USER_DISPLAY_CLEAR};
     }
 
     private static <S> RequiredArgumentBuilder<S, String> nodeArgument(SuggestionProvider<S> permissionNodes) {
@@ -214,7 +228,7 @@ public final class UserSubcommand {
                 .suggests((context, builder) -> suggestRemoveGroups(environment, context, builder));
     }
 
-    private static <S> CompletableFuture<Suggestions> suggestUserTargets(ClutchPermsCommandEnvironment<S> environment, S source, SuggestionsBuilder builder) {
+    public static <S> CompletableFuture<Suggestions> suggestUserTargets(ClutchPermsCommandEnvironment<S> environment, S source, SuggestionsBuilder builder) {
         String remaining = builder.getRemainingLowerCase();
         StringRange range = StringRange.between(builder.getStart(), builder.getInput().length());
         List<Suggestion> suggestions = Stream

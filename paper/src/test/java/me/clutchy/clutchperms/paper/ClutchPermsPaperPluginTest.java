@@ -56,6 +56,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.kyori.adventure.text.Component;
@@ -300,7 +301,7 @@ class ClutchPermsPaperPluginTest {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
 
-        assertCommandFails(dispatcher, "clutchperms status", player, "You do not have permission to use ClutchPerms commands.");
+        assertCommandUnavailable(dispatcher, "clutchperms status", player);
     }
 
     /**
@@ -425,6 +426,79 @@ class ClutchPermsPaperPluginTest {
 
         assertTrue(target.isPermissionSet("example.command"));
         assertTrue(target.hasPermission("example.command"));
+    }
+
+    /**
+     * Confirms Paper /op and /deop mutate only explicit membership in the protected ClutchPerms op group.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void paperOpAndDeopCommandsMutateClutchPermsOpGroupOnly() throws Exception {
+        PlayerMock target = server.addPlayer("Target");
+        CommandDispatcher<CommandSourceStack> dispatcher = dispatcherWithAllCommandRoots();
+
+        assertFalse(target.isOp());
+        assertFalse(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
+        assertEquals(PermissionValue.UNSET, plugin.getPermissionResolver().resolve(target.getUniqueId(), "*").value());
+
+        assertEquals(1, dispatcher.execute("op Target", new TestCommandSourceStack(server.getConsoleSender())));
+
+        assertFalse(target.isOp());
+        assertTrue(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
+        assertEquals(PermissionValue.TRUE, plugin.getPermissionResolver().resolve(target.getUniqueId(), "*").value());
+        assertTrue(target.isPermissionSet("*"));
+        assertTrue(target.hasPermission("*"));
+
+        assertEquals(1, dispatcher.execute("deop Target", new TestCommandSourceStack(server.getConsoleSender())));
+
+        assertFalse(target.isOp());
+        assertFalse(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
+        assertEquals(PermissionValue.UNSET, plugin.getPermissionResolver().resolve(target.getUniqueId(), "*").value());
+        assertFalse(target.isPermissionSet("*"));
+    }
+
+    /**
+     * Confirms Paper /op and /deop use ClutchPerms admin permissions for player sources.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void paperOpAndDeopCommandsRequireClutchPermsPermissionsForPlayers() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        CommandDispatcher<CommandSourceStack> dispatcher = dispatcherWithAllCommandRoots();
+
+        assertCommandUnavailable(dispatcher, "op Target", admin);
+        assertCommandUnavailable(dispatcher, "deop Target", admin);
+
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_USER_GROUP_ADD, PermissionValue.TRUE);
+        assertEquals(1, dispatcher.execute("op Target", new TestCommandSourceStack(admin)));
+        assertTrue(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
+        assertCommandUnavailable(dispatcher, "deop Target", admin);
+
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_USER_GROUP_REMOVE, PermissionValue.TRUE);
+        assertEquals(1, dispatcher.execute("deop Target", new TestCommandSourceStack(admin)));
+        assertFalse(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
+    }
+
+    /**
+     * Confirms Paper /op target resolution reuses ClutchPerms unknown and ambiguous target feedback.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void paperOpCommandUsesClutchPermsTargetFeedback() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock secondAdmin = server.addPlayer("SecondAdmin");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_USER_GROUP_ADD, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(secondAdmin.getUniqueId(), PermissionNodes.ADMIN_USER_GROUP_ADD, PermissionValue.TRUE);
+        plugin.getSubjectMetadataService().recordSubject(UUID.fromString("00000000-0000-0000-0000-000000000101"), "Ambiguous", Instant.parse("2026-04-25T12:00:00Z"));
+        plugin.getSubjectMetadataService().recordSubject(UUID.fromString("00000000-0000-0000-0000-000000000102"), "Ambiguous", Instant.parse("2026-04-25T12:01:00Z"));
+        CommandDispatcher<CommandSourceStack> dispatcher = dispatcherWithAllCommandRoots();
+
+        assertCommandFails(dispatcher, "op Missing", admin, "Unknown user target: Missing");
+        assertCommandFails(dispatcher, "op Ambiguous", secondAdmin, "Ambiguous known user: Ambiguous");
     }
 
     /**
@@ -754,6 +828,24 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms the Paper op command replacement flag is exposed through shared config commands.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void paperOpCommandReplacementCanBeDisabledInConfig() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_CONFIG_SET, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
+
+        assertEquals(1, dispatcher.execute("clutchperms config set paper.replaceOpCommands false", new TestCommandSourceStack(admin)));
+
+        assertNextMessage(admin, "Updated config paper.replaceOpCommands: true -> false. Runtime reloaded.");
+        assertEquals(false, plugin.getClutchPermsConfig().paper().replaceOpCommands());
+    }
+
+    /**
      * Confirms validate checks manual file edits without replacing active Paper runtime state.
      *
      * @throws Exception when Brigadier command execution or storage validation fails unexpectedly
@@ -1010,6 +1102,8 @@ class ClutchPermsPaperPluginTest {
     private CommandDispatcher<CommandSourceStack> dispatcherWithAllCommandRoots() {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin, rootLiteral)));
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.createOp(plugin));
+        dispatcher.getRoot().addChild(PaperClutchPermsCommand.createDeop(plugin));
         return dispatcher;
     }
 
@@ -1020,6 +1114,10 @@ class ClutchPermsPaperPluginTest {
             throw new AssertionError("Expected styled command failure for " + command, exception);
         }
         assertNextMessageContains(player, expectedMessage);
+    }
+
+    private static void assertCommandUnavailable(CommandDispatcher<CommandSourceStack> dispatcher, String command, PlayerMock player) {
+        assertThrows(CommandSyntaxException.class, () -> dispatcher.execute(command, new TestCommandSourceStack(player)));
     }
 
     private static void assertNextMessage(PlayerMock player, String expectedMessage) {

@@ -8,8 +8,9 @@ import java.util.Objects;
  * @param backups backup-related configuration
  * @param commands command-output configuration
  * @param chat chat-display configuration
+ * @param paper Paper-specific configuration
  */
-public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsCommandConfig commands, ClutchPermsChatConfig chat) {
+public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsCommandConfig commands, ClutchPermsChatConfig chat, ClutchPermsPaperConfig paper) {
 
     /**
      * Current config schema version.
@@ -23,6 +24,18 @@ public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsComm
         backups = Objects.requireNonNull(backups, "backups");
         commands = Objects.requireNonNull(commands, "commands");
         chat = Objects.requireNonNull(chat, "chat");
+        paper = Objects.requireNonNull(paper, "paper");
+    }
+
+    /**
+     * Creates a runtime config with default Paper settings.
+     *
+     * @param backups backup-related configuration
+     * @param commands command-output configuration
+     * @param chat chat-display configuration
+     */
+    public ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsCommandConfig commands, ClutchPermsChatConfig chat) {
+        this(backups, commands, chat, ClutchPermsPaperConfig.defaults());
     }
 
     /**
@@ -41,7 +54,7 @@ public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsComm
      * @return default runtime configuration
      */
     public static ClutchPermsConfig defaults() {
-        return new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), ClutchPermsCommandConfig.defaults(), ClutchPermsChatConfig.defaults());
+        return new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), ClutchPermsCommandConfig.defaults(), ClutchPermsChatConfig.defaults(), ClutchPermsPaperConfig.defaults());
     }
 
 }

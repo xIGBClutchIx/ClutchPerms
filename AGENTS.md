@@ -118,7 +118,7 @@ Storage expectations:
 - If a mutation transaction fails, keep the previous in-memory state, resolver cache notifications, runtime bridge notifications, and live database unchanged.
 - Create parent directories as needed.
 - Keep backup retention controlled by `config.json` `backups.retentionLimit`, defaulting to 10 newest database backups.
-- In-game config management covers `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, and `chat.enabled`.
+- In-game config management covers `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
 - Backup layout is `backups/database/database-YYYYMMDD-HHMMSSSSS.db`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
 - Fail startup, validate, or reload on malformed config, unsupported schema versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, invalid protected `op` definitions, unknown parent groups, and parent cycles.
@@ -141,6 +141,7 @@ Storage expectations:
 - Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary unregistered wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without `Permissible` injection or another deeper Paper-specific bridge.
 - Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
 - Paper formats chat through `AsyncChatEvent` renderers as `prefix name suffix: message` using native Adventure components when `chat.enabled` is true.
+- Paper replaces unqualified `/op` and `/deop` command labels with ClutchPerms shortcuts that add or remove explicit membership in the protected `op` group when `paper.replaceOpCommands` is enabled. They must not mutate Bukkit server-op state or `ops.json`.
 - Fabric exposes effective permissions through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
 - Fabric formats server chat through a server-side mixin that broadcasts the full formatted line as a native Minecraft component when `chat.enabled` is true.
 - Forge and NeoForge expose effective permissions through native Boolean permission handlers registered as `clutchperms:direct`.
@@ -175,6 +176,8 @@ Current command surface:
 - `/clutchperms status`
 - `/clutchperms reload`
 - `/clutchperms validate`
+- Paper only: `/op <target>`
+- Paper only: `/deop <target>`
 - `/clutchperms config list`
 - `/clutchperms config get <key>`
 - `/clutchperms config set <key> <value>`
@@ -213,12 +216,15 @@ Authorization:
 
 - Console and remote console can run commands for bootstrap.
 - Players need the effective exact command permission for the command they run.
+- Shared Brigadier nodes should use permission predicates so player-visible command trees and completions only expose branches backed by permissions the source has.
 - Use `clutchperms.admin.*` as the full ClutchPerms admin grant.
 - Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
 - Config command permissions are `clutchperms.admin.config.view`, `clutchperms.admin.config.set`, and `clutchperms.admin.config.reset`; `clutchperms.admin.config.*` should work through wildcard resolution.
+- `paper.replaceOpCommands` controls Paper command registration for ClutchPerms `/op` and `/deop` replacements; disabling it should leave Paper's labels unregistered by ClutchPerms on the next command registration cycle/server restart.
 - User display command permissions are `clutchperms.admin.user.display.view`, `clutchperms.admin.user.display.set`, and `clutchperms.admin.user.display.clear`; `clutchperms.admin.user.*` should cover them.
 - Group member listing uses `clutchperms.admin.group.members`; `clutchperms.admin.group.*` should cover it.
 - Group display command permissions are `clutchperms.admin.group.display.view`, `clutchperms.admin.group.display.set`, and `clutchperms.admin.group.display.clear`; `clutchperms.admin.group.*` should cover them.
+- Paper `/op <target>` uses `clutchperms.admin.user.group.add`; Paper `/deop <target>` uses `clutchperms.admin.user.group.remove`.
 - `clutchperms.admin` is only the namespace root and does not authorize commands.
 - Other source types should be denied where the platform can distinguish them.
 - `status` should include storage paths, subject/group/node counts, resolver cache counts, and platform bridge status.

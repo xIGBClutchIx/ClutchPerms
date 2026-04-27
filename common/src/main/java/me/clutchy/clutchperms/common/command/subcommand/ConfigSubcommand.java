@@ -49,18 +49,24 @@ public final class ConfigSubcommand {
     }
 
     public static <S> LiteralArgumentBuilder<S> builder(AuthorizedCommand<S> authorized, Handlers<S> handlers, Collection<String> configKeys) {
-        return LiteralArgumentBuilder.<S>literal("config").executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::list))
-                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::list)))
-                .then(LiteralArgumentBuilder.<S>literal("get").executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::getUsage))
+        return authorized.branch("config", PermissionNodes.ADMIN_CONFIG_VIEW, PermissionNodes.ADMIN_CONFIG_SET, PermissionNodes.ADMIN_CONFIG_RESET)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::list))
+                .then(authorized.literal("list", PermissionNodes.ADMIN_CONFIG_VIEW).executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::list)))
+                .then(authorized.literal("get", PermissionNodes.ADMIN_CONFIG_VIEW)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::getUsage))
                         .then(ConfigSubcommand.<S>configKeyArgument(configKeys).executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::get))))
-                .then(LiteralArgumentBuilder.<S>literal("set").executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_SET, handlers::setKeyUsage))
+                .then(authorized.literal("set", PermissionNodes.ADMIN_CONFIG_SET)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_SET, handlers::setKeyUsage))
                         .then(ConfigSubcommand.<S>configKeyArgument(configKeys)
                                 .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_SET, handlers::setValueUsage))
                                 .then(RequiredArgumentBuilder.<S, String>argument(CommandArguments.CONFIG_VALUE, StringArgumentType.word())
                                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_SET, handlers::set)))))
-                .then(LiteralArgumentBuilder.<S>literal("reset").executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_RESET, handlers::resetUsage)).then(
-                        ConfigSubcommand.<S>configResetArgument(configKeys).executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_RESET, handlers::reset))))
-                .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::unknownUsage)));
+                .then(authorized.literal("reset", PermissionNodes.ADMIN_CONFIG_RESET)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_RESET, handlers::resetUsage))
+                        .then(ConfigSubcommand.<S>configResetArgument(configKeys)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_RESET, handlers::reset))))
+                .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_CONFIG_VIEW)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_CONFIG_VIEW, handlers::unknownUsage)));
     }
 
     private static <S> RequiredArgumentBuilder<S, String> configKeyArgument(Collection<String> configKeys) {

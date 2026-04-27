@@ -44,14 +44,19 @@ public final class BackupSubcommand {
     }
 
     public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
-        return LiteralArgumentBuilder.<S>literal("backup").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::usage))
-                .then(LiteralArgumentBuilder.<S>literal("create").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_CREATE, handlers::create)))
-                .then(LiteralArgumentBuilder.<S>literal("list").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list))
-                        .then(LiteralArgumentBuilder.<S>literal("page").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::listPageUsage))
+        return authorized.branch("backup", PermissionNodes.ADMIN_BACKUP_LIST, PermissionNodes.ADMIN_BACKUP_CREATE, PermissionNodes.ADMIN_BACKUP_RESTORE)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::usage))
+                .then(authorized.literal("create", PermissionNodes.ADMIN_BACKUP_CREATE)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_CREATE, handlers::create)))
+                .then(authorized.literal("list", PermissionNodes.ADMIN_BACKUP_LIST).executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list))
+                        .then(authorized.literal("page", PermissionNodes.ADMIN_BACKUP_LIST)
+                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::listPageUsage))
                                 .then(BackupSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::list)))))
-                .then(LiteralArgumentBuilder.<S>literal("restore").executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_RESTORE, handlers::restoreFileUsage))
+                .then(authorized.literal("restore", PermissionNodes.ADMIN_BACKUP_RESTORE)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_RESTORE, handlers::restoreFileUsage))
                         .then(backupFileArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_RESTORE, handlers::restore))))
-                .then(CommandArguments.<S>unknown().executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::unknownUsage)));
+                .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_BACKUP_LIST)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_BACKUP_LIST, handlers::unknownUsage)));
     }
 
     private static <S> RequiredArgumentBuilder<S, String> backupFileArgument(ClutchPermsCommandEnvironment<S> environment) {

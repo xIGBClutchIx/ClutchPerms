@@ -27,13 +27,15 @@ public final class ClutchPermsConfigs {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    private static final Set<String> ROOT_KEYS = Set.of("version", "backups", "commands", "chat");
+    private static final Set<String> ROOT_KEYS = Set.of("version", "backups", "commands", "chat", "paper");
 
     private static final Set<String> BACKUP_KEYS = Set.of("retentionLimit");
 
     private static final Set<String> COMMAND_KEYS = Set.of("helpPageSize", "resultPageSize");
 
     private static final Set<String> CHAT_KEYS = Set.of("enabled");
+
+    private static final Set<String> PAPER_KEYS = Set.of("replaceOpCommands");
 
     /**
      * Loads runtime configuration from disk, returning defaults when the file is missing.
@@ -148,6 +150,10 @@ public final class ClutchPermsConfigs {
         chat.addProperty("enabled", config.chat().enabled());
         root.add("chat", chat);
 
+        JsonObject paper = new JsonObject();
+        paper.addProperty("replaceOpCommands", config.paper().replaceOpCommands());
+        root.add("paper", paper);
+
         return root;
     }
 
@@ -173,10 +179,16 @@ public final class ClutchPermsConfigs {
             rejectUnknownKeys("chat", chat, CHAT_KEYS);
             chatConfig = new ClutchPermsChatConfig(readBoolean(chat, "enabled", "chat.enabled"));
         }
+        ClutchPermsPaperConfig paperConfig = ClutchPermsPaperConfig.defaults();
+        JsonObject paper = readOptionalObject(root, "paper", "paper");
+        if (paper != null) {
+            rejectUnknownKeys("paper", paper, PAPER_KEYS);
+            paperConfig = new ClutchPermsPaperConfig(readBoolean(paper, "replaceOpCommands", "paper.replaceOpCommands"));
+        }
 
         return new ClutchPermsConfig(new ClutchPermsBackupConfig(readInteger(backups, "retentionLimit", "backups.retentionLimit")),
                 new ClutchPermsCommandConfig(readInteger(commands, "helpPageSize", "commands.helpPageSize"), readInteger(commands, "resultPageSize", "commands.resultPageSize")),
-                chatConfig);
+                chatConfig, paperConfig);
     }
 
     private static JsonObject readObject(JsonObject object, String key, String path) {
