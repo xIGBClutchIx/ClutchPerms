@@ -27,8 +27,10 @@ import com.mojang.brigadier.suggestion.Suggestion;
 import com.mojang.brigadier.tree.CommandNode;
 
 import me.clutchy.clutchperms.common.audit.AuditEntry;
+import me.clutchy.clutchperms.common.audit.AuditLogRecord;
 import me.clutchy.clutchperms.common.audit.AuditLogService;
 import me.clutchy.clutchperms.common.audit.AuditLogServices;
+import me.clutchy.clutchperms.common.config.ClutchPermsAuditRetentionConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
@@ -225,7 +227,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(List.of("ClutchPerms commands (page 1/17):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/17 | Next >"),
+        assertEquals(List.of("ClutchPerms commands (page 1/18):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/18 | Next >"),
                 console.messages());
         assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
     }
@@ -335,6 +337,7 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms status", console);
 
         assertTrue(console.messages().contains("Backup retention: newest 3 database backups."));
+        assertTrue(console.messages().contains("Audit retention: enabled, max age 90 days, max entries none."));
         assertTrue(console.messages().contains("Command page sizes: help 4, lists 5."));
         assertTrue(console.messages().contains("Chat formatting: disabled."));
     }
@@ -352,6 +355,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms config", console);
         dispatcher.execute("clutchperms config get commands.helpPageSize", console);
+        dispatcher.execute("clutchperms config get audit.retention.maxAgeDays", console);
         dispatcher.execute("clutchperms config get chat.enabled", console);
         dispatcher.execute("clutchperms config get paper.replaceOpCommands", console);
 
@@ -359,10 +363,14 @@ class ClutchPermsCommandsTest {
                 "backups.schedule.enabled = false (automatic database backups; values true/false or on/off)",
                 "backups.schedule.intervalMinutes = 60 (minutes between automatic database backups; range 5-10080)",
                 "backups.schedule.runOnStartup = false (startup database backup; values true/false or on/off)",
+                "audit.retention.enabled = true (automatic audit history retention pruning; values true/false or on/off)",
+                "audit.retention.maxAgeDays = 90 (audit history days kept; range 1-3650)",
+                "audit.retention.maxEntries = 0 (newest audit history entries kept; 0 disables count retention; range 0-1000000)",
                 "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)", "commands.resultPageSize = 5 (rows shown per list-result page; range 1-50)",
                 "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)",
                 "paper.replaceOpCommands = false (Paper /op and /deop ClutchPerms replacements; values true/false or on/off)",
-                "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)", "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)",
+                "commands.helpPageSize = 4 (command rows shown per help page; range 1-50)", "audit.retention.maxAgeDays = 90 (audit history days kept; range 1-3650)",
+                "chat.enabled = false (prefix and suffix chat formatting; values true/false or on/off)",
                 "paper.replaceOpCommands = false (Paper /op and /deop ClutchPerms replacements; values true/false or on/off)"), console.messages());
     }
 
@@ -376,16 +384,22 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms config set backups.retentionLimit 3", console);
+        dispatcher.execute("clutchperms config set audit.retention.enabled off", console);
+        dispatcher.execute("clutchperms config set audit.retention.maxAgeDays 30", console);
+        dispatcher.execute("clutchperms config set audit.retention.maxEntries 100", console);
         dispatcher.execute("clutchperms config set commands.helpPageSize 3", console);
         dispatcher.execute("clutchperms config set commands.resultPageSize 2", console);
         dispatcher.execute("clutchperms config set chat.enabled off", console);
         dispatcher.execute("clutchperms config set paper.replaceOpCommands disabled", console);
 
-        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(3, 2), new ClutchPermsChatConfig(false), new ClutchPermsPaperConfig(false)),
-                environment.config());
-        assertEquals(5, environment.configUpdates());
-        assertEquals(5, environment.runtimeRefreshes());
+        assertEquals(new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsAuditRetentionConfig(false, 30, 100), new ClutchPermsCommandConfig(3, 2),
+                new ClutchPermsChatConfig(false), new ClutchPermsPaperConfig(false)), environment.config());
+        assertEquals(8, environment.configUpdates());
+        assertEquals(8, environment.runtimeRefreshes());
         assertTrue(console.messages().contains("Updated config backups.retentionLimit: 10 -> 3. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config audit.retention.enabled: true -> false. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config audit.retention.maxAgeDays: 90 -> 30. Runtime reloaded."));
+        assertTrue(console.messages().contains("Updated config audit.retention.maxEntries: 0 -> 100. Runtime reloaded."));
         assertTrue(console.messages().contains("Updated config commands.helpPageSize: 7 -> 3. Runtime reloaded."));
         assertTrue(console.messages().contains("Updated config commands.resultPageSize: 8 -> 2. Runtime reloaded."));
         assertTrue(console.messages().contains("Updated config chat.enabled: true -> false. Runtime reloaded."));
@@ -393,7 +407,7 @@ class ClutchPermsCommandsTest {
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
-        assertEquals(List.of("ClutchPerms commands (page 1/17):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/17 | Next >"), help.messages());
+        assertEquals(List.of("ClutchPerms commands (page 1/18):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/18 | Next >"), help.messages());
 
         permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
         permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
@@ -451,6 +465,85 @@ class ClutchPermsCommandsTest {
         assertMessageContains(history, "#6");
         assertMessageContains(history, "config.set backups.retentionLimit");
         assertSuggests(history.commandMessages().get(1), "/clutchperms undo 6");
+    }
+
+    @Test
+    void historyPruneDaysRequiresConfirmationAndDeletesOldRows() throws CommandSyntaxException {
+        environment.auditLogService().append(auditRecord(Instant.parse("2026-01-01T00:00:00Z"), "old"));
+        environment.auditLogService().append(auditRecord(Instant.now(), "new"));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms history prune days 90", console);
+
+        assertEquals(2, environment.auditLogService().listNewestFirst().size());
+        assertTrue(console.messages().contains("Destructive command confirmation required."));
+
+        dispatcher.execute("clutchperms history prune days 90", console);
+
+        assertEquals(List.of("history.prune.days", "new"), environment.auditLogService().listNewestFirst().stream().map(AuditEntry::action).toList());
+        assertFalse(environment.auditLogService().listNewestFirst().getFirst().undoable());
+        assertTrue(console.messages().contains("Pruned 1 audit history entries."));
+    }
+
+    @Test
+    void historyPruneCountKeepsNewestEntriesIncludingPruneAuditRow() throws CommandSyntaxException {
+        environment.auditLogService().append(auditRecord(Instant.now(), "first"));
+        environment.auditLogService().append(auditRecord(Instant.now(), "second"));
+        environment.auditLogService().append(auditRecord(Instant.now(), "third"));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms history prune count 2", console);
+        dispatcher.execute("clutchperms history prune count 2", console);
+
+        assertEquals(List.of("history.prune.count", "third"), environment.auditLogService().listNewestFirst().stream().map(AuditEntry::action).toList());
+        assertTrue(console.messages().contains("Pruned 2 audit history entries."));
+    }
+
+    @Test
+    void historyPruneWithNoMatchesSkipsConfirmation() throws CommandSyntaxException {
+        environment.auditLogService().append(auditRecord(Instant.now(), "new"));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms history prune days 1", console);
+
+        assertEquals(1, environment.auditLogService().listNewestFirst().size());
+        assertEquals(List.of("No audit history entries matched the prune criteria."), console.messages());
+    }
+
+    @Test
+    void historyPruneRequiresPrunePermission() throws CommandSyntaxException {
+        environment.auditLogService().append(auditRecord(Instant.parse("2026-01-01T00:00:00Z"), "old"));
+        TestSource player = TestSource.player(ADMIN_ID);
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_HISTORY, PermissionValue.TRUE);
+        assertCommandUnavailable("clutchperms history prune days 90", player);
+
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_HISTORY_PRUNE, PermissionValue.TRUE);
+        assertEquals(1, dispatcher.execute("clutchperms history prune days 90", player));
+    }
+
+    @Test
+    void prunedUndoableEntriesCanNoLongerBeUndone() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+        dispatcher.execute("clutchperms user Target set example.node true", console);
+        dispatcher.execute("clutchperms history prune count 1", console);
+        dispatcher.execute("clutchperms history prune count 1", console);
+
+        assertCommandFails("clutchperms undo 1", console, "Unknown audit history entry: 1");
+    }
+
+    @Test
+    void automaticAuditRetentionRunsAfterAuditedCommandMutation() throws CommandSyntaxException {
+        environment.setConfig(new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), new ClutchPermsAuditRetentionConfig(true, 3650, 2), ClutchPermsCommandConfig.defaults(),
+                ClutchPermsChatConfig.defaults(), ClutchPermsPaperConfig.defaults()));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target set example.one true", console);
+        dispatcher.execute("clutchperms user Target set example.two true", console);
+        dispatcher.execute("clutchperms user Target set example.three true", console);
+
+        assertEquals(List.of("user.permission.set", "user.permission.set"), environment.auditLogService().listNewestFirst().stream().map(AuditEntry::action).toList());
+        assertTrue(environment.auditLogService().get(1).isEmpty());
     }
 
     /**
@@ -543,6 +636,9 @@ class ClutchPermsCommandsTest {
         assertCommandFails("clutchperms config get commands.help", console, "Unknown config key: commands.help");
         assertCommandFails("clutchperms config set commands.helpPageSize nope", console, "Invalid config value for commands.helpPageSize: nope");
         assertCommandFails("clutchperms config set commands.helpPageSize 51", console, "commands.helpPageSize must be an integer between 1 and 50.");
+        assertCommandFails("clutchperms config set audit.retention.enabled maybe", console, "audit.retention.enabled must be true/false or on/off.");
+        assertCommandFails("clutchperms config set audit.retention.maxAgeDays 0", console, "audit.retention.maxAgeDays must be an integer between 1 and 3650.");
+        assertCommandFails("clutchperms config set audit.retention.maxEntries 1000001", console, "audit.retention.maxEntries must be an integer between 0 and 1000000.");
         assertCommandFails("clutchperms config set chat.enabled maybe", console, "chat.enabled must be true/false or on/off.");
         assertCommandFails("clutchperms config set paper.replaceOpCommands maybe", console, "paper.replaceOpCommands must be true/false or on/off.");
 
@@ -2580,11 +2676,17 @@ class ClutchPermsCommandsTest {
         }
     }
 
+    private static AuditLogRecord auditRecord(Instant timestamp, String action) {
+        return new AuditLogRecord(timestamp, CommandSourceKind.CONSOLE, Optional.empty(), Optional.of("console"), action, "user-permissions", TARGET_ID.toString(), "Target",
+                "{\"permissions\":{}}", "{\"permissions\":{\"example.node\":\"TRUE\"}}", "/clutchperms user Target set example.node true", true);
+    }
+
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Database file: " + STATUS_DIAGNOSTICS.databaseFile(), "Config file: " + STATUS_DIAGNOSTICS.configFile(),
-                "Backup retention: newest 10 database backups.", "Enabled: false; timer running: false.", "Command page sizes: help 7, lists 8.", "Chat formatting: enabled.",
-                "Known subjects: " + knownSubjects, "Known groups: 2", "Known permission nodes: " + PermissionNodes.commandNodes().size(),
-                "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.", "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
+                "Backup retention: newest 10 database backups.", "Enabled: false; timer running: false.", "Audit retention: enabled, max age 90 days, max entries none.",
+                "Command page sizes: help 7, lists 8.", "Chat formatting: enabled.", "Known subjects: " + knownSubjects, "Known groups: 2",
+                "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
+                "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 
     private static List<String> commandListPageOneMessages() {
@@ -2593,7 +2695,8 @@ class ClutchPermsCommandsTest {
 
     private static List<String> commandListPageOneMessages(String rootLiteral) {
         return List.of("ClutchPerms commands (page 1/8):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
-                "/" + rootLiteral + " validate", "/" + rootLiteral + " history [page]", "/" + rootLiteral + " undo <id>", "/" + rootLiteral + " config list", "Page 1/8 | Next >");
+                "/" + rootLiteral + " validate", "/" + rootLiteral + " history [page]", "/" + rootLiteral + " history prune days <days>",
+                "/" + rootLiteral + " history prune count <count>", "Page 1/8 | Next >");
     }
 
     private static List<String> commandListPageTwoMessages() {
@@ -2601,9 +2704,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageTwoMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 2/8):", "/" + rootLiteral + " config get <key>", "/" + rootLiteral + " config set <key> <value>",
-                "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup create", "/" + rootLiteral + " backup list [page]",
-                "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup schedule status", "< Prev | Page 2/8 | Next >");
+        return List.of("ClutchPerms commands (page 2/8):", "/" + rootLiteral + " undo <id>", "/" + rootLiteral + " config list", "/" + rootLiteral + " config get <key>",
+                "/" + rootLiteral + " config set <key> <value>", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup create",
+                "/" + rootLiteral + " backup list [page]", "< Prev | Page 2/8 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {

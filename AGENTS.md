@@ -100,7 +100,7 @@ Do not add contexts, priorities, imports, migrations, or LuckPerms bridges unles
 
 Current persisted files:
 
-- `config.json` for runtime settings such as backup retention/scheduling, command page sizes, and chat formatting
+- `config.json` for runtime settings such as backup retention/scheduling, audit retention, command page sizes, and chat formatting
 - `database.db` for direct user permission assignments, group definitions, group permissions, prefix/suffix display values, parent links, memberships, subject metadata, manually registered known permission nodes, and command audit history
 
 Locations:
@@ -121,7 +121,8 @@ Storage expectations:
 - Create parent directories as needed.
 - Keep backup retention controlled by `config.json` `backups.retentionLimit`, defaulting to 10 newest database backups.
 - Automatic database backups are controlled by `backups.schedule.enabled`, `backups.schedule.intervalMinutes`, and `backups.schedule.runOnStartup`. They are disabled by default, default to a 60-minute interval when enabled, accept intervals from 5 to 10080 minutes, and use the same retention pruning as manual backups.
-- In-game config management covers `backups.retentionLimit`, `backups.schedule.enabled`, `backups.schedule.intervalMinutes`, `backups.schedule.runOnStartup`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
+- Audit history retention is controlled by `audit.retention.enabled`, `audit.retention.maxAgeDays`, and `audit.retention.maxEntries`. It is enabled by default, keeps 90 days by default, accepts max ages from 1 to 3650 days, accepts count caps from 0 to 1000000, and treats `maxEntries = 0` as no count cap.
+- In-game config management covers `backups.retentionLimit`, `backups.schedule.enabled`, `backups.schedule.intervalMinutes`, `backups.schedule.runOnStartup`, `audit.retention.enabled`, `audit.retention.maxAgeDays`, `audit.retention.maxEntries`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
 - Backup layout is `backups/database/database-YYYYMMDD-HHMMSSSSS.db`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
 - Fail startup, validate, or reload on malformed config, unsupported schema versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, invalid protected `op` definitions, unknown parent groups, and parent cycles.
@@ -134,7 +135,8 @@ Storage expectations:
 - `/clutchperms backup restore` validates the selected backup file before replacing live storage, closes the active SQLite pool, replaces `database.db`, removes stale WAL/SHM files, reloads config plus database storage, and refreshes runtime bridges. If pre-restore validation fails, disk and active runtime state must remain unchanged. If reload fails after replacement, it must roll disk back to the previous live database and keep active services/runtime state unchanged.
 - `config.json` is not included in backup list or restore commands in this version.
 - If restore rollback fails, command feedback should report that rollback failure explicitly.
-- Audit history is command-layer only and retained indefinitely in this version. Successful command mutations for permissions, groups, display, membership, parents, Paper `/op`/`/deop`, and config write audit rows after the mutation succeeds. Backup create/restore, manual known-node changes, player-observation metadata updates, and internal service calls outside commands are not audited.
+- Audit history is command-layer only. Successful command mutations for permissions, groups, display, membership, parents, Paper `/op`/`/deop`, and config write audit rows after the mutation succeeds. Backup create/restore, manual known-node changes, player-observation metadata updates, automatic audit retention, and internal service calls outside commands are not audited.
+- Automatic audit retention runs after successful runtime load/reload and after successful command-layer audit append. Manual `/clutchperms history prune days <days>` and `/clutchperms history prune count <count>` require repeat-command confirmation, write a non-undoable audit row, and may remove undoable history entries.
 - Audit rows store actor, target, action, source command, timestamp, deterministic before/after JSON snapshots, undoable state, and undone metadata. If audit append fails after a mutation, command feedback must report that audit failure instead of silently hiding it.
 - `/clutchperms undo <id>` should apply only when the entry exists, is undoable, is not already undone, and the current target snapshot still equals the logged after snapshot. Fail on conflicts rather than overwriting newer changes. Undo writes its own non-undoable audit row and marks the original entry undone.
 - There is no JSON compatibility or migration path for removed data files.
@@ -186,6 +188,8 @@ Current command surface:
 - `/clutchperms reload`
 - `/clutchperms validate`
 - `/clutchperms history [page]`
+- `/clutchperms history prune days <days>`
+- `/clutchperms history prune count <count>`
 - `/clutchperms undo <id>`
 - Paper only: `/op <target>`
 - Paper only: `/deop <target>`
@@ -235,9 +239,9 @@ Authorization:
 - Shared Brigadier nodes should use permission predicates so player-visible command trees and completions only expose branches backed by permissions the source has.
 - Runtime permission refresh hooks should resend online player command trees after permission-affecting changes so completions update without relogging.
 - Use `clutchperms.admin.*` as the full ClutchPerms admin grant.
-- Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
+- Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.history.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
 - Config command permissions are `clutchperms.admin.config.view`, `clutchperms.admin.config.set`, and `clutchperms.admin.config.reset`; `clutchperms.admin.config.*` should work through wildcard resolution.
-- History and undo command permissions are `clutchperms.admin.history` and `clutchperms.admin.undo`.
+- History and undo command permissions are `clutchperms.admin.history`, `clutchperms.admin.history.prune`, and `clutchperms.admin.undo`.
 - `paper.replaceOpCommands` controls Paper command registration for ClutchPerms `/op` and `/deop` replacements; disabling it should leave Paper's labels unregistered by ClutchPerms on the next command registration cycle/server restart.
 - User display command permissions are `clutchperms.admin.user.display.view`, `clutchperms.admin.user.display.set`, and `clutchperms.admin.user.display.clear`; `clutchperms.admin.user.*` should cover them.
 - Group member listing uses `clutchperms.admin.group.members`; `clutchperms.admin.group.*` should cover it.
@@ -245,7 +249,7 @@ Authorization:
 - Paper `/op <target>` uses `clutchperms.admin.user.group.add`; Paper `/deop <target>` uses `clutchperms.admin.user.group.remove`.
 - `clutchperms.admin` is only the namespace root and does not authorize commands.
 - Other source types should be denied where the platform can distinguish them.
-- `status` should include storage paths, backup retention/schedule state, subject/group/node counts, resolver cache counts, and platform bridge status.
+- `status` should include storage paths, backup retention/schedule state, audit retention state, subject/group/node counts, resolver cache counts, and platform bridge status.
 - Config command changes should save `config.json`, reload runtime immediately, refresh runtime bridges, and roll `config.json` back if reload fails. Same-value config changes should not write or reload.
 - `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.
 - Bad user, group, parent group, backup file, and manual known-node targets should return styled shared feedback with deterministic closest matches: case-insensitive prefix matches first, then substring matches, then small edit-distance matches, capped at 5 suggestions.

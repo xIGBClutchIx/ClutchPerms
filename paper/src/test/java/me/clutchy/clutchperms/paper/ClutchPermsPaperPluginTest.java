@@ -220,6 +220,7 @@ class ClutchPermsPaperPluginTest {
         assertNextMessage(player, "Config file: " + plugin.getDataFolder().toPath().resolve("config.json").toAbsolutePath().normalize());
         assertNextMessage(player, "Backup retention: newest 10 database backups.");
         assertNextMessage(player, "Enabled: false; timer running: false.");
+        assertNextMessage(player, "Audit retention: enabled, max age 90 days, max entries none.");
         assertNextMessage(player, "Command page sizes: help 7, lists 8.");
         assertNextMessage(player, "Chat formatting: enabled.");
         assertNextMessage(player, "Known subjects: 1");

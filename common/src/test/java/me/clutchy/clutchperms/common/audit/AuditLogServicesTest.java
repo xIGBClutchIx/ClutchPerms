@@ -55,13 +55,69 @@ class AuditLogServicesTest {
         try (SqliteStore store = SqliteStore.open(databaseFile, SqliteDependencyMode.ANY_VISIBLE)) {
             AuditLogService auditLogService = AuditLogServices.sqlite(store);
 
-            AuditEntry entry = auditLogService.append(new AuditLogRecord(Instant.parse("2026-04-27T12:00:00Z"), CommandSourceKind.CONSOLE, Optional.empty(), Optional.of("console"),
-                    "user.permission.set", "user-permissions", "target", "Target", "{\"permissions\":{}}", "{\"permissions\":{\"example.node\":\"TRUE\"}}",
-                    "/clutchperms user Target set example.node true", true));
+            AuditEntry entry = auditLogService.append(record(Instant.parse("2026-04-27T12:00:00Z"), "user.permission.set"));
 
             assertEquals(1, entry.id());
             assertEquals("user.permission.set", auditLogService.get(entry.id()).orElseThrow().action());
             assertEquals(1, auditLogService.listNewestFirst().size());
+        }
+    }
+
+    @Test
+    void auditPruneDeletesOlderRowsInMemory() {
+        AuditLogService auditLogService = AuditLogServices.inMemory();
+        auditLogService.append(record(Instant.parse("2026-01-01T00:00:00Z"), "old"));
+        auditLogService.append(record(Instant.parse("2026-04-01T00:00:00Z"), "new"));
+
+        assertEquals(1, auditLogService.pruneOlderThan(Instant.parse("2026-02-01T00:00:00Z")));
+
+        assertEquals(1, auditLogService.listNewestFirst().size());
+        assertEquals("new", auditLogService.listNewestFirst().getFirst().action());
+    }
+
+    @Test
+    void auditPruneKeepsNewestRowsInMemory() {
+        AuditLogService auditLogService = AuditLogServices.inMemory();
+        auditLogService.append(record(Instant.parse("2026-01-01T00:00:00Z"), "first"));
+        auditLogService.append(record(Instant.parse("2026-01-02T00:00:00Z"), "second"));
+        auditLogService.append(record(Instant.parse("2026-01-03T00:00:00Z"), "third"));
+
+        assertEquals(1, auditLogService.pruneBeyondNewest(2));
+
+        assertEquals(2, auditLogService.listNewestFirst().size());
+        assertEquals("third", auditLogService.listNewestFirst().get(0).action());
+        assertEquals("second", auditLogService.listNewestFirst().get(1).action());
+    }
+
+    @Test
+    void auditPruneDeletesOlderRowsThroughSqlite(@TempDir Path temporaryDirectory) {
+        Path databaseFile = temporaryDirectory.resolve("database.db");
+        try (SqliteStore store = SqliteStore.open(databaseFile, SqliteDependencyMode.ANY_VISIBLE)) {
+            AuditLogService auditLogService = AuditLogServices.sqlite(store);
+            auditLogService.append(record(Instant.parse("2026-01-01T00:00:00Z"), "old"));
+            auditLogService.append(record(Instant.parse("2026-04-01T00:00:00Z"), "new"));
+
+            assertEquals(1, auditLogService.pruneOlderThan(Instant.parse("2026-02-01T00:00:00Z")));
+
+            assertEquals(1, auditLogService.listNewestFirst().size());
+            assertEquals("new", auditLogService.listNewestFirst().getFirst().action());
+        }
+    }
+
+    @Test
+    void auditPruneKeepsNewestRowsThroughSqlite(@TempDir Path temporaryDirectory) {
+        Path databaseFile = temporaryDirectory.resolve("database.db");
+        try (SqliteStore store = SqliteStore.open(databaseFile, SqliteDependencyMode.ANY_VISIBLE)) {
+            AuditLogService auditLogService = AuditLogServices.sqlite(store);
+            auditLogService.append(record(Instant.parse("2026-01-01T00:00:00Z"), "first"));
+            auditLogService.append(record(Instant.parse("2026-01-02T00:00:00Z"), "second"));
+            auditLogService.append(record(Instant.parse("2026-01-03T00:00:00Z"), "third"));
+
+            assertEquals(1, auditLogService.pruneBeyondNewest(2));
+
+            assertEquals(2, auditLogService.listNewestFirst().size());
+            assertEquals("third", auditLogService.listNewestFirst().get(0).action());
+            assertEquals("second", auditLogService.listNewestFirst().get(1).action());
         }
     }
 
@@ -81,5 +137,10 @@ class AuditLogServicesTest {
                 return rows.getInt(1);
             }
         });
+    }
+
+    private static AuditLogRecord record(Instant timestamp, String action) {
+        return new AuditLogRecord(timestamp, CommandSourceKind.CONSOLE, Optional.empty(), Optional.of("console"), action, "user-permissions", "target", "Target",
+                "{\"permissions\":{}}", "{\"permissions\":{\"example.node\":\"TRUE\"}}", "/clutchperms user Target set example.node true", true);
     }
 }

@@ -38,6 +38,23 @@ final class InMemoryAuditLogService implements AuditLogService {
     }
 
     @Override
+    public synchronized int pruneOlderThan(Instant cutoff) {
+        List<Long> prunedIds = entries.values().stream().filter(entry -> entry.timestamp().isBefore(cutoff)).map(AuditEntry::id).toList();
+        prunedIds.forEach(entries::remove);
+        return prunedIds.size();
+    }
+
+    @Override
+    public synchronized int pruneBeyondNewest(int retainedCount) {
+        if (retainedCount < 0) {
+            throw new IllegalArgumentException("retainedCount must be non-negative");
+        }
+        List<Long> prunedIds = entries.values().stream().sorted(Comparator.comparingLong(AuditEntry::id).reversed()).skip(retainedCount).map(AuditEntry::id).toList();
+        prunedIds.forEach(entries::remove);
+        return prunedIds.size();
+    }
+
+    @Override
     public synchronized void markUndone(long id, long undoEntryId, Instant undoneAt, Optional<UUID> actorId, Optional<String> actorName) {
         AuditEntry current = entries.get(id);
         if (current == null) {

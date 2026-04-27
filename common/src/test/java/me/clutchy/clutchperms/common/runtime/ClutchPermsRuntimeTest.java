@@ -4,14 +4,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Statement;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import me.clutchy.clutchperms.common.audit.AuditLogRecord;
+import me.clutchy.clutchperms.common.audit.AuditLogServices;
+import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
@@ -22,6 +27,7 @@ import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.SqliteStore;
 import me.clutchy.clutchperms.common.storage.SqliteTestSupport;
 import me.clutchy.clutchperms.common.storage.StorageBackup;
@@ -215,6 +221,49 @@ class ClutchPermsRuntimeTest {
         assertEquals(2, runtime.storageBackupService().listBackups(StorageFileKind.DATABASE).size());
     }
 
+    @Test
+    void reloadAppliesAutomaticAuditAgeRetention() {
+        ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
+        try (SqliteStore store = SqliteStore.open(storagePaths.databaseFile(), SqliteDependencyMode.ANY_VISIBLE)) {
+            AuditLogServices.sqlite(store).append(auditRecord(Instant.parse("2020-01-01T00:00:00Z"), "old"));
+            AuditLogServices.sqlite(store).append(auditRecord(Instant.now(), "new"));
+        }
+        ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, ClutchPermsRuntimeHooks.noop());
+
+        runtime.reload();
+
+        assertEquals(List.of("new"), runtime.auditLogService().listNewestFirst().stream().map(entry -> entry.action()).toList());
+    }
+
+    @Test
+    void disabledAutomaticAuditRetentionDoesNotPrune() throws IOException {
+        ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
+        Files.writeString(storagePaths.configFile(), auditRetentionConfig(false, 90, 0));
+        try (SqliteStore store = SqliteStore.open(storagePaths.databaseFile(), SqliteDependencyMode.ANY_VISIBLE)) {
+            AuditLogServices.sqlite(store).append(auditRecord(Instant.parse("2020-01-01T00:00:00Z"), "old"));
+        }
+        ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, ClutchPermsRuntimeHooks.noop());
+
+        runtime.reload();
+
+        assertEquals(List.of("old"), runtime.auditLogService().listNewestFirst().stream().map(entry -> entry.action()).toList());
+    }
+
+    @Test
+    void automaticAuditCountRetentionCanBeDisabled() throws IOException {
+        ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
+        Files.writeString(storagePaths.configFile(), auditRetentionConfig(true, 3650, 0));
+        try (SqliteStore store = SqliteStore.open(storagePaths.databaseFile(), SqliteDependencyMode.ANY_VISIBLE)) {
+            AuditLogServices.sqlite(store).append(auditRecord(Instant.now(), "first"));
+            AuditLogServices.sqlite(store).append(auditRecord(Instant.now(), "second"));
+        }
+        ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, ClutchPermsRuntimeHooks.noop());
+
+        runtime.reload();
+
+        assertEquals(List.of("second", "first"), runtime.auditLogService().listNewestFirst().stream().map(entry -> entry.action()).toList());
+    }
+
     private static void insertInvalidPermissionRow(SqliteStore store) {
         store.write(connection -> {
             try (Statement statement = connection.createStatement()) {
@@ -254,5 +303,32 @@ class ClutchPermsRuntimeTest {
                   }
                 }
                 """.formatted(retentionLimit, helpPageSize, resultPageSize, chatEnabled);
+    }
+
+    private static String auditRetentionConfig(boolean enabled, int maxAgeDays, int maxEntries) {
+        return """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "audit": {
+                    "retention": {
+                      "enabled": %s,
+                      "maxAgeDays": %s,
+                      "maxEntries": %s
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """.formatted(enabled, maxAgeDays, maxEntries);
+    }
+
+    private static AuditLogRecord auditRecord(Instant timestamp, String action) {
+        return new AuditLogRecord(timestamp, CommandSourceKind.CONSOLE, Optional.empty(), Optional.of("console"), action, "config", "test", "test", "{}", "{}",
+                "/clutchperms config set chat.enabled off", true);
     }
 }

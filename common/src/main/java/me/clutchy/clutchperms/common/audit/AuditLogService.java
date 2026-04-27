@@ -34,6 +34,22 @@ public interface AuditLogService {
     List<AuditEntry> listNewestFirst();
 
     /**
+     * Deletes audit rows older than the supplied timestamp.
+     *
+     * @param cutoff exclusive maximum timestamp to delete
+     * @return deleted row count
+     */
+    int pruneOlderThan(Instant cutoff);
+
+    /**
+     * Deletes audit rows beyond the newest retained count.
+     *
+     * @param retainedCount number of newest rows to keep
+     * @return deleted row count
+     */
+    int pruneBeyondNewest(int retainedCount);
+
+    /**
      * Marks an audit row as undone.
      *
      * @param id original audit id

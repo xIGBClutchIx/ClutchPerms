@@ -27,6 +27,9 @@ permissions:
   clutchperms.admin.history:
     description: Allows listing ClutchPerms audit history.
     default: false
+  clutchperms.admin.history.prune:
+    description: Allows pruning ClutchPerms audit history.
+    default: false
   clutchperms.admin.undo:
     description: Allows undoing ClutchPerms audit history entries.
     default: false

@@ -27,11 +27,15 @@ public final class ClutchPermsConfigs {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    private static final Set<String> ROOT_KEYS = Set.of("version", "backups", "commands", "chat", "paper");
+    private static final Set<String> ROOT_KEYS = Set.of("version", "backups", "audit", "commands", "chat", "paper");
 
     private static final Set<String> BACKUP_KEYS = Set.of("retentionLimit", "schedule");
 
     private static final Set<String> BACKUP_SCHEDULE_KEYS = Set.of("enabled", "intervalMinutes", "runOnStartup");
+
+    private static final Set<String> AUDIT_KEYS = Set.of("retention");
+
+    private static final Set<String> AUDIT_RETENTION_KEYS = Set.of("enabled", "maxAgeDays", "maxEntries");
 
     private static final Set<String> COMMAND_KEYS = Set.of("helpPageSize", "resultPageSize");
 
@@ -148,6 +152,14 @@ public final class ClutchPermsConfigs {
         backups.add("schedule", backupSchedule);
         root.add("backups", backups);
 
+        JsonObject audit = new JsonObject();
+        JsonObject auditRetention = new JsonObject();
+        auditRetention.addProperty("enabled", config.audit().enabled());
+        auditRetention.addProperty("maxAgeDays", config.audit().maxAgeDays());
+        auditRetention.addProperty("maxEntries", config.audit().maxEntries());
+        audit.add("retention", auditRetention);
+        root.add("audit", audit);
+
         JsonObject commands = new JsonObject();
         commands.addProperty("helpPageSize", config.commands().helpPageSize());
         commands.addProperty("resultPageSize", config.commands().resultPageSize());
@@ -186,6 +198,17 @@ public final class ClutchPermsConfigs {
                     readInteger(backupSchedule, "intervalMinutes", "backups.schedule.intervalMinutes"),
                     readBoolean(backupSchedule, "runOnStartup", "backups.schedule.runOnStartup"));
         }
+        ClutchPermsAuditRetentionConfig auditRetentionConfig = ClutchPermsAuditRetentionConfig.defaults();
+        JsonObject audit = readOptionalObject(root, "audit", "audit");
+        if (audit != null) {
+            rejectUnknownKeys("audit", audit, AUDIT_KEYS);
+            JsonObject auditRetention = readOptionalObject(audit, "retention", "audit.retention");
+            if (auditRetention != null) {
+                rejectUnknownKeys("audit.retention", auditRetention, AUDIT_RETENTION_KEYS);
+                auditRetentionConfig = new ClutchPermsAuditRetentionConfig(readBoolean(auditRetention, "enabled", "audit.retention.enabled"),
+                        readInteger(auditRetention, "maxAgeDays", "audit.retention.maxAgeDays"), readInteger(auditRetention, "maxEntries", "audit.retention.maxEntries"));
+            }
+        }
         JsonObject commands = readObject(root, "commands", "commands");
         rejectUnknownKeys("commands", commands, COMMAND_KEYS);
         ClutchPermsChatConfig chatConfig = ClutchPermsChatConfig.defaults();
@@ -201,7 +224,7 @@ public final class ClutchPermsConfigs {
             paperConfig = new ClutchPermsPaperConfig(readBoolean(paper, "replaceOpCommands", "paper.replaceOpCommands"));
         }
 
-        return new ClutchPermsConfig(new ClutchPermsBackupConfig(readInteger(backups, "retentionLimit", "backups.retentionLimit"), backupScheduleConfig),
+        return new ClutchPermsConfig(new ClutchPermsBackupConfig(readInteger(backups, "retentionLimit", "backups.retentionLimit"), backupScheduleConfig), auditRetentionConfig,
                 new ClutchPermsCommandConfig(readInteger(commands, "helpPageSize", "commands.helpPageSize"), readInteger(commands, "resultPageSize", "commands.resultPageSize")),
                 chatConfig, paperConfig);
     }

@@ -54,6 +54,10 @@ class ClutchPermsConfigsTest {
         assertTrue(content.contains("\"enabled\": false"));
         assertTrue(content.contains("\"intervalMinutes\": 60"));
         assertTrue(content.contains("\"runOnStartup\": false"));
+        assertTrue(content.contains("\"audit\""));
+        assertTrue(content.contains("\"retention\""));
+        assertTrue(content.contains("\"maxAgeDays\": 90"));
+        assertTrue(content.contains("\"maxEntries\": 0"));
         assertTrue(content.contains("\"helpPageSize\": 7"));
         assertTrue(content.contains("\"resultPageSize\": 8"));
         assertTrue(content.contains("\"chat\""));
@@ -68,7 +72,8 @@ class ClutchPermsConfigsTest {
     @Test
     void writeConfigReplacesConfigFile() {
         Path configFile = temporaryDirectory.resolve("config.json");
-        ClutchPermsConfig config = new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsCommandConfig(4, 5), new ClutchPermsChatConfig(false));
+        ClutchPermsConfig config = new ClutchPermsConfig(new ClutchPermsBackupConfig(3), new ClutchPermsAuditRetentionConfig(false, 30, 100), new ClutchPermsCommandConfig(4, 5),
+                new ClutchPermsChatConfig(false), new ClutchPermsPaperConfig(false));
 
         ClutchPermsConfigs.write(configFile, config);
 
@@ -94,6 +99,13 @@ class ClutchPermsConfigsTest {
                       "runOnStartup": true
                     }
                   },
+                  "audit": {
+                    "retention": {
+                      "enabled": false,
+                      "maxAgeDays": 30,
+                      "maxEntries": 100
+                    }
+                  },
                   "commands": {
                     "helpPageSize": 4,
                     "resultPageSize": 5
@@ -113,6 +125,9 @@ class ClutchPermsConfigsTest {
         assertEquals(true, config.backups().schedule().enabled());
         assertEquals(120, config.backups().schedule().intervalMinutes());
         assertEquals(true, config.backups().schedule().runOnStartup());
+        assertEquals(false, config.audit().enabled());
+        assertEquals(30, config.audit().maxAgeDays());
+        assertEquals(100, config.audit().maxEntries());
         assertEquals(4, config.commands().helpPageSize());
         assertEquals(5, config.commands().resultPageSize());
         assertEquals(false, config.chat().enabled());
@@ -145,6 +160,7 @@ class ClutchPermsConfigsTest {
         assertEquals(true, config.chat().enabled());
         assertEquals(true, config.paper().replaceOpCommands());
         assertEquals(ClutchPermsBackupScheduleConfig.defaults(), config.backups().schedule());
+        assertEquals(ClutchPermsAuditRetentionConfig.defaults(), config.audit());
     }
 
     /**
@@ -414,6 +430,105 @@ class ClutchPermsConfigsTest {
                       "enabled": false,
                       "intervalMinutes": 10081,
                       "runOnStartup": false
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "audit": true,
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "audit": {
+                    "unknown": true
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "audit": {
+                    "retention": {
+                      "enabled": true,
+                      "maxAgeDays": 90,
+                      "maxEntries": 0,
+                      "unknown": true
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "audit": {
+                    "retention": {
+                      "enabled": "true",
+                      "maxAgeDays": 90,
+                      "maxEntries": 0
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "audit": {
+                    "retention": {
+                      "enabled": true,
+                      "maxAgeDays": 0,
+                      "maxEntries": 0
+                    }
+                  },
+                  "commands": {
+                    "helpPageSize": 7,
+                    "resultPageSize": 8
+                  }
+                }
+                """, """
+                {
+                  "version": 1,
+                  "backups": {
+                    "retentionLimit": 10
+                  },
+                  "audit": {
+                    "retention": {
+                      "enabled": true,
+                      "maxAgeDays": 90,
+                      "maxEntries": 1000001
                     }
                   },
                   "commands": {

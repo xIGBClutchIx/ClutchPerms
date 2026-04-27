@@ -6,11 +6,13 @@ import java.util.Objects;
  * Shared runtime configuration for ClutchPerms.
  *
  * @param backups backup-related configuration
+ * @param audit audit-related configuration
  * @param commands command-output configuration
  * @param chat chat-display configuration
  * @param paper Paper-specific configuration
  */
-public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsCommandConfig commands, ClutchPermsChatConfig chat, ClutchPermsPaperConfig paper) {
+public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsAuditRetentionConfig audit, ClutchPermsCommandConfig commands, ClutchPermsChatConfig chat,
+        ClutchPermsPaperConfig paper) {
 
     /**
      * Current config schema version.
@@ -22,9 +24,22 @@ public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsComm
      */
     public ClutchPermsConfig {
         backups = Objects.requireNonNull(backups, "backups");
+        audit = Objects.requireNonNull(audit, "audit");
         commands = Objects.requireNonNull(commands, "commands");
         chat = Objects.requireNonNull(chat, "chat");
         paper = Objects.requireNonNull(paper, "paper");
+    }
+
+    /**
+     * Creates a runtime config with default audit retention settings.
+     *
+     * @param backups backup-related configuration
+     * @param commands command-output configuration
+     * @param chat chat-display configuration
+     * @param paper Paper-specific configuration
+     */
+    public ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsCommandConfig commands, ClutchPermsChatConfig chat, ClutchPermsPaperConfig paper) {
+        this(backups, ClutchPermsAuditRetentionConfig.defaults(), commands, chat, paper);
     }
 
     /**
@@ -54,7 +69,8 @@ public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsComm
      * @return default runtime configuration
      */
     public static ClutchPermsConfig defaults() {
-        return new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), ClutchPermsCommandConfig.defaults(), ClutchPermsChatConfig.defaults(), ClutchPermsPaperConfig.defaults());
+        return new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), ClutchPermsAuditRetentionConfig.defaults(), ClutchPermsCommandConfig.defaults(),
+                ClutchPermsChatConfig.defaults(), ClutchPermsPaperConfig.defaults());
     }
 
 }

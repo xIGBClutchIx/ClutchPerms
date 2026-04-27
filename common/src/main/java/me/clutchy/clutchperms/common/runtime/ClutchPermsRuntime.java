@@ -4,11 +4,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Clock;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
+import me.clutchy.clutchperms.common.audit.AuditLogRetention;
 import me.clutchy.clutchperms.common.audit.AuditLogService;
 import me.clutchy.clutchperms.common.audit.AuditLogServices;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
@@ -176,6 +178,7 @@ public final class ClutchPermsRuntime {
             SubjectMetadataServices.sqlite(store);
             GroupServices.sqlite(store);
             PermissionNodeRegistries.sqlite(store);
+            AuditLogServices.sqlite(store);
         }
     }
 
@@ -352,6 +355,7 @@ public final class ClutchPermsRuntime {
             loadedGroupService = GroupServices.sqlite(sqliteStore);
             loadedManualPermissionNodeRegistry = PermissionNodeRegistries.sqlite(sqliteStore);
             loadedAuditLogService = AuditLogServices.sqlite(sqliteStore);
+            AuditLogRetention.apply(loadedConfig, loadedAuditLogService, Clock.systemUTC());
         } catch (RuntimeException exception) {
             sqliteStore.close();
             throw exception;

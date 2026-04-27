@@ -49,6 +49,8 @@ final class CommandLang {
 
     private static final String STATUS_BACKUP_RETENTION = "Backup retention: newest %s database backups.";
 
+    private static final String STATUS_AUDIT_RETENTION = "Audit retention: %s, max age %s days, max entries %s.";
+
     private static final String STATUS_COMMAND_PAGE_SIZES = "Command page sizes: help %s, lists %s.";
 
     private static final String STATUS_CHAT_FORMATTING = "Chat formatting: %s.";
@@ -113,7 +115,13 @@ final class CommandLang {
 
     private static final String ERROR_AUDIT_OPERATION_FAILED = "Audit operation failed: %s";
 
+    private static final String ERROR_AUDIT_RETENTION_FAILED = "Audit retention failed: %s";
+
     private static final String HISTORY_EMPTY = "No audit history entries.";
+
+    private static final String HISTORY_PRUNE_EMPTY = "No audit history entries matched the prune criteria.";
+
+    private static final String HISTORY_PRUNED = "Pruned %s audit history entries.";
 
     private static final String AUDIT_MISSING = "Unknown audit history entry: %s";
 
@@ -395,6 +403,10 @@ final class CommandLang {
         return detail(STATUS_BACKUP_RETENTION, retentionLimit);
     }
 
+    static CommandMessage statusAuditRetention(boolean enabled, int maxAgeDays, int maxEntries) {
+        return detail(STATUS_AUDIT_RETENTION, enabled ? "enabled" : "disabled", maxAgeDays, maxEntries == 0 ? "none" : Integer.toString(maxEntries));
+    }
+
     static CommandMessage statusCommandPageSizes(int helpPageSize, int resultPageSize) {
         return detail(STATUS_COMMAND_PAGE_SIZES, helpPageSize, resultPageSize);
     }
@@ -523,6 +535,10 @@ final class CommandLang {
         return error(ERROR_AUDIT_OPERATION_FAILED, exceptionMessage(exception));
     }
 
+    static CommandMessage auditRetentionFailed(Throwable exception) {
+        return error(ERROR_AUDIT_RETENTION_FAILED, exceptionMessage(exception));
+    }
+
     static CommandMessage auditMissing(long id) {
         return error(AUDIT_MISSING, id);
     }
@@ -545,6 +561,14 @@ final class CommandLang {
 
     static CommandMessage historyEmpty() {
         return detail(HISTORY_EMPTY);
+    }
+
+    static CommandMessage historyPruneEmpty() {
+        return detail(HISTORY_PRUNE_EMPTY);
+    }
+
+    static CommandMessage historyPruned(int count) {
+        return success(HISTORY_PRUNED, count);
     }
 
     static CommandMessage configHeader() {

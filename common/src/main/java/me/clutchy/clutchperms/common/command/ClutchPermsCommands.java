@@ -28,6 +28,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.LiteralMessage;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -42,6 +43,7 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 
 import me.clutchy.clutchperms.common.audit.AuditEntry;
 import me.clutchy.clutchperms.common.audit.AuditLogRecord;
+import me.clutchy.clutchperms.common.audit.AuditLogRetention;
 import me.clutchy.clutchperms.common.command.subcommand.AuthorizedCommand;
 import me.clutchy.clutchperms.common.command.subcommand.BackupSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.ConfigSubcommand;
@@ -49,6 +51,7 @@ import me.clutchy.clutchperms.common.command.subcommand.GroupSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.NodesSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UserSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UsersSubcommand;
+import me.clutchy.clutchperms.common.config.ClutchPermsAuditRetentionConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupScheduleConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
@@ -127,6 +130,10 @@ public final class ClutchPermsCommands {
 
     private static final String AUDIT_ID_ARGUMENT = "id";
 
+    private static final String DAYS_ARGUMENT = "days";
+
+    private static final String COUNT_ARGUMENT = "count";
+
     private static final String UNKNOWN_ARGUMENT = CommandArguments.UNKNOWN;
 
     private static final int TARGET_MATCH_LIMIT = 5;
@@ -169,41 +176,53 @@ public final class ClutchPermsCommands {
 
     private static final List<ConfigEntry> CONFIG_ENTRIES = List.of(
             integerConfig("backups.retentionLimit", "newest database backups kept", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT, ClutchPermsBackupConfig.MAX_RETENTION_LIMIT,
-                    ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(), (
-                            config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value, config.backups().schedule()), config.commands(), config.chat(),
-                                    config.paper())),
+                    ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(),
+                    (config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value, config.backups().schedule()), config.audit(), config.commands(), config.chat(),
+                            config.paper())),
             booleanConfig("backups.schedule.enabled", "automatic database backups", ClutchPermsBackupScheduleConfig.DEFAULT_ENABLED,
                     config -> config.backups().schedule().enabled(),
                     (config, value) -> new ClutchPermsConfig(
                             new ClutchPermsBackupConfig(config.backups().retentionLimit(),
                                     new ClutchPermsBackupScheduleConfig(value, config.backups().schedule().intervalMinutes(), config.backups().schedule().runOnStartup())),
-                            config.commands(), config.chat(), config.paper())),
+                            config.audit(), config.commands(), config.chat(), config.paper())),
             integerConfig("backups.schedule.intervalMinutes", "minutes between automatic database backups", ClutchPermsBackupScheduleConfig.MIN_INTERVAL_MINUTES,
                     ClutchPermsBackupScheduleConfig.MAX_INTERVAL_MINUTES, ClutchPermsBackupScheduleConfig.DEFAULT_INTERVAL_MINUTES,
                     config -> config.backups().schedule().intervalMinutes(),
                     (config, value) -> new ClutchPermsConfig(
                             new ClutchPermsBackupConfig(config.backups().retentionLimit(),
                                     new ClutchPermsBackupScheduleConfig(config.backups().schedule().enabled(), value, config.backups().schedule().runOnStartup())),
-                            config.commands(), config.chat(), config.paper())),
+                            config.audit(), config.commands(), config.chat(), config.paper())),
             booleanConfig("backups.schedule.runOnStartup", "startup database backup", ClutchPermsBackupScheduleConfig.DEFAULT_RUN_ON_STARTUP,
                     config -> config.backups().schedule().runOnStartup(),
                     (config, value) -> new ClutchPermsConfig(
                             new ClutchPermsBackupConfig(config.backups().retentionLimit(),
                                     new ClutchPermsBackupScheduleConfig(config.backups().schedule().enabled(), config.backups().schedule().intervalMinutes(), value)),
+                            config.audit(), config.commands(), config.chat(), config.paper())),
+            booleanConfig("audit.retention.enabled", "automatic audit history retention pruning", ClutchPermsAuditRetentionConfig.DEFAULT_ENABLED,
+                    config -> config.audit().enabled(),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsAuditRetentionConfig(value, config.audit().maxAgeDays(), config.audit().maxEntries()),
+                            config.commands(), config.chat(), config.paper())),
+            integerConfig("audit.retention.maxAgeDays", "audit history days kept", ClutchPermsAuditRetentionConfig.MIN_MAX_AGE_DAYS,
+                    ClutchPermsAuditRetentionConfig.MAX_MAX_AGE_DAYS, ClutchPermsAuditRetentionConfig.DEFAULT_MAX_AGE_DAYS, config -> config.audit().maxAgeDays(),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsAuditRetentionConfig(config.audit().enabled(), value, config.audit().maxEntries()),
+                            config.commands(), config.chat(), config.paper())),
+            integerConfig("audit.retention.maxEntries", "newest audit history entries kept; 0 disables count retention", ClutchPermsAuditRetentionConfig.MIN_MAX_ENTRIES,
+                    ClutchPermsAuditRetentionConfig.MAX_MAX_ENTRIES, ClutchPermsAuditRetentionConfig.DEFAULT_MAX_ENTRIES, config -> config.audit().maxEntries(),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsAuditRetentionConfig(config.audit().enabled(), config.audit().maxAgeDays(), value),
                             config.commands(), config.chat(), config.paper())),
             integerConfig("commands.helpPageSize", "command rows shown per help page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
                     ClutchPermsCommandConfig.DEFAULT_HELP_PAGE_SIZE, config -> config.commands().helpPageSize(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(value, config.commands().resultPageSize()), config.chat(),
-                            config.paper())),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), config.audit(), new ClutchPermsCommandConfig(value, config.commands().resultPageSize()),
+                            config.chat(), config.paper())),
             integerConfig("commands.resultPageSize", "rows shown per list-result page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
                     ClutchPermsCommandConfig.DEFAULT_RESULT_PAGE_SIZE, config -> config.commands().resultPageSize(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), new ClutchPermsCommandConfig(config.commands().helpPageSize(), value), config.chat(),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), config.audit(), new ClutchPermsCommandConfig(config.commands().helpPageSize(), value), config.chat(),
                             config.paper())),
             booleanConfig("chat.enabled", "prefix and suffix chat formatting", ClutchPermsChatConfig.DEFAULT_ENABLED, config -> config.chat().enabled(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), config.commands(), new ClutchPermsChatConfig(value), config.paper())),
+                    (config, value) -> new ClutchPermsConfig(config.backups(), config.audit(), config.commands(), new ClutchPermsChatConfig(value), config.paper())),
             booleanConfig("paper.replaceOpCommands", "Paper /op and /deop ClutchPerms replacements", ClutchPermsPaperConfig.DEFAULT_REPLACE_OP_COMMANDS,
                     config -> config.paper().replaceOpCommands(),
-                    (config, value) -> new ClutchPermsConfig(config.backups(), config.commands(), config.chat(), new ClutchPermsPaperConfig(value))));
+                    (config, value) -> new ClutchPermsConfig(config.backups(), config.audit(), config.commands(), config.chat(), new ClutchPermsPaperConfig(value))));
 
     private static final List<String> CONFIG_KEYS = CONFIG_ENTRIES.stream().map(ConfigEntry::key).toList();
 
@@ -212,6 +231,8 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("reload", PermissionNodes.ADMIN_RELOAD, "Reloads config and database storage, then refreshes runtime permissions."),
             new CommandHelpEntry("validate", PermissionNodes.ADMIN_VALIDATE, "Checks config and database storage without applying it."),
             new CommandHelpEntry("history [page]", PermissionNodes.ADMIN_HISTORY, "Lists command mutation history."),
+            new CommandHelpEntry("history prune days <days>", PermissionNodes.ADMIN_HISTORY_PRUNE, "Deletes audit history older than the supplied days."),
+            new CommandHelpEntry("history prune count <count>", PermissionNodes.ADMIN_HISTORY_PRUNE, "Keeps only the newest audit history entries."),
             new CommandHelpEntry("undo <id>", PermissionNodes.ADMIN_UNDO, "Reverts one undoable history entry."),
             new CommandHelpEntry("config list", PermissionNodes.ADMIN_CONFIG_VIEW, "Lists active runtime config values."),
             new CommandHelpEntry("config get <key>", PermissionNodes.ADMIN_CONFIG_VIEW, "Shows one config value."),
@@ -397,8 +418,14 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> LiteralArgumentBuilder<S> historyCommand(ClutchPermsCommandEnvironment<S> environment) {
-        return LiteralArgumentBuilder.<S>literal("history").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_HISTORY))
+        return LiteralArgumentBuilder.<S>literal("history").requires(source -> canUseAny(environment, source, PermissionNodes.ADMIN_HISTORY, PermissionNodes.ADMIN_HISTORY_PRUNE))
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HISTORY, source -> listHistory(environment, context)))
+                .then(LiteralArgumentBuilder.<S>literal("prune").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_HISTORY_PRUNE))
+                        .then(LiteralArgumentBuilder.<S>literal("days")
+                                .then(RequiredArgumentBuilder.<S, Integer>argument(DAYS_ARGUMENT, IntegerArgumentType.integer(1)).executes(
+                                        context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HISTORY_PRUNE, source -> pruneHistoryDays(environment, context)))))
+                        .then(LiteralArgumentBuilder.<S>literal("count").then(RequiredArgumentBuilder.<S, Integer>argument(COUNT_ARGUMENT, IntegerArgumentType.integer(1)).executes(
+                                context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HISTORY_PRUNE, source -> pruneHistoryCount(environment, context))))))
                 .then(RequiredArgumentBuilder.<S, String>argument(PAGE_ARGUMENT, StringArgumentType.word())
                         .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HISTORY, source -> listHistory(environment, context))));
     }
@@ -1017,6 +1044,8 @@ public final class ClutchPermsCommands {
         environment.sendMessage(context.getSource(),
                 CommandLang.backupScheduleEnabled(environment.config().backups().schedule().enabled(), environment.scheduledBackupStatus().running()));
         environment.sendMessage(context.getSource(),
+                CommandLang.statusAuditRetention(environment.config().audit().enabled(), environment.config().audit().maxAgeDays(), environment.config().audit().maxEntries()));
+        environment.sendMessage(context.getSource(),
                 CommandLang.statusCommandPageSizes(environment.config().commands().helpPageSize(), environment.config().commands().resultPageSize()));
         environment.sendMessage(context.getSource(), CommandLang.statusChatFormatting(environment.config().chat().enabled()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownSubjects(environment.subjectMetadataService().getSubjects().size()));
@@ -1043,6 +1072,69 @@ public final class ClutchPermsCommands {
         List<PagedRow> rows = pageItems(entries, page, pageSize).stream().map(entry -> historyRow(rootLiteral, entry)).toList();
         sendPagedRows(environment, context, "History", rows, "history");
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int pruneHistoryDays(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        int days = IntegerArgumentType.getInteger(context, DAYS_ARGUMENT);
+        Instant cutoff = Instant.now().minus(Duration.ofDays(days));
+        int matchedRows = (int) environment.auditLogService().listNewestFirst().stream().filter(entry -> entry.timestamp().isBefore(cutoff)).count();
+        if (matchedRows == 0) {
+            environment.sendMessage(context.getSource(), CommandLang.historyPruneEmpty());
+            return Command.SINGLE_SUCCESS;
+        }
+        if (!confirmDestructiveCommand(environment, context, confirmationOperation("history-prune-days", Integer.toString(days)))) {
+            return Command.SINGLE_SUCCESS;
+        }
+
+        matchedRows = (int) environment.auditLogService().listNewestFirst().stream().filter(entry -> entry.timestamp().isBefore(cutoff)).count();
+        if (matchedRows == 0) {
+            environment.sendMessage(context.getSource(), CommandLang.historyPruneEmpty());
+            return Command.SINGLE_SUCCESS;
+        }
+        appendPruneAudit(environment, context, "history.prune.days", "history-prune-days:" + days, "history prune days " + days, matchedRows);
+        int deleted = environment.auditLogService().pruneOlderThan(cutoff);
+        environment.sendMessage(context.getSource(), CommandLang.historyPruned(deleted));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int pruneHistoryCount(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        int count = IntegerArgumentType.getInteger(context, COUNT_ARGUMENT);
+        int existingRows = environment.auditLogService().listNewestFirst().size();
+        int matchedRows = Math.max(0, existingRows + 1 - count);
+        if (matchedRows == 0) {
+            environment.sendMessage(context.getSource(), CommandLang.historyPruneEmpty());
+            return Command.SINGLE_SUCCESS;
+        }
+        if (!confirmDestructiveCommand(environment, context, confirmationOperation("history-prune-count", Integer.toString(count)))) {
+            return Command.SINGLE_SUCCESS;
+        }
+
+        existingRows = environment.auditLogService().listNewestFirst().size();
+        matchedRows = Math.max(0, existingRows + 1 - count);
+        if (matchedRows == 0) {
+            environment.sendMessage(context.getSource(), CommandLang.historyPruneEmpty());
+            return Command.SINGLE_SUCCESS;
+        }
+        appendPruneAudit(environment, context, "history.prune.count", "history-prune-count:" + count, "history prune count " + count, matchedRows);
+        int deleted = environment.auditLogService().pruneBeyondNewest(count);
+        environment.sendMessage(context.getSource(), CommandLang.historyPruned(deleted));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> void appendPruneAudit(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String action, String targetKey, String targetDisplay,
+            int matchedRows) throws CommandSyntaxException {
+        JsonObject before = new JsonObject();
+        before.addProperty("matchedRows", matchedRows);
+        JsonObject after = new JsonObject();
+        after.addProperty("undoable", false);
+        try {
+            environment.auditLogService()
+                    .append(new AuditLogRecord(Instant.now(), environment.sourceKind(context.getSource()), environment.sourceSubjectId(context.getSource()),
+                            actorName(environment, context.getSource()), action, "audit", targetKey, targetDisplay, canonicalJson(before.toString()),
+                            canonicalJson(after.toString()), confirmationCommand(context), false));
+        } catch (RuntimeException exception) {
+            throw AUDIT_OPERATION_FAILED.create(CommandLang.auditFailed(exception));
+        }
     }
 
     private static <S> int sendUndoUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -1615,6 +1707,15 @@ public final class ClutchPermsCommands {
 
         Optional<UUID> subjectId = environment.sourceSubjectId(source);
         return subjectId.isPresent() && environment.permissionResolver().hasPermission(subjectId.get(), requiredPermission);
+    }
+
+    private static <S> boolean canUseAny(ClutchPermsCommandEnvironment<S> environment, S source, String... requiredPermissions) {
+        for (String requiredPermission : requiredPermissions) {
+            if (canUse(environment, source, requiredPermission)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static <S> int showUserInfo(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
@@ -2594,6 +2695,16 @@ public final class ClutchPermsCommands {
                             confirmationCommand(context), undoable));
         } catch (RuntimeException exception) {
             environment.sendMessage(context.getSource(), CommandLang.auditFailed(exception));
+            return;
+        }
+        applyAutomaticAuditRetention(environment, context.getSource());
+    }
+
+    private static <S> void applyAutomaticAuditRetention(ClutchPermsCommandEnvironment<S> environment, S source) {
+        try {
+            AuditLogRetention.apply(environment.config(), environment.auditLogService(), Clock.systemUTC());
+        } catch (RuntimeException exception) {
+            environment.sendMessage(source, CommandLang.auditRetentionFailed(exception));
         }
     }
 
@@ -2643,6 +2754,10 @@ public final class ClutchPermsCommands {
                     actorName(environment, context.getSource()));
         } catch (RuntimeException exception) {
             environment.sendMessage(context.getSource(), CommandLang.auditFailed(exception));
+            undoEntry = null;
+        }
+        if (undoEntry != null) {
+            applyAutomaticAuditRetention(environment, context.getSource());
         }
         environment.refreshRuntimePermissions();
         environment.sendMessage(context.getSource(), CommandLang.auditUndone(id));
@@ -2850,6 +2965,9 @@ public final class ClutchPermsCommands {
         root.addProperty("backups.schedule.enabled", config.backups().schedule().enabled());
         root.addProperty("backups.schedule.intervalMinutes", config.backups().schedule().intervalMinutes());
         root.addProperty("backups.schedule.runOnStartup", config.backups().schedule().runOnStartup());
+        root.addProperty("audit.retention.enabled", config.audit().enabled());
+        root.addProperty("audit.retention.maxAgeDays", config.audit().maxAgeDays());
+        root.addProperty("audit.retention.maxEntries", config.audit().maxEntries());
         root.addProperty("commands.helpPageSize", config.commands().helpPageSize());
         root.addProperty("commands.resultPageSize", config.commands().resultPageSize());
         root.addProperty("chat.enabled", config.chat().enabled());
@@ -2860,11 +2978,15 @@ public final class ClutchPermsCommands {
     private static <S> void applyConfigSnapshot(ClutchPermsCommandEnvironment<S> environment, String snapshotJson) {
         JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
         ClutchPermsBackupScheduleConfig defaultSchedule = ClutchPermsBackupScheduleConfig.defaults();
+        ClutchPermsAuditRetentionConfig defaultAuditRetention = ClutchPermsAuditRetentionConfig.defaults();
         ClutchPermsConfig restoredConfig = new ClutchPermsConfig(
                 new ClutchPermsBackupConfig(root.get("backups.retentionLimit").getAsInt(),
                         new ClutchPermsBackupScheduleConfig(booleanSnapshotValue(root, "backups.schedule.enabled", defaultSchedule.enabled()),
                                 integerSnapshotValue(root, "backups.schedule.intervalMinutes", defaultSchedule.intervalMinutes()),
                                 booleanSnapshotValue(root, "backups.schedule.runOnStartup", defaultSchedule.runOnStartup()))),
+                new ClutchPermsAuditRetentionConfig(booleanSnapshotValue(root, "audit.retention.enabled", defaultAuditRetention.enabled()),
+                        integerSnapshotValue(root, "audit.retention.maxAgeDays", defaultAuditRetention.maxAgeDays()),
+                        integerSnapshotValue(root, "audit.retention.maxEntries", defaultAuditRetention.maxEntries())),
                 new ClutchPermsCommandConfig(root.get("commands.helpPageSize").getAsInt(), root.get("commands.resultPageSize").getAsInt()),
                 new ClutchPermsChatConfig(root.get("chat.enabled").getAsBoolean()), new ClutchPermsPaperConfig(root.get("paper.replaceOpCommands").getAsBoolean()));
         environment.updateConfig(ignored -> restoredConfig);

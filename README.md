@@ -42,7 +42,7 @@ Command help and long list results are paged. In chat, command rows can be click
 
 Console and remote console can run commands for bootstrap. Players need the exact effective command permission for the command they run, and player command trees/completions only expose branches backed by permissions they currently have. After permission-affecting ClutchPerms changes, online player command trees are resent so completions update without relogging.
 
-Destructive commands require repeat-command confirmation. Run the same destructive operation again within 30 seconds to confirm `user clear-all`, `group clear-all`, `group delete`, or `backup restore`.
+Destructive commands require repeat-command confirmation. Run the same destructive operation again within 30 seconds to confirm `user clear-all`, `group clear-all`, `group delete`, `backup restore`, or audit history prune commands.
 
 Useful grants:
 
@@ -56,6 +56,7 @@ Useful grants:
 | `clutchperms.admin.users.*` | Stored user list and search |
 | `clutchperms.admin.nodes.*` | Known permission node registry |
 | `clutchperms.admin.history` | Audit history listing |
+| `clutchperms.admin.history.*` | Audit history pruning |
 | `clutchperms.admin.undo` | Undoing undoable audit history entries |
 
 `clutchperms.admin` is only the namespace root. It does not grant command access by itself.
@@ -70,6 +71,8 @@ Useful grants:
 | `/clutchperms reload` | `clutchperms.admin.reload` | Reloads config and database storage, then refreshes runtime permissions. |
 | `/clutchperms validate` | `clutchperms.admin.validate` | Parses config and database storage without applying them. |
 | `/clutchperms history [page]` | `clutchperms.admin.history` | Lists newest command mutation audit entries. |
+| `/clutchperms history prune days <days>` | `clutchperms.admin.history.prune` | Deletes audit entries older than the supplied age after repeat confirmation. |
+| `/clutchperms history prune count <count>` | `clutchperms.admin.history.prune` | Keeps only the newest audit entries after repeat confirmation. |
 | `/clutchperms undo <id>` | `clutchperms.admin.undo` | Reverts one undoable audit entry if current state still matches the logged after snapshot. |
 
 ### Paper Shortcuts
@@ -176,7 +179,7 @@ The built-in `default` group always exists, applies implicitly to every subject,
 Notes:
 
 - `<target>` resolves exact online name, then exact stored last-known name, then UUID.
-- Config keys are `backups.retentionLimit`, `backups.schedule.enabled`, `backups.schedule.intervalMinutes`, `backups.schedule.runOnStartup`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
+- Config keys are `backups.retentionLimit`, `backups.schedule.enabled`, `backups.schedule.intervalMinutes`, `backups.schedule.runOnStartup`, `audit.retention.enabled`, `audit.retention.maxAgeDays`, `audit.retention.maxEntries`, `commands.helpPageSize`, `commands.resultPageSize`, `chat.enabled`, and `paper.replaceOpCommands`.
 - Config changes apply immediately through save-and-reload. If reload fails, `config.json` is rolled back.
 - Page numbers start at 1. Invalid or out-of-range pages return styled ClutchPerms feedback and a command to try.
 - Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
@@ -189,7 +192,7 @@ Notes:
 - Permission assignments may use exact nodes, `*`, or terminal wildcards like `example.*`.
 - Mid-node wildcards such as `example.*.edit` are rejected.
 - Known node registry entries must be exact nodes. Wildcards are valid assignments, not known-node entries.
-- Successful command-layer mutations are written to the SQLite audit log with actor, target, action, timestamp, before/after snapshots, source command, and undo state. Audit history is retained indefinitely in this version.
+- Successful command-layer mutations are written to the SQLite audit log with actor, target, action, timestamp, before/after snapshots, source command, and undo state. Audit history is pruned automatically by configured retention and can be pruned manually with repeat-confirmed history prune commands.
 - `/clutchperms undo <id>` refuses to overwrite newer changes: the current target state must still match the audited after snapshot. Undo writes its own non-undoable audit entry and marks the original entry undone.
 - Backup create/restore, manual known-node changes, player-observation metadata updates, and internal service calls outside commands are not audited in this version.
 
@@ -199,7 +202,7 @@ ClutchPerms writes one config file and one SQLite database:
 
 | File | Purpose |
 | --- | --- |
-| `config.json` | Runtime settings for backup retention/scheduling, command page sizes, and chat formatting |
+| `config.json` | Runtime settings for backup retention/scheduling, audit retention, command page sizes, and chat formatting |
 | `database.db` | Direct permissions, group definitions, memberships, subject metadata, display values, manually registered known nodes, and command audit history |
 
 Default `config.json`:
@@ -213,6 +216,13 @@ Default `config.json`:
       "enabled": false,
       "intervalMinutes": 60,
       "runOnStartup": false
+    }
+  },
+  "audit": {
+    "retention": {
+      "enabled": true,
+      "maxAgeDays": 90,
+      "maxEntries": 0
     }
   },
   "commands": {
@@ -240,6 +250,8 @@ Chat display is active by default on all supported platforms, can be toggled wit
 
 Backups are whole-database snapshots created manually with `/clutchperms backup create` or automatically when `backups.schedule.enabled` is true. Scheduled backups are disabled by default, run every 60 minutes when enabled, can optionally run once on startup, and use the same retention pruning as manual backups.
 
+Audit history retention is enabled by default. ClutchPerms keeps audit rows for 90 days, with no count cap unless `audit.retention.maxEntries` is set above `0`. Automatic retention runs after runtime load/reload and after successful audited command mutations. Manual `/clutchperms history prune days <days>` and `/clutchperms history prune count <count>` commands require repeat confirmation and may remove undoable entries.
+
 Backup restore validates the selected backup file before replacing live storage. ClutchPerms closes the active SQLite pool, replaces `database.db`, removes stale WAL/SHM sidecar files, reloads config and database storage, and rolls the restored database back if reload fails. `config.json` is not included in backup restore.
 
 If a database mutation cannot commit, ClutchPerms leaves both the live database and the in-memory runtime state unchanged.
@@ -249,7 +261,7 @@ backups/
   database/database-YYYYMMDD-HHMMSSSSS.db
 ```
 
-By default, ClutchPerms keeps the newest 10 database backups. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups. Use `/clutchperms backup schedule enable`, `/clutchperms backup schedule disable`, and `/clutchperms backup schedule interval <minutes>` to manage automatic backups. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally. Use `/clutchperms config set paper.replaceOpCommands off` or edit `config.json` to disable Paper's `/op` and `/deop` replacements.
+By default, ClutchPerms keeps the newest 10 database backups. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups. Use `/clutchperms backup schedule enable`, `/clutchperms backup schedule disable`, and `/clutchperms backup schedule interval <minutes>` to manage automatic backups. Use `/clutchperms config set audit.retention.maxAgeDays <days>` or `/clutchperms config set audit.retention.maxEntries <count>` to tune audit retention. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally. Use `/clutchperms config set paper.replaceOpCommands off` or edit `config.json` to disable Paper's `/op` and `/deop` replacements.
 
 ## Forge And NeoForge
 

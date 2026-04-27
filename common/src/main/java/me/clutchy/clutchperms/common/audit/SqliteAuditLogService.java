@@ -82,6 +82,33 @@ final class SqliteAuditLogService implements AuditLogService {
     }
 
     @Override
+    public int pruneOlderThan(Instant cutoff) {
+        int[] deleted = {0};
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM audit_log WHERE timestamp < ?")) {
+                statement.setString(1, cutoff.toString());
+                deleted[0] = statement.executeUpdate();
+            }
+        });
+        return deleted[0];
+    }
+
+    @Override
+    public int pruneBeyondNewest(int retainedCount) {
+        if (retainedCount < 0) {
+            throw new IllegalArgumentException("retainedCount must be non-negative");
+        }
+        int[] deleted = {0};
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM audit_log WHERE id NOT IN (SELECT id FROM audit_log ORDER BY id DESC LIMIT ?)")) {
+                statement.setInt(1, retainedCount);
+                deleted[0] = statement.executeUpdate();
+            }
+        });
+        return deleted[0];
+    }
+
+    @Override
     public void markUndone(long id, long undoEntryId, Instant undoneAt, Optional<UUID> actorId, Optional<String> actorName) {
         store.write(connection -> {
             try (PreparedStatement statement = connection
