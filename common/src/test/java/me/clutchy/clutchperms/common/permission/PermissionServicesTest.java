@@ -106,6 +106,26 @@ class PermissionServicesTest {
     }
 
     @Test
+    void targetedPermissionWritesPreserveRowsUnknownToLoadedDelegate() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            PermissionService permissionService = PermissionServices.sqlite(store);
+            permissionService.setPermission(FIRST_SUBJECT, "first.node", PermissionValue.TRUE);
+            store.write(connection -> connection.createStatement()
+                    .executeUpdate("INSERT INTO subject_permissions (subject_id, node, value) VALUES ('" + SECOND_SUBJECT + "', 'external.node', 'FALSE')"));
+
+            permissionService.setPermission(FIRST_SUBJECT, "first.other", PermissionValue.FALSE);
+            permissionService.clearPermission(FIRST_SUBJECT, "first.node");
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            PermissionService reloadedPermissionService = PermissionServices.sqlite(store);
+            assertEquals(PermissionValue.FALSE, reloadedPermissionService.getPermission(SECOND_SUBJECT, "external.node"));
+            assertEquals(Map.of("external.node", PermissionValue.FALSE), reloadedPermissionService.getPermissions(SECOND_SUBJECT));
+        }
+    }
+
+    @Test
     void failedWritesDoNotCommitPermissionMutations() {
         Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
         SqliteStore store = SqliteTestSupport.open(databaseFile);

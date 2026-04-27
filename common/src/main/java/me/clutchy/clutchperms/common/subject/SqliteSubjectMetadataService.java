@@ -34,7 +34,8 @@ final class SqliteSubjectMetadataService implements SubjectMetadataService {
     public synchronized void recordSubject(UUID subjectId, String lastKnownName, Instant lastSeen) {
         InMemorySubjectMetadataService candidate = copyDelegate();
         candidate.recordSubject(subjectId, lastKnownName, lastSeen);
-        commit(candidate);
+        writeSubject(candidate.getSubject(subjectId).orElseThrow());
+        delegate = candidate;
     }
 
     @Override
@@ -61,37 +62,36 @@ final class SqliteSubjectMetadataService implements SubjectMetadataService {
     public synchronized void setSubjectPrefix(UUID subjectId, DisplayText prefix) {
         InMemorySubjectMetadataService candidate = copyDelegate();
         candidate.setSubjectPrefix(subjectId, prefix);
-        commit(candidate);
+        writeSubjectDisplay(subjectId, candidate.getSubjectDisplay(subjectId));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void clearSubjectPrefix(UUID subjectId) {
         InMemorySubjectMetadataService candidate = copyDelegate();
         candidate.clearSubjectPrefix(subjectId);
-        commit(candidate);
+        writeSubjectDisplay(subjectId, candidate.getSubjectDisplay(subjectId));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void setSubjectSuffix(UUID subjectId, DisplayText suffix) {
         InMemorySubjectMetadataService candidate = copyDelegate();
         candidate.setSubjectSuffix(subjectId, suffix);
-        commit(candidate);
+        writeSubjectDisplay(subjectId, candidate.getSubjectDisplay(subjectId));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void clearSubjectSuffix(UUID subjectId) {
         InMemorySubjectMetadataService candidate = copyDelegate();
         candidate.clearSubjectSuffix(subjectId);
-        commit(candidate);
+        writeSubjectDisplay(subjectId, candidate.getSubjectDisplay(subjectId));
+        delegate = candidate;
     }
 
     private InMemorySubjectMetadataService copyDelegate() {
         return new InMemorySubjectMetadataService(delegate.snapshot(), delegate.displaySnapshot());
-    }
-
-    private void commit(InMemorySubjectMetadataService candidate) {
-        saveSubjects(candidate.snapshot(), candidate.displaySnapshot());
-        delegate = candidate;
     }
 
     private SubjectData loadSubjects() {
@@ -127,30 +127,35 @@ final class SqliteSubjectMetadataService implements SubjectMetadataService {
         });
     }
 
-    private void saveSubjects(Map<UUID, SubjectMetadata> subjects, Map<UUID, DisplayProfile> displays) {
+    private void writeSubject(SubjectMetadata subject) {
         store.write(connection -> {
-            try (PreparedStatement deleteDisplays = connection.prepareStatement("DELETE FROM subject_display");
-                    PreparedStatement deleteSubjects = connection.prepareStatement("DELETE FROM subjects")) {
-                deleteDisplays.executeUpdate();
-                deleteSubjects.executeUpdate();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT INTO subjects (subject_id, last_known_name, last_seen) VALUES (?, ?, ?) ON CONFLICT(subject_id) DO UPDATE SET last_known_name = excluded.last_known_name, last_seen = excluded.last_seen")) {
+                statement.setString(1, subject.subjectId().toString());
+                statement.setString(2, subject.lastKnownName());
+                statement.setString(3, subject.lastSeen().toString());
+                statement.executeUpdate();
             }
-            try (PreparedStatement insertSubject = connection.prepareStatement("INSERT INTO subjects (subject_id, last_known_name, last_seen) VALUES (?, ?, ?)")) {
-                for (SubjectMetadata subject : subjects.values()) {
-                    insertSubject.setString(1, subject.subjectId().toString());
-                    insertSubject.setString(2, subject.lastKnownName());
-                    insertSubject.setString(3, subject.lastSeen().toString());
-                    insertSubject.addBatch();
+        });
+    }
+
+    private void writeSubjectDisplay(UUID subjectId, DisplayProfile display) {
+        if (display.isEmpty()) {
+            store.write(connection -> {
+                try (PreparedStatement statement = connection.prepareStatement("DELETE FROM subject_display WHERE subject_id = ?")) {
+                    statement.setString(1, subjectId.toString());
+                    statement.executeUpdate();
                 }
-                insertSubject.executeBatch();
-            }
-            try (PreparedStatement insertDisplay = connection.prepareStatement("INSERT INTO subject_display (subject_id, prefix, suffix) VALUES (?, ?, ?)")) {
-                for (Map.Entry<UUID, DisplayProfile> entry : displays.entrySet()) {
-                    insertDisplay.setString(1, entry.getKey().toString());
-                    insertDisplay.setString(2, entry.getValue().prefix().map(DisplayText::rawText).orElse(null));
-                    insertDisplay.setString(3, entry.getValue().suffix().map(DisplayText::rawText).orElse(null));
-                    insertDisplay.addBatch();
-                }
-                insertDisplay.executeBatch();
+            });
+            return;
+        }
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT INTO subject_display (subject_id, prefix, suffix) VALUES (?, ?, ?) ON CONFLICT(subject_id) DO UPDATE SET prefix = excluded.prefix, suffix = excluded.suffix")) {
+                statement.setString(1, subjectId.toString());
+                statement.setString(2, display.prefix().map(DisplayText::rawText).orElse(null));
+                statement.setString(3, display.suffix().map(DisplayText::rawText).orElse(null));
+                statement.executeUpdate();
             }
         });
     }

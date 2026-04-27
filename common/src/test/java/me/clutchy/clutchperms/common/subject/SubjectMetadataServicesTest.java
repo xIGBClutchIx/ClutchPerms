@@ -83,6 +83,26 @@ class SubjectMetadataServicesTest {
     }
 
     @Test
+    void targetedSubjectDisplayWritesPreserveRowsUnknownToLoadedDelegate() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            SubjectMetadataService subjectMetadataService = SubjectMetadataServices.sqlite(store);
+            subjectMetadataService.setSubjectPrefix(FIRST_SUBJECT, DisplayText.parse("&7[First]"));
+            store.write(connection -> connection.createStatement()
+                    .executeUpdate("INSERT INTO subject_display (subject_id, prefix, suffix) VALUES ('" + SECOND_SUBJECT + "', '&a[Second]', '&f*')"));
+
+            subjectMetadataService.setSubjectSuffix(FIRST_SUBJECT, DisplayText.parse("&f!"));
+            subjectMetadataService.clearSubjectPrefix(FIRST_SUBJECT);
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.sqlite(store);
+            assertEquals("&a[Second]", reloadedSubjectMetadataService.getSubjectDisplay(SECOND_SUBJECT).prefix().orElseThrow().rawText());
+            assertEquals("&f*", reloadedSubjectMetadataService.getSubjectDisplay(SECOND_SUBJECT).suffix().orElseThrow().rawText());
+        }
+    }
+
+    @Test
     void failedWritesDoNotCommitSubjectMetadataMutations() {
         Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
         SqliteStore store = SqliteTestSupport.open(databaseFile);

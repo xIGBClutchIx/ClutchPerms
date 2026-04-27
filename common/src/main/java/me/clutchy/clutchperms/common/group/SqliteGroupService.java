@@ -51,21 +51,24 @@ final class SqliteGroupService implements GroupService {
     public synchronized void createGroup(String groupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.createGroup(groupName);
-        commit(candidate);
+        writeGroup(InMemoryGroupService.normalizeGroupName(groupName), candidate.getGroupDisplay(groupName));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void deleteGroup(String groupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.deleteGroup(groupName);
-        commit(candidate);
+        deleteGroupRow(InMemoryGroupService.normalizeGroupName(groupName));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void renameGroup(String groupName, String newGroupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.renameGroup(groupName, newGroupName);
-        commit(candidate);
+        renameGroupRows(InMemoryGroupService.normalizeGroupName(groupName), InMemoryGroupService.normalizeGroupName(newGroupName), candidate.getGroupDisplay(newGroupName));
+        delegate = candidate;
     }
 
     @Override
@@ -82,14 +85,16 @@ final class SqliteGroupService implements GroupService {
     public synchronized void setGroupPermission(String groupName, String node, PermissionValue value) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.setGroupPermission(groupName, node, value);
-        commit(candidate);
+        writeGroupPermission(InMemoryGroupService.normalizeGroupName(groupName), PermissionNodes.normalize(node), candidate.getGroupPermission(groupName, node));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void clearGroupPermission(String groupName, String node) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.clearGroupPermission(groupName, node);
-        commit(candidate);
+        deleteGroupPermission(InMemoryGroupService.normalizeGroupName(groupName), PermissionNodes.normalize(node));
+        delegate = candidate;
     }
 
     @Override
@@ -99,7 +104,8 @@ final class SqliteGroupService implements GroupService {
         if (removedPermissions == 0) {
             return 0;
         }
-        commit(candidate);
+        deleteGroupPermissions(InMemoryGroupService.normalizeGroupName(groupName));
+        delegate = candidate;
         return removedPermissions;
     }
 
@@ -112,28 +118,32 @@ final class SqliteGroupService implements GroupService {
     public synchronized void setGroupPrefix(String groupName, DisplayText prefix) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.setGroupPrefix(groupName, prefix);
-        commit(candidate);
+        writeGroupDisplay(InMemoryGroupService.normalizeGroupName(groupName), candidate.getGroupDisplay(groupName));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void clearGroupPrefix(String groupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.clearGroupPrefix(groupName);
-        commit(candidate);
+        writeGroupDisplay(InMemoryGroupService.normalizeGroupName(groupName), candidate.getGroupDisplay(groupName));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void setGroupSuffix(String groupName, DisplayText suffix) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.setGroupSuffix(groupName, suffix);
-        commit(candidate);
+        writeGroupDisplay(InMemoryGroupService.normalizeGroupName(groupName), candidate.getGroupDisplay(groupName));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void clearGroupSuffix(String groupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.clearGroupSuffix(groupName);
-        commit(candidate);
+        writeGroupDisplay(InMemoryGroupService.normalizeGroupName(groupName), candidate.getGroupDisplay(groupName));
+        delegate = candidate;
     }
 
     @Override
@@ -145,14 +155,16 @@ final class SqliteGroupService implements GroupService {
     public synchronized void addSubjectGroup(UUID subjectId, String groupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.addSubjectGroup(subjectId, groupName);
-        commit(candidate);
+        insertMembership(subjectId, InMemoryGroupService.normalizeGroupName(groupName));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void removeSubjectGroup(UUID subjectId, String groupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.removeSubjectGroup(subjectId, groupName);
-        commit(candidate);
+        deleteMembership(subjectId, InMemoryGroupService.normalizeGroupName(groupName));
+        delegate = candidate;
     }
 
     @Override
@@ -169,23 +181,20 @@ final class SqliteGroupService implements GroupService {
     public synchronized void addGroupParent(String groupName, String parentGroupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.addGroupParent(groupName, parentGroupName);
-        commit(candidate);
+        insertGroupParent(InMemoryGroupService.normalizeGroupName(groupName), InMemoryGroupService.normalizeGroupName(parentGroupName));
+        delegate = candidate;
     }
 
     @Override
     public synchronized void removeGroupParent(String groupName, String parentGroupName) {
         InMemoryGroupService candidate = copyDelegate();
         candidate.removeGroupParent(groupName, parentGroupName);
-        commit(candidate);
+        deleteGroupParent(InMemoryGroupService.normalizeGroupName(groupName), InMemoryGroupService.normalizeGroupName(parentGroupName));
+        delegate = candidate;
     }
 
     private InMemoryGroupService copyDelegate() {
         return new InMemoryGroupService(delegate.groupPermissionsSnapshot(), delegate.groupDisplaysSnapshot(), delegate.groupParentsSnapshot(), delegate.membershipsSnapshot());
-    }
-
-    private void commit(InMemoryGroupService candidate) {
-        saveGroups(candidate.groupPermissionsSnapshot(), candidate.groupDisplaysSnapshot(), candidate.groupParentsSnapshot(), candidate.membershipsSnapshot());
-        delegate = candidate;
     }
 
     private GroupData loadGroups() {
@@ -260,68 +269,145 @@ final class SqliteGroupService implements GroupService {
         });
     }
 
-    private void saveGroups(Map<String, Map<String, PermissionValue>> groupPermissionsSnapshot, Map<String, DisplayProfile> groupDisplaysSnapshot,
-            Map<String, Set<String>> groupParentsSnapshot, Map<UUID, Set<String>> membershipsSnapshot) {
+    private void writeGroup(String groupName, DisplayProfile display) {
         store.write(connection -> {
-            executeUpdate(connection.prepareStatement("DELETE FROM memberships"));
-            executeUpdate(connection.prepareStatement("DELETE FROM group_parents"));
-            executeUpdate(connection.prepareStatement("DELETE FROM group_permissions"));
-            executeUpdate(connection.prepareStatement("DELETE FROM groups"));
-
-            try (PreparedStatement insertGroup = connection.prepareStatement("INSERT INTO groups (name, prefix, suffix) VALUES (?, ?, ?)")) {
-                for (String groupName : groupPermissionsSnapshot.keySet()) {
-                    DisplayProfile display = groupDisplaysSnapshot.getOrDefault(groupName, DisplayProfile.empty());
-                    insertGroup.setString(1, groupName);
-                    insertGroup.setString(2, display.prefix().map(DisplayText::rawText).orElse(null));
-                    insertGroup.setString(3, display.suffix().map(DisplayText::rawText).orElse(null));
-                    insertGroup.addBatch();
-                }
-                insertGroup.executeBatch();
-            }
-
-            try (PreparedStatement insertPermission = connection.prepareStatement("INSERT INTO group_permissions (group_name, node, value) VALUES (?, ?, ?)")) {
-                for (Map.Entry<String, Map<String, PermissionValue>> groupEntry : groupPermissionsSnapshot.entrySet()) {
-                    for (Map.Entry<String, PermissionValue> permissionEntry : groupEntry.getValue().entrySet()) {
-                        if (permissionEntry.getValue() == PermissionValue.UNSET) {
-                            continue;
-                        }
-                        insertPermission.setString(1, groupEntry.getKey());
-                        insertPermission.setString(2, permissionEntry.getKey());
-                        insertPermission.setString(3, permissionEntry.getValue().name());
-                        insertPermission.addBatch();
-                    }
-                }
-                insertPermission.executeBatch();
-            }
-
-            try (PreparedStatement insertParent = connection.prepareStatement("INSERT INTO group_parents (group_name, parent_name) VALUES (?, ?)")) {
-                for (Map.Entry<String, Set<String>> groupEntry : groupParentsSnapshot.entrySet()) {
-                    for (String parentName : groupEntry.getValue()) {
-                        insertParent.setString(1, groupEntry.getKey());
-                        insertParent.setString(2, parentName);
-                        insertParent.addBatch();
-                    }
-                }
-                insertParent.executeBatch();
-            }
-
-            try (PreparedStatement insertMembership = connection.prepareStatement("INSERT INTO memberships (subject_id, group_name) VALUES (?, ?)")) {
-                for (Map.Entry<UUID, Set<String>> membershipEntry : membershipsSnapshot.entrySet()) {
-                    for (String groupName : membershipEntry.getValue()) {
-                        insertMembership.setString(1, membershipEntry.getKey().toString());
-                        insertMembership.setString(2, groupName);
-                        insertMembership.addBatch();
-                    }
-                }
-                insertMembership.executeBatch();
+            try (PreparedStatement statement = connection.prepareStatement("INSERT INTO groups (name, prefix, suffix) VALUES (?, ?, ?)")) {
+                statement.setString(1, groupName);
+                statement.setString(2, display.prefix().map(DisplayText::rawText).orElse(null));
+                statement.setString(3, display.suffix().map(DisplayText::rawText).orElse(null));
+                statement.executeUpdate();
             }
         });
     }
 
-    private static void executeUpdate(PreparedStatement statement) throws SQLException {
-        try (statement) {
-            statement.executeUpdate();
+    private void deleteGroupRow(String groupName) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM groups WHERE name = ?")) {
+                statement.setString(1, groupName);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void renameGroupRows(String groupName, String newGroupName, DisplayProfile newDisplay) {
+        store.write(connection -> {
+            try (PreparedStatement insertGroup = connection.prepareStatement("INSERT INTO groups (name, prefix, suffix) VALUES (?, ?, ?)")) {
+                insertGroup.setString(1, newGroupName);
+                insertGroup.setString(2, newDisplay.prefix().map(DisplayText::rawText).orElse(null));
+                insertGroup.setString(3, newDisplay.suffix().map(DisplayText::rawText).orElse(null));
+                insertGroup.executeUpdate();
+            }
+            try (PreparedStatement updatePermissions = connection.prepareStatement("UPDATE group_permissions SET group_name = ? WHERE group_name = ?")) {
+                updatePermissions.setString(1, newGroupName);
+                updatePermissions.setString(2, groupName);
+                updatePermissions.executeUpdate();
+            }
+            try (PreparedStatement updateChildParents = connection.prepareStatement("UPDATE group_parents SET group_name = ? WHERE group_name = ?")) {
+                updateChildParents.setString(1, newGroupName);
+                updateChildParents.setString(2, groupName);
+                updateChildParents.executeUpdate();
+            }
+            try (PreparedStatement updateParentReferences = connection.prepareStatement("UPDATE group_parents SET parent_name = ? WHERE parent_name = ?")) {
+                updateParentReferences.setString(1, newGroupName);
+                updateParentReferences.setString(2, groupName);
+                updateParentReferences.executeUpdate();
+            }
+            try (PreparedStatement updateMemberships = connection.prepareStatement("UPDATE memberships SET group_name = ? WHERE group_name = ?")) {
+                updateMemberships.setString(1, newGroupName);
+                updateMemberships.setString(2, groupName);
+                updateMemberships.executeUpdate();
+            }
+            try (PreparedStatement deleteOldGroup = connection.prepareStatement("DELETE FROM groups WHERE name = ?")) {
+                deleteOldGroup.setString(1, groupName);
+                deleteOldGroup.executeUpdate();
+            }
+        });
+    }
+
+    private void writeGroupPermission(String groupName, String node, PermissionValue value) {
+        if (value == PermissionValue.UNSET) {
+            deleteGroupPermission(groupName, node);
+            return;
         }
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT INTO group_permissions (group_name, node, value) VALUES (?, ?, ?) ON CONFLICT(group_name, node) DO UPDATE SET value = excluded.value")) {
+                statement.setString(1, groupName);
+                statement.setString(2, node);
+                statement.setString(3, value.name());
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void deleteGroupPermission(String groupName, String node) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM group_permissions WHERE group_name = ? AND node = ?")) {
+                statement.setString(1, groupName);
+                statement.setString(2, node);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void deleteGroupPermissions(String groupName) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM group_permissions WHERE group_name = ?")) {
+                statement.setString(1, groupName);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void writeGroupDisplay(String groupName, DisplayProfile display) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("UPDATE groups SET prefix = ?, suffix = ? WHERE name = ?")) {
+                statement.setString(1, display.prefix().map(DisplayText::rawText).orElse(null));
+                statement.setString(2, display.suffix().map(DisplayText::rawText).orElse(null));
+                statement.setString(3, groupName);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void insertMembership(UUID subjectId, String groupName) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("INSERT OR IGNORE INTO memberships (subject_id, group_name) VALUES (?, ?)")) {
+                statement.setString(1, subjectId.toString());
+                statement.setString(2, groupName);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void deleteMembership(UUID subjectId, String groupName) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM memberships WHERE subject_id = ? AND group_name = ?")) {
+                statement.setString(1, subjectId.toString());
+                statement.setString(2, groupName);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void insertGroupParent(String groupName, String parentGroupName) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("INSERT OR IGNORE INTO group_parents (group_name, parent_name) VALUES (?, ?)")) {
+                statement.setString(1, groupName);
+                statement.setString(2, parentGroupName);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void deleteGroupParent(String groupName, String parentGroupName) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM group_parents WHERE group_name = ? AND parent_name = ?")) {
+                statement.setString(1, groupName);
+                statement.setString(2, parentGroupName);
+                statement.executeUpdate();
+            }
+        });
     }
 
     private static DisplayProfile readDisplay(String prefix, String suffix) {

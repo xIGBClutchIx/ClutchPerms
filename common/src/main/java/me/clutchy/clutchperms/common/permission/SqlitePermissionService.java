@@ -38,14 +38,17 @@ final class SqlitePermissionService implements PermissionService {
     public synchronized void setPermission(UUID subjectId, String node, PermissionValue value) {
         InMemoryPermissionService candidate = copyDelegate();
         candidate.setPermission(subjectId, node, value);
-        commit(candidate);
+        PermissionValue storedValue = candidate.getPermission(subjectId, node);
+        writePermission(subjectId, InMemoryPermissionService.normalizeNode(node), storedValue);
+        delegate = candidate;
     }
 
     @Override
     public synchronized void clearPermission(UUID subjectId, String node) {
         InMemoryPermissionService candidate = copyDelegate();
         candidate.clearPermission(subjectId, node);
-        commit(candidate);
+        deletePermission(subjectId, InMemoryPermissionService.normalizeNode(node));
+        delegate = candidate;
     }
 
     @Override
@@ -55,17 +58,13 @@ final class SqlitePermissionService implements PermissionService {
         if (removedPermissions == 0) {
             return 0;
         }
-        commit(candidate);
+        deleteSubjectPermissions(subjectId);
+        delegate = candidate;
         return removedPermissions;
     }
 
     private InMemoryPermissionService copyDelegate() {
         return new InMemoryPermissionService(delegate.snapshot());
-    }
-
-    private void commit(InMemoryPermissionService candidate) {
-        savePermissions(candidate.snapshot());
-        delegate = candidate;
     }
 
     private Map<UUID, Map<String, PermissionValue>> loadPermissions() {
@@ -87,24 +86,37 @@ final class SqlitePermissionService implements PermissionService {
         });
     }
 
-    private void savePermissions(Map<UUID, Map<String, PermissionValue>> snapshot) {
+    private void writePermission(UUID subjectId, String node, PermissionValue value) {
+        if (value == PermissionValue.UNSET) {
+            deletePermission(subjectId, node);
+            return;
+        }
         store.write(connection -> {
-            try (PreparedStatement deleteStatement = connection.prepareStatement("DELETE FROM subject_permissions")) {
-                deleteStatement.executeUpdate();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT INTO subject_permissions (subject_id, node, value) VALUES (?, ?, ?) ON CONFLICT(subject_id, node) DO UPDATE SET value = excluded.value")) {
+                statement.setString(1, subjectId.toString());
+                statement.setString(2, node);
+                statement.setString(3, value.name());
+                statement.executeUpdate();
             }
-            try (PreparedStatement insertStatement = connection.prepareStatement("INSERT INTO subject_permissions (subject_id, node, value) VALUES (?, ?, ?)")) {
-                for (Map.Entry<UUID, Map<String, PermissionValue>> subjectEntry : snapshot.entrySet()) {
-                    for (Map.Entry<String, PermissionValue> permissionEntry : subjectEntry.getValue().entrySet()) {
-                        if (permissionEntry.getValue() == PermissionValue.UNSET) {
-                            continue;
-                        }
-                        insertStatement.setString(1, subjectEntry.getKey().toString());
-                        insertStatement.setString(2, permissionEntry.getKey());
-                        insertStatement.setString(3, permissionEntry.getValue().name());
-                        insertStatement.addBatch();
-                    }
-                }
-                insertStatement.executeBatch();
+        });
+    }
+
+    private void deletePermission(UUID subjectId, String node) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM subject_permissions WHERE subject_id = ? AND node = ?")) {
+                statement.setString(1, subjectId.toString());
+                statement.setString(2, node);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    private void deleteSubjectPermissions(UUID subjectId) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM subject_permissions WHERE subject_id = ?")) {
+                statement.setString(1, subjectId.toString());
+                statement.executeUpdate();
             }
         });
     }

@@ -31,23 +31,22 @@ final class SqlitePermissionNodeRegistry implements MutablePermissionNodeRegistr
     public synchronized void addNode(String node, String description) {
         InMemoryPermissionNodeRegistry candidate = copyDelegate();
         candidate.addNode(node, description);
-        commit(candidate);
+        KnownPermissionNode knownNode = candidate.getKnownNodes().stream().filter(candidateNode -> candidateNode.node().equals(KnownPermissionNode.normalizeKnownNode(node)))
+                .findFirst().orElseThrow();
+        writeNode(knownNode);
+        delegate = candidate;
     }
 
     @Override
     public synchronized void removeNode(String node) {
         InMemoryPermissionNodeRegistry candidate = copyDelegate();
         candidate.removeNode(node);
-        commit(candidate);
+        deleteNode(KnownPermissionNode.normalizeKnownNode(node));
+        delegate = candidate;
     }
 
     private InMemoryPermissionNodeRegistry copyDelegate() {
         return new InMemoryPermissionNodeRegistry(delegate.getKnownNodes());
-    }
-
-    private void commit(InMemoryPermissionNodeRegistry candidate) {
-        saveNodes(candidate.getKnownNodes());
-        delegate = candidate;
     }
 
     private Set<KnownPermissionNode> loadNodes() {
@@ -67,21 +66,22 @@ final class SqlitePermissionNodeRegistry implements MutablePermissionNodeRegistr
         });
     }
 
-    private void saveNodes(Set<KnownPermissionNode> snapshot) {
+    private void writeNode(KnownPermissionNode node) {
         store.write(connection -> {
-            try (PreparedStatement deleteStatement = connection.prepareStatement("DELETE FROM known_nodes")) {
-                deleteStatement.executeUpdate();
+            try (PreparedStatement statement = connection
+                    .prepareStatement("INSERT INTO known_nodes (node, description) VALUES (?, ?) ON CONFLICT(node) DO UPDATE SET description = excluded.description")) {
+                statement.setString(1, node.node());
+                statement.setString(2, node.description());
+                statement.executeUpdate();
             }
-            try (PreparedStatement insertStatement = connection.prepareStatement("INSERT INTO known_nodes (node, description) VALUES (?, ?)")) {
-                for (KnownPermissionNode node : snapshot) {
-                    if (node.source() != PermissionNodeSource.MANUAL) {
-                        continue;
-                    }
-                    insertStatement.setString(1, node.node());
-                    insertStatement.setString(2, node.description());
-                    insertStatement.addBatch();
-                }
-                insertStatement.executeBatch();
+        });
+    }
+
+    private void deleteNode(String node) {
+        store.write(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("DELETE FROM known_nodes WHERE node = ?")) {
+                statement.setString(1, node);
+                statement.executeUpdate();
             }
         });
     }

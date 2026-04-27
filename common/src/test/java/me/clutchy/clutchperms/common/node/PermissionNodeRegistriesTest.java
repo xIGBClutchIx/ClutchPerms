@@ -58,6 +58,24 @@ class PermissionNodeRegistriesTest {
     }
 
     @Test
+    void targetedKnownNodeWritesPreserveRowsUnknownToLoadedDelegate() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            MutablePermissionNodeRegistry registry = PermissionNodeRegistries.sqlite(store);
+            registry.addNode("known.node", "Known");
+            store.write(connection -> connection.createStatement().executeUpdate("INSERT INTO known_nodes (node, description) VALUES ('external.node', 'External')"));
+
+            registry.addNode("other.node", "Other");
+            registry.removeNode("known.node");
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            PermissionNodeRegistry reloadedRegistry = PermissionNodeRegistries.sqlite(store);
+            assertTrue(reloadedRegistry.getKnownNodes().contains(new KnownPermissionNode("external.node", "External", PermissionNodeSource.MANUAL)));
+        }
+    }
+
+    @Test
     void failedWritesDoNotCommitNodeRegistryMutations() {
         Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
         SqliteStore store = SqliteTestSupport.open(databaseFile);

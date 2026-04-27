@@ -156,6 +156,38 @@ class GroupServicesTest {
     }
 
     @Test
+    void targetedGroupWritesPreserveRowsUnknownToLoadedDelegate() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService groupService = GroupServices.sqlite(store);
+            groupService.createGroup("base");
+            groupService.createGroup("staff");
+            groupService.setGroupPermission("staff", "staff.node", PermissionValue.TRUE);
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO groups (name, prefix, suffix) VALUES ('external', '&a[External]', '&f*')");
+                    statement.executeUpdate("INSERT INTO group_permissions (group_name, node, value) VALUES ('external', 'external.node', 'TRUE')");
+                    statement.executeUpdate("INSERT INTO group_parents (group_name, parent_name) VALUES ('external', 'base')");
+                    statement.executeUpdate("INSERT INTO memberships (subject_id, group_name) VALUES ('" + SECOND_SUBJECT + "', 'external')");
+                }
+            });
+
+            groupService.clearGroupPermission("staff", "staff.node");
+            groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService reloadedGroupService = GroupServices.sqlite(store);
+            assertTrue(reloadedGroupService.hasGroup("external"));
+            assertEquals(PermissionValue.TRUE, reloadedGroupService.getGroupPermission("external", "external.node"));
+            assertEquals("&a[External]", reloadedGroupService.getGroupDisplay("external").prefix().orElseThrow().rawText());
+            assertEquals("&f*", reloadedGroupService.getGroupDisplay("external").suffix().orElseThrow().rawText());
+            assertEquals(Set.of("base"), reloadedGroupService.getGroupParents("external"));
+            assertEquals(Set.of(SECOND_SUBJECT), reloadedGroupService.getGroupMembers("external"));
+        }
+    }
+
+    @Test
     void failedWritesDoNotCommitGroupMutations() {
         Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
         SqliteStore store = SqliteTestSupport.open(databaseFile);
