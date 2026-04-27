@@ -152,6 +152,7 @@ final class PaperRuntimePermissionBridge implements Listener, AutoCloseable {
         }
 
         player.recalculatePermissions();
+        player.updateCommands();
     }
 
     private void detachSubject(UUID subjectId) {

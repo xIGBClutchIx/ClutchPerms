@@ -360,19 +360,24 @@ class ClutchPermsPaperPluginTest {
      */
     @Test
     void onlinePlayerPermissionUpdatesAfterServiceMutation() {
-        PlayerMock player = server.addPlayer("Target");
+        CommandUpdatingPlayerMock player = new CommandUpdatingPlayerMock(server, "Target");
+        server.addPlayer(player);
+        player.clearCommandUpdates();
 
         plugin.getPermissionService().setPermission(player.getUniqueId(), "Example.Runtime", PermissionValue.TRUE);
         assertTrue(player.isPermissionSet("example.runtime"));
         assertTrue(player.hasPermission("example.runtime"));
+        assertEquals(1, player.commandUpdates());
 
         plugin.getPermissionService().setPermission(player.getUniqueId(), "Example.Runtime", PermissionValue.FALSE);
         assertTrue(player.isPermissionSet("example.runtime"));
         assertFalse(player.hasPermission("example.runtime"));
+        assertEquals(2, player.commandUpdates());
 
         plugin.getPermissionService().clearPermission(player.getUniqueId(), "Example.Runtime");
         assertFalse(player.isPermissionSet("example.runtime"));
         assertFalse(player.hasPermission("example.runtime"));
+        assertEquals(3, player.commandUpdates());
     }
 
     /**
@@ -1150,6 +1155,29 @@ class ClutchPermsPaperPluginTest {
             return true;
         }
         return component.children().stream().anyMatch(ClutchPermsPaperPluginTest::hasHover);
+    }
+
+    private static final class CommandUpdatingPlayerMock extends PlayerMock {
+
+        private int commandUpdates;
+
+        private CommandUpdatingPlayerMock(ServerMock server, String name) {
+            super(server, name);
+        }
+
+        @Override
+        public void updateCommands() {
+            commandUpdates++;
+            super.updateCommands();
+        }
+
+        private int commandUpdates() {
+            return commandUpdates;
+        }
+
+        private void clearCommandUpdates() {
+            commandUpdates = 0;
+        }
     }
 
     private record TestCommandSourceStack(CommandSender sender) implements CommandSourceStack {
