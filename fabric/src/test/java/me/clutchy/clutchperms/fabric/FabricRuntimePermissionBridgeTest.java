@@ -170,6 +170,66 @@ final class FabricRuntimePermissionBridgeTest {
     }
 
     @Test
+    void commandMutationsTriggerScopedCommandRefreshes(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
+        TestSource console = TestSource.console();
+
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.refresh true", console));
+        assertEquals(1, environment.subjectRuntimeRefreshes());
+        assertEquals(0, environment.runtimeRefreshes());
+
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " clear example.refresh", console));
+        assertEquals(2, environment.subjectRuntimeRefreshes());
+        assertEquals(0, environment.runtimeRefreshes());
+
+        assertEquals(1, dispatcher.execute("clutchperms group admin create", console));
+        assertEquals(2, environment.subjectRuntimeRefreshes());
+        assertEquals(1, environment.runtimeRefreshes());
+
+        assertEquals(1, dispatcher.execute("clutchperms group admin set example.group true", console));
+        assertEquals(2, environment.subjectRuntimeRefreshes());
+        assertEquals(2, environment.runtimeRefreshes());
+
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " group add admin", console));
+        assertEquals(3, environment.subjectRuntimeRefreshes());
+        assertEquals(2, environment.runtimeRefreshes());
+
+        assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " group remove admin", console));
+        assertEquals(4, environment.subjectRuntimeRefreshes());
+        assertEquals(2, environment.runtimeRefreshes());
+
+        assertEquals(1, dispatcher.execute("clutchperms group base create", console));
+        assertEquals(4, environment.subjectRuntimeRefreshes());
+        assertEquals(3, environment.runtimeRefreshes());
+
+        assertEquals(1, dispatcher.execute("clutchperms group admin parent add base", console));
+        assertEquals(4, environment.subjectRuntimeRefreshes());
+        assertEquals(4, environment.runtimeRefreshes());
+
+        assertEquals(1, dispatcher.execute("clutchperms nodes add example.refresh Refresh node", console));
+        assertEquals(4, environment.subjectRuntimeRefreshes());
+        assertEquals(5, environment.runtimeRefreshes());
+    }
+
+    @Test
+    void inactiveFabricCommandRefreshesAreNoOps() {
+        ClutchPermsFabricMod.refreshRuntimeSubject(SUBJECT_ID);
+        ClutchPermsFabricMod.refreshRuntimePermissions();
+
+        List<UUID> subjectRefreshes = new ArrayList<>();
+        ClutchPermsFabricMod.<UUID>refreshOnlineSubject(SUBJECT_ID, subjectId -> null, subjectRefreshes::add);
+        assertTrue(subjectRefreshes.isEmpty());
+
+        ClutchPermsFabricMod.refreshOnlineSubject(SUBJECT_ID, subjectId -> subjectId, subjectRefreshes::add);
+        assertEquals(List.of(SUBJECT_ID), subjectRefreshes);
+
+        List<String> fullRefreshes = new ArrayList<>();
+        ClutchPermsFabricMod.refreshOnlinePlayers(List.of("one", "two"), fullRefreshes::add);
+        assertEquals(List.of("one", "two"), fullRefreshes);
+    }
+
+    @Test
     void backupRestoreReloadsBridgeVisibleState(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
         TestEnvironment environment = new TestEnvironment(temporaryDirectory);
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
@@ -280,6 +340,7 @@ final class FabricRuntimePermissionBridgeTest {
         environment.groupService().createGroup("staff");
         environment.groupService().setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
         environment.groupService().addSubjectGroup(SUBJECT_ID, "staff");
+        int refreshesBeforeReload = environment.runtimeRefreshes();
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
@@ -294,7 +355,7 @@ final class FabricRuntimePermissionBridgeTest {
         assertCommandFails(dispatcher, "clutchperms reload", console, "Failed to reload ClutchPerms storage:");
 
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.groupreload"));
-        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(refreshesBeforeReload, environment.runtimeRefreshes());
     }
 
     @Test
@@ -421,6 +482,8 @@ final class FabricRuntimePermissionBridgeTest {
 
         private int runtimeRefreshes;
 
+        private int subjectRuntimeRefreshes;
+
         private TestEnvironment(Path storageDirectory) {
             this(openStore(storageDirectory), storageDirectory);
         }
@@ -438,8 +501,11 @@ final class FabricRuntimePermissionBridgeTest {
             MutablePermissionNodeRegistry storageManualPermissionNodeRegistry = PermissionNodeRegistries.observing(PermissionNodeRegistries.sqlite(newStore),
                     this::refreshRuntimePermissions);
             this.permissionResolver = new PermissionResolver(storagePermissionService, storageGroupService);
-            this.permissionService = PermissionServices.observing(storagePermissionService, this.permissionResolver::invalidateSubject);
-            this.groupService = observingGroupService(storageGroupService, this.permissionResolver);
+            this.permissionService = PermissionServices.observing(storagePermissionService, subjectId -> {
+                this.permissionResolver.invalidateSubject(subjectId);
+                refreshRuntimeSubject(subjectId);
+            });
+            this.groupService = observingGroupService(storageGroupService, this.permissionResolver, this::refreshRuntimeSubject, this::refreshRuntimePermissions);
             this.subjectMetadataService = storageSubjectMetadataService;
             this.manualPermissionNodeRegistry = storageManualPermissionNodeRegistry;
             this.permissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), manualPermissionNodeRegistry);
@@ -511,6 +577,14 @@ final class FabricRuntimePermissionBridgeTest {
             return runtimeRefreshes;
         }
 
+        private void refreshRuntimeSubject(UUID subjectId) {
+            subjectRuntimeRefreshes++;
+        }
+
+        private int subjectRuntimeRefreshes() {
+            return subjectRuntimeRefreshes;
+        }
+
         @Override
         public CommandSourceKind sourceKind(TestSource source) {
             return source.kind();
@@ -545,16 +619,25 @@ final class FabricRuntimePermissionBridgeTest {
     }
 
     private static GroupService observingGroupService(GroupService groupService, PermissionResolver permissionResolver) {
+        return observingGroupService(groupService, permissionResolver, subjectId -> {
+        }, () -> {
+        });
+    }
+
+    private static GroupService observingGroupService(GroupService groupService, PermissionResolver permissionResolver, java.util.function.Consumer<UUID> subjectRefresher,
+            Runnable fullRefresher) {
         return GroupServices.observing(groupService, new GroupChangeListener() {
 
             @Override
             public void subjectGroupsChanged(UUID subjectId) {
                 permissionResolver.invalidateSubject(subjectId);
+                subjectRefresher.accept(subjectId);
             }
 
             @Override
             public void groupsChanged() {
                 permissionResolver.invalidateAll();
+                fullRefresher.run();
             }
         });
     }

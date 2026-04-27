@@ -177,6 +177,8 @@ clutchperms group staff prefix clear
 
 Unknown permission nodes are still assignable. Known nodes improve suggestions, diagnostics, and Paper wildcard expansion.
 
+When ClutchPerms changes a permission, group, or known node, online player command suggestions are refreshed automatically. Players should not need to relog to see newly available or removed ClutchPerms command branches.
+
 Add a manual known node:
 
 ```text

@@ -19,6 +19,7 @@ For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 - User and group prefixes/suffixes with ampersand formatting
 - Cross-platform chat display as `prefix name suffix: message`
 - Validation, reload, manual database snapshots, and restore with rollback
+- Live command tree refresh after permission changes so player completions update without relogging
 - Paper wildcard expansion for exact known permission nodes
 - Fabric, Forge, and NeoForge runtime permission integration
 
@@ -39,7 +40,7 @@ Use `/clutchperms`, `/cperms`, or `/perms`. The table uses `/clutchperms`, but e
 
 Command help and long list results are paged. In chat, command rows can be clicked to paste a command, page controls move between pages, and hover text shows concise command details.
 
-Console and remote console can run commands for bootstrap. Players need the exact effective command permission for the command they run, and player command trees/completions only expose branches backed by permissions they currently have.
+Console and remote console can run commands for bootstrap. Players need the exact effective command permission for the command they run, and player command trees/completions only expose branches backed by permissions they currently have. After permission-affecting ClutchPerms changes, online player command trees are resent so completions update without relogging.
 
 Useful grants:
 

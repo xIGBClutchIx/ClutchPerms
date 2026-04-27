@@ -4,6 +4,9 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import org.slf4j.Logger;
@@ -32,6 +35,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
@@ -57,12 +61,19 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     private static boolean runtimeBridgeRegistered;
 
     /**
+     * Active server used to resend Brigadier command trees after permission changes.
+     */
+    private static MinecraftServer activeServer;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the Fabric lifecycle.
      */
     @Override
     public void onInitialize() {
         Path storageDirectory = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID);
-        runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(storageDirectory), ClutchPermsRuntimeHooks.noop(), SqliteDependencyMode.BUNDLED_WITH_CLUTCHPERMS);
+        runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(storageDirectory),
+                new ClutchPermsRuntimeHooks(ClutchPermsFabricMod::refreshRuntimeSubject, ClutchPermsFabricMod::refreshRuntimePermissions),
+                SqliteDependencyMode.BUNDLED_WITH_CLUTCHPERMS);
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -78,7 +89,11 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionResolver);
         runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
-        ServerLifecycleEvents.SERVER_STARTED.register(server -> server.getPlayerList().getPlayers().forEach(ClutchPermsFabricMod::recordSubject));
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            activeServer = server;
+            server.getPlayerList().getPlayers().forEach(ClutchPermsFabricMod::recordSubject);
+            refreshRuntimePermissions();
+        });
 
         // Clear the static reference when the server stops so stale state is not retained.
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
@@ -86,6 +101,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
                 runtime.clear();
                 runtime = null;
             }
+            activeServer = null;
         });
     }
 
@@ -237,10 +253,40 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     }
 
     /**
-     * Refreshes Fabric runtime permission state after reload.
+     * Refreshes Fabric command suggestions for one online subject after a permission mutation.
+     *
+     * @param subjectId subject whose command tree should be resent
+     */
+    static void refreshRuntimeSubject(UUID subjectId) {
+        MinecraftServer server = activeServer;
+        if (server == null) {
+            return;
+        }
+        server.executeIfPossible(() -> {
+            refreshOnlineSubject(subjectId, server.getPlayerList()::getPlayer, player -> server.getCommands().sendCommands(player));
+        });
+    }
+
+    /**
+     * Refreshes Fabric command suggestions for every online player after broad permission changes or reload.
      */
     public static void refreshRuntimePermissions() {
-        // The Fabric permissions API bridge queries the active supplier on every check, so there is no cached runtime state to refresh.
+        MinecraftServer server = activeServer;
+        if (server == null) {
+            return;
+        }
+        server.executeIfPossible(() -> refreshOnlinePlayers(server.getPlayerList().getPlayers(), player -> server.getCommands().sendCommands(player)));
+    }
+
+    static <P> void refreshOnlineSubject(UUID subjectId, Function<UUID, P> onlinePlayerLookup, Consumer<P> commandSender) {
+        P player = onlinePlayerLookup.apply(subjectId);
+        if (player != null) {
+            commandSender.accept(player);
+        }
+    }
+
+    static <P> void refreshOnlinePlayers(Iterable<P> onlinePlayers, Consumer<P> commandSender) {
+        onlinePlayers.forEach(commandSender);
     }
 
     private static ClutchPermsRuntime getRuntime() {

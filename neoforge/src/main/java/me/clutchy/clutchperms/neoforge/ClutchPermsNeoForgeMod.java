@@ -3,6 +3,9 @@ package me.clutchy.clutchperms.neoforge;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import org.slf4j.Logger;
@@ -29,6 +32,7 @@ import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
@@ -60,12 +64,18 @@ public final class ClutchPermsNeoForgeMod {
     private static ClutchPermsRuntime runtime;
 
     /**
+     * Active server used to resend Brigadier command trees after permission changes.
+     */
+    private static MinecraftServer activeServer;
+
+    /**
      * Initializes the shared persisted service and hooks command registration into the NeoForge lifecycle.
      */
     public ClutchPermsNeoForgeMod() {
         Path storageDirectory = FMLPaths.CONFIGDIR.get().resolve(MOD_ID);
         runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(storageDirectory),
-                () -> PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsNeoForgeMod::registeredBooleanPermissionNodes), ClutchPermsRuntimeHooks.noop(),
+                () -> PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsNeoForgeMod::registeredBooleanPermissionNodes),
+                new ClutchPermsRuntimeHooks(ClutchPermsNeoForgeMod::refreshRuntimeSubject, ClutchPermsNeoForgeMod::refreshRuntimePermissions),
                 SqliteDependencyMode.BUNDLED_WITH_CLUTCHPERMS);
         try {
             reloadStorage();
@@ -101,7 +111,9 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private void onServerStarted(ServerStartedEvent event) {
+        activeServer = event.getServer();
         event.getServer().getPlayerList().getPlayers().forEach(this::recordSubject);
+        refreshRuntimePermissions();
 
         if (NeoForgeClutchPermsPermissionHandler.IDENTIFIER.equals(PermissionAPI.getActivePermissionHandler())) {
             LOGGER.info("ClutchPerms NeoForge runtime permission bridge is active.");
@@ -133,6 +145,7 @@ public final class ClutchPermsNeoForgeMod {
             runtime.clear();
             runtime = null;
         }
+        activeServer = null;
     }
 
     /**
@@ -267,10 +280,40 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     /**
-     * Refreshes NeoForge runtime permission state after reload.
+     * Refreshes NeoForge command suggestions for one online subject after a permission mutation.
+     *
+     * @param subjectId subject whose command tree should be resent
+     */
+    static void refreshRuntimeSubject(UUID subjectId) {
+        MinecraftServer server = activeServer;
+        if (server == null) {
+            return;
+        }
+        server.executeIfPossible(() -> {
+            refreshOnlineSubject(subjectId, server.getPlayerList()::getPlayer, player -> server.getCommands().sendCommands(player));
+        });
+    }
+
+    /**
+     * Refreshes NeoForge command suggestions for every online player after broad permission changes or reload.
      */
     public static void refreshRuntimePermissions() {
-        // NeoForge asks the active permission handler on demand, and the handler reads the current storage supplier.
+        MinecraftServer server = activeServer;
+        if (server == null) {
+            return;
+        }
+        server.executeIfPossible(() -> refreshOnlinePlayers(server.getPlayerList().getPlayers(), player -> server.getCommands().sendCommands(player)));
+    }
+
+    static <P> void refreshOnlineSubject(UUID subjectId, Function<UUID, P> onlinePlayerLookup, Consumer<P> commandSender) {
+        P player = onlinePlayerLookup.apply(subjectId);
+        if (player != null) {
+            commandSender.accept(player);
+        }
+    }
+
+    static <P> void refreshOnlinePlayers(Iterable<P> onlinePlayers, Consumer<P> commandSender) {
+        onlinePlayers.forEach(commandSender);
     }
 
     private static String runtimeBridgeStatus() {

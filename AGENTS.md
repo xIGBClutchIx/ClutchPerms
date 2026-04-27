@@ -140,6 +140,7 @@ Storage expectations:
 - Paper expands ClutchPerms wildcard assignments onto exact known permission nodes from built-ins, manually registered database nodes, and Paper's permission registry.
 - Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary unregistered wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without `Permissible` injection or another deeper Paper-specific bridge.
 - Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
+- Fabric, Forge, and NeoForge resend Brigadier command trees to affected online players on subject-scoped mutations and to all online players after broad permission changes or reload.
 - Paper formats chat through `AsyncChatEvent` renderers as `prefix name suffix: message` using native Adventure components when `chat.enabled` is true.
 - Paper replaces unqualified `/op` and `/deop` command labels with ClutchPerms shortcuts that add or remove explicit membership in the protected `op` group when `paper.replaceOpCommands` is enabled. They must not mutate Bukkit server-op state or `ops.json`.
 - Fabric exposes effective permissions through fabric-permissions-api as `TriState.TRUE`, `TriState.FALSE`, or `TriState.DEFAULT`.
@@ -217,6 +218,7 @@ Authorization:
 - Console and remote console can run commands for bootstrap.
 - Players need the effective exact command permission for the command they run.
 - Shared Brigadier nodes should use permission predicates so player-visible command trees and completions only expose branches backed by permissions the source has.
+- Runtime permission refresh hooks should resend online player command trees after permission-affecting changes so completions update without relogging.
 - Use `clutchperms.admin.*` as the full ClutchPerms admin grant.
 - Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
 - Config command permissions are `clutchperms.admin.config.view`, `clutchperms.admin.config.set`, and `clutchperms.admin.config.reset`; `clutchperms.admin.config.*` should work through wildcard resolution.
