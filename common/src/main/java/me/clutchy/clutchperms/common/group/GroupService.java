@@ -19,6 +19,11 @@ public interface GroupService {
     String DEFAULT_GROUP = "default";
 
     /**
+     * Protected built-in group that grants every permission only to explicitly assigned subjects.
+     */
+    String OP_GROUP = "op";
+
+    /**
      * Lists every defined group.
      *
      * @return immutable snapshot of normalized group names

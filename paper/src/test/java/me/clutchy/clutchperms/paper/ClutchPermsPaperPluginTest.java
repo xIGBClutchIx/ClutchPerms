@@ -220,7 +220,7 @@ class ClutchPermsPaperPluginTest {
         assertNextMessage(player, "Command page sizes: help 7, lists 8.");
         assertNextMessage(player, "Chat formatting: enabled.");
         assertNextMessage(player, "Known subjects: 1");
-        assertNextMessage(player, "Known groups: 1");
+        assertNextMessage(player, "Known groups: 2");
         assertNextMessage(player, "Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size());
         PermissionResolverCacheStats cacheStats = plugin.getPermissionResolver().cacheStats();
         assertNextMessage(player, "Resolver cache: " + cacheStats.subjects() + " subjects, " + cacheStats.nodeResults() + " node results, " + cacheStats.effectiveSnapshots()

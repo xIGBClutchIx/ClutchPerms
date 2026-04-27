@@ -1681,6 +1681,8 @@ public final class ClutchPermsCommands {
         rows.add(new PagedRow("name " + normalizedGroupName, groupListCommand));
         if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
             rows.add(new PagedRow("default group applies implicitly", groupListCommand));
+        } else if (GroupService.OP_GROUP.equals(normalizedGroupName)) {
+            rows.add(new PagedRow("op group grants * to explicit members only", groupMembersCommand));
         }
         rows.add(new PagedRow("direct permissions " + permissions.size(), groupListCommand));
         rows.add(new PagedRow("parents " + summarizeValues(parents), groupParentsCommand));
@@ -1717,6 +1719,9 @@ public final class ClutchPermsCommands {
         if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
             rows.add(new PagedRow("default group applies implicitly", fullCommand(rootLiteral, "group default list")));
         } else {
+            if (GroupService.OP_GROUP.equals(normalizedGroupName)) {
+                rows.add(new PagedRow("op group grants * to explicit members only", fullCommand(rootLiteral, "group op members")));
+            }
             members.stream().sorted().map(subjectId -> new PagedRow("member " + formatSubject(subjectId, environment), fullCommand(rootLiteral, "user " + subjectId + " list")))
                     .forEach(rows::add);
         }

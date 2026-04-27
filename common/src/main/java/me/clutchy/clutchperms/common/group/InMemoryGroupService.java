@@ -22,6 +22,8 @@ import me.clutchy.clutchperms.common.permission.PermissionValue;
  */
 public final class InMemoryGroupService implements GroupService {
 
+    private static final String OP_PERMISSION_NODE = "*";
+
     private final ConcurrentMap<String, ConcurrentMap<String, PermissionValue>> groupPermissions = new ConcurrentHashMap<>();
 
     private final ConcurrentMap<String, DisplayProfile> groupDisplays = new ConcurrentHashMap<>();
@@ -34,7 +36,7 @@ public final class InMemoryGroupService implements GroupService {
      * Creates an empty in-memory group service.
      */
     public InMemoryGroupService() {
-        ensureDefaultGroup();
+        ensureBuiltInGroups();
     }
 
     InMemoryGroupService(Map<String, Map<String, PermissionValue>> initialGroupPermissions, Map<String, Set<String>> initialGroupParents,
@@ -52,6 +54,10 @@ public final class InMemoryGroupService implements GroupService {
 
         initialGroupPermissions.forEach((groupName, permissions) -> {
             String normalizedGroupName = normalizeGroupName(groupName);
+            if (GroupService.OP_GROUP.equals(normalizedGroupName)) {
+                validateOpPermissions(permissions);
+                return;
+            }
             if (!hasGroup(normalizedGroupName)) {
                 createGroup(normalizedGroupName);
             }
@@ -59,6 +65,10 @@ public final class InMemoryGroupService implements GroupService {
         });
         initialGroupDisplays.forEach((groupName, display) -> {
             String normalizedGroupName = normalizeGroupName(groupName);
+            if (GroupService.OP_GROUP.equals(normalizedGroupName)) {
+                validateOpDisplay(display);
+                return;
+            }
             if (!hasGroup(normalizedGroupName)) {
                 createGroup(normalizedGroupName);
             }
@@ -106,6 +116,9 @@ public final class InMemoryGroupService implements GroupService {
         if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
             throw new IllegalArgumentException("default group cannot be deleted");
         }
+        if (GroupService.OP_GROUP.equals(normalizedGroupName)) {
+            throw new IllegalArgumentException("op group cannot be deleted");
+        }
         groupPermissions.remove(normalizedGroupName);
         groupDisplays.remove(normalizedGroupName);
         groupParents.remove(normalizedGroupName);
@@ -124,8 +137,14 @@ public final class InMemoryGroupService implements GroupService {
         if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
             throw new IllegalArgumentException("default group cannot be renamed");
         }
+        if (GroupService.OP_GROUP.equals(normalizedGroupName)) {
+            throw new IllegalArgumentException("op group cannot be renamed");
+        }
         if (GroupService.DEFAULT_GROUP.equals(normalizedNewGroupName)) {
             throw new IllegalArgumentException("group cannot be renamed to default");
+        }
+        if (GroupService.OP_GROUP.equals(normalizedNewGroupName)) {
+            throw new IllegalArgumentException("group cannot be renamed to op");
         }
         if (groupPermissions.containsKey(normalizedNewGroupName)) {
             throw new IllegalArgumentException("group already exists: " + normalizedNewGroupName);
@@ -185,6 +204,7 @@ public final class InMemoryGroupService implements GroupService {
         Objects.requireNonNull(value, "value");
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         String normalizedNode = PermissionNodes.normalize(node);
+        rejectOpDefinitionMutation(normalizedGroupName, "op group permissions are protected");
         if (value == PermissionValue.UNSET) {
             clearGroupPermission(normalizedGroupName, normalizedNode);
             return;
@@ -199,6 +219,7 @@ public final class InMemoryGroupService implements GroupService {
     public void clearGroupPermission(String groupName, String node) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         String normalizedNode = PermissionNodes.normalize(node);
+        rejectOpDefinitionMutation(normalizedGroupName, "op group permissions are protected");
         groupPermissions.get(normalizedGroupName).remove(normalizedNode);
     }
 
@@ -208,6 +229,7 @@ public final class InMemoryGroupService implements GroupService {
     @Override
     public int clearGroupPermissions(String groupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
+        rejectOpDefinitionMutation(normalizedGroupName, "op group permissions are protected");
         Map<String, PermissionValue> permissions = groupPermissions.get(normalizedGroupName);
         int removedPermissions = permissions.size();
         permissions.clear();
@@ -230,6 +252,7 @@ public final class InMemoryGroupService implements GroupService {
     public void setGroupPrefix(String groupName, DisplayText prefix) {
         Objects.requireNonNull(prefix, "prefix");
         String normalizedGroupName = normalizeExistingGroupName(groupName);
+        rejectOpDefinitionMutation(normalizedGroupName, "op group display is protected");
         groupDisplays.compute(normalizedGroupName, (ignored, display) -> Objects.requireNonNullElseGet(display, DisplayProfile::empty).withPrefix(prefix));
     }
 
@@ -239,6 +262,7 @@ public final class InMemoryGroupService implements GroupService {
     @Override
     public void clearGroupPrefix(String groupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
+        rejectOpDefinitionMutation(normalizedGroupName, "op group display is protected");
         groupDisplays.computeIfPresent(normalizedGroupName, (ignored, display) -> {
             DisplayProfile updated = display.withoutPrefix();
             return updated.isEmpty() ? null : updated;
@@ -252,6 +276,7 @@ public final class InMemoryGroupService implements GroupService {
     public void setGroupSuffix(String groupName, DisplayText suffix) {
         Objects.requireNonNull(suffix, "suffix");
         String normalizedGroupName = normalizeExistingGroupName(groupName);
+        rejectOpDefinitionMutation(normalizedGroupName, "op group display is protected");
         groupDisplays.compute(normalizedGroupName, (ignored, display) -> Objects.requireNonNullElseGet(display, DisplayProfile::empty).withSuffix(suffix));
     }
 
@@ -261,6 +286,7 @@ public final class InMemoryGroupService implements GroupService {
     @Override
     public void clearGroupSuffix(String groupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
+        rejectOpDefinitionMutation(normalizedGroupName, "op group display is protected");
         groupDisplays.computeIfPresent(normalizedGroupName, (ignored, display) -> {
             DisplayProfile updated = display.withoutSuffix();
             return updated.isEmpty() ? null : updated;
@@ -340,6 +366,7 @@ public final class InMemoryGroupService implements GroupService {
     public void addGroupParent(String groupName, String parentGroupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         String normalizedParentGroupName = normalizeExistingGroupName(parentGroupName);
+        rejectOpInheritanceMutation(normalizedGroupName, normalizedParentGroupName);
         if (normalizedGroupName.equals(normalizedParentGroupName)) {
             throw new IllegalArgumentException("group cannot inherit itself: " + normalizedGroupName);
         }
@@ -356,6 +383,7 @@ public final class InMemoryGroupService implements GroupService {
     public void removeGroupParent(String groupName, String parentGroupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         String normalizedParentGroupName = normalizeExistingGroupName(parentGroupName);
+        rejectOpInheritanceMutation(normalizedGroupName, normalizedParentGroupName);
         groupParents.computeIfPresent(normalizedGroupName, (ignored, parents) -> {
             parents.remove(normalizedParentGroupName);
             return parents;
@@ -414,15 +442,44 @@ public final class InMemoryGroupService implements GroupService {
         return normalizedGroupName;
     }
 
-    private void ensureDefaultGroup() {
+    private void ensureBuiltInGroups() {
         groupPermissions.putIfAbsent(GroupService.DEFAULT_GROUP, new ConcurrentHashMap<>());
         groupDisplays.putIfAbsent(GroupService.DEFAULT_GROUP, DisplayProfile.empty());
         groupParents.putIfAbsent(GroupService.DEFAULT_GROUP, ConcurrentHashMap.newKeySet());
+        groupPermissions.computeIfAbsent(GroupService.OP_GROUP, ignored -> new ConcurrentHashMap<>()).put(OP_PERMISSION_NODE, PermissionValue.TRUE);
+        groupDisplays.putIfAbsent(GroupService.OP_GROUP, DisplayProfile.empty());
+        groupParents.putIfAbsent(GroupService.OP_GROUP, ConcurrentHashMap.newKeySet());
     }
 
     private static void rejectDefaultMembership(String normalizedGroupName) {
         if (GroupService.DEFAULT_GROUP.equals(normalizedGroupName)) {
             throw new IllegalArgumentException("default group membership is implicit");
+        }
+    }
+
+    private static void validateOpPermissions(Map<String, PermissionValue> permissions) {
+        Map<String, PermissionValue> normalizedPermissions = new TreeMap<>();
+        permissions.forEach((node, value) -> normalizedPermissions.put(PermissionNodes.normalize(node), Objects.requireNonNull(value, "value")));
+        if (!Map.of(OP_PERMISSION_NODE, PermissionValue.TRUE).equals(normalizedPermissions)) {
+            throw new IllegalArgumentException("op group must contain only *=TRUE");
+        }
+    }
+
+    private static void validateOpDisplay(DisplayProfile display) {
+        if (!Objects.requireNonNull(display, "display").isEmpty()) {
+            throw new IllegalArgumentException("op group display is protected");
+        }
+    }
+
+    private static void rejectOpDefinitionMutation(String normalizedGroupName, String message) {
+        if (GroupService.OP_GROUP.equals(normalizedGroupName)) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private static void rejectOpInheritanceMutation(String normalizedGroupName, String normalizedParentGroupName) {
+        if (GroupService.OP_GROUP.equals(normalizedGroupName) || GroupService.OP_GROUP.equals(normalizedParentGroupName)) {
+            throw new IllegalArgumentException("op group inheritance is protected");
         }
     }
 

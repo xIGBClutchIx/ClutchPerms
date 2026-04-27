@@ -1417,6 +1417,60 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms the protected op group grants wildcard permissions only to explicit members.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void opGroupGrantsWildcardToExplicitMembersOnly() throws CommandSyntaxException {
+        subjectMetadataService.recordSubject(TARGET_ID, "Target", FIRST_SEEN);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target check example.node", console);
+        dispatcher.execute("clutchperms user Target group add OP", console);
+        dispatcher.execute("clutchperms user Target groups", console);
+        dispatcher.execute("clutchperms user Target check example.node", console);
+        dispatcher.execute("clutchperms group op info", console);
+        dispatcher.execute("clutchperms user Target group remove op", console);
+        dispatcher.execute("clutchperms user Target check example.node", console);
+
+        assertEquals(Set.of(), groupService.getSubjectGroups(TARGET_ID));
+        assertEquals(Map.of("*", PermissionValue.TRUE), groupService.getGroupPermissions("op"));
+        assertEquals(List.of("Target (00000000-0000-0000-0000-000000000002) effective example.node = UNSET from unset.",
+                "Added Target (00000000-0000-0000-0000-000000000002) to group op.", "Groups for Target (00000000-0000-0000-0000-000000000002) (page 1/1):", "  op",
+                "  default (implicit)", "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group op via *.", "Group op:", "  name op",
+                "  op group grants * to explicit members only", "  direct permissions 1", "  parents none", "  child groups none",
+                "  explicit members Target (00000000-0000-0000-0000-000000000002)", "  prefix unset", "  suffix unset",
+                "Removed Target (00000000-0000-0000-0000-000000000002) from group op.", "Target (00000000-0000-0000-0000-000000000002) effective example.node = UNSET from unset."),
+                console.messages());
+    }
+
+    /**
+     * Confirms op group definition commands are rejected while membership commands remain available.
+     *
+     * @throws CommandSyntaxException when command setup fails unexpectedly
+     */
+    @Test
+    void opGroupDefinitionIsProtected() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+        dispatcher.execute("clutchperms group staff create", console);
+
+        assertCommandFails("clutchperms group op delete", console, "Group operation failed: op group cannot be deleted");
+        assertCommandFails("clutchperms group op rename owner", console, "Group operation failed: op group cannot be renamed");
+        assertCommandFails("clutchperms group staff rename op", console, "Group operation failed: group cannot be renamed to op");
+        assertCommandFails("clutchperms group op set example.node true", console, "Group operation failed: op group permissions are protected");
+        assertCommandFails("clutchperms group op clear *", console, "Group operation failed: op group permissions are protected");
+        assertCommandFails("clutchperms group op clear-all", console, "Group operation failed: op group permissions are protected");
+        assertCommandFails("clutchperms group op prefix set &c[OP]", console, "Display operation failed: op group display is protected");
+        assertCommandFails("clutchperms group op parent add staff", console, "Group operation failed: op group inheritance is protected");
+        assertCommandFails("clutchperms group staff parent add op", console, "Group operation failed: op group inheritance is protected");
+
+        assertTrue(groupService.hasGroup("op"));
+        assertEquals(Map.of("*", PermissionValue.TRUE), groupService.getGroupPermissions("op"));
+        assertEquals(Set.of(), groupService.getGroupMembers("op"));
+    }
+
+    /**
      * Confirms group rename rejects destinations that would break group invariants.
      *
      * @throws CommandSyntaxException when command setup fails unexpectedly
@@ -1428,6 +1482,7 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms group admin create", console);
 
         assertCommandFails("clutchperms group staff rename default", console, "Group operation failed: group cannot be renamed to default");
+        assertCommandFails("clutchperms group staff rename op", console, "Group operation failed: group cannot be renamed to op");
         assertCommandFails("clutchperms group staff rename admin", console, "Group operation failed: group already exists: admin");
         assertCommandFails("clutchperms group staff rename Staff", console, "Group operation failed: group already exists: staff");
 
@@ -1665,7 +1720,7 @@ class ClutchPermsCommandsTest {
     }
 
     /**
-     * Confirms add suggestions exclude the implicit default group and groups already assigned to the target.
+     * Confirms add suggestions exclude the implicit default group and groups already assigned to the target while keeping op assignable.
      */
     @Test
     void userGroupAddSuggestionsExcludeDefaultAndAssignedGroups() {
@@ -1673,7 +1728,7 @@ class ClutchPermsCommandsTest {
         groupService.createGroup("builder");
         groupService.addSubjectGroup(TARGET_ID, "staff");
 
-        assertEquals(List.of("builder"), suggestionTexts("clutchperms user Target group add "));
+        assertEquals(List.of("builder", "op"), suggestionTexts("clutchperms user Target group add "));
     }
 
     /**
@@ -1707,9 +1762,9 @@ class ClutchPermsCommandsTest {
         subjectMetadataService.recordSubject(TARGET_ID, "Ambiguous", FIRST_SEEN);
         subjectMetadataService.recordSubject(SECOND_TARGET_ID, "ambiguous", SECOND_SEEN);
 
-        assertEquals(List.of("staff"), suggestionTexts("clutchperms user Missing group add "));
+        assertEquals(List.of("op", "staff"), suggestionTexts("clutchperms user Missing group add "));
         assertEquals(List.of(), suggestionTexts("clutchperms user Missing group remove "));
-        assertEquals(List.of("staff"), suggestionTexts("clutchperms user Ambiguous group add "));
+        assertEquals(List.of("op", "staff"), suggestionTexts("clutchperms user Ambiguous group add "));
         assertEquals(List.of(), suggestionTexts("clutchperms user Ambiguous group remove "));
     }
 
@@ -2155,7 +2210,7 @@ class ClutchPermsCommandsTest {
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Database file: " + STATUS_DIAGNOSTICS.databaseFile(), "Config file: " + STATUS_DIAGNOSTICS.configFile(),
                 "Backup retention: newest 10 database backups.", "Command page sizes: help 7, lists 8.", "Chat formatting: enabled.", "Known subjects: " + knownSubjects,
-                "Known groups: 1", "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
+                "Known groups: 2", "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
                 "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
 

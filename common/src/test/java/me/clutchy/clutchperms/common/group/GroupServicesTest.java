@@ -19,6 +19,7 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.SqliteStore;
 import me.clutchy.clutchperms.common.storage.SqliteTestSupport;
 
@@ -46,8 +47,12 @@ class GroupServicesTest {
         try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
             GroupService groupService = GroupServices.sqlite(store);
 
-            assertEquals(Set.of("default"), groupService.getGroups());
+            assertEquals(Set.of("default", "op"), groupService.getGroups());
             assertTrue(groupService.hasGroup("default"));
+            assertTrue(groupService.hasGroup("op"));
+            assertEquals(PermissionValue.TRUE, groupService.getGroupPermission("op", "*"));
+            assertEquals(Map.of("*", PermissionValue.TRUE), groupService.getGroupPermissions("op"));
+            assertEquals(Set.of(), groupService.getGroupMembers("op"));
             assertEquals(0, groupService.clearGroupPermissions("default"));
         }
 
@@ -74,7 +79,7 @@ class GroupServicesTest {
         try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
             GroupService reloadedGroupService = GroupServices.sqlite(store);
 
-            assertEquals(Set.of("admin", "default", "staff"), reloadedGroupService.getGroups());
+            assertEquals(Set.of("admin", "default", "op", "staff"), reloadedGroupService.getGroups());
             assertEquals(PermissionValue.TRUE, reloadedGroupService.getGroupPermission("admin", "example.node"));
             assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("admin", "example.denied"));
             assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("staff", "staff.*"));
@@ -84,6 +89,7 @@ class GroupServicesTest {
             assertEquals(Set.of("staff"), reloadedGroupService.getGroupParents("admin"));
             assertEquals(Set.of("admin"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
             assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("admin"));
+            assertEquals(Map.of("*", PermissionValue.TRUE), reloadedGroupService.getGroupPermissions("op"));
         }
     }
 
@@ -228,6 +234,15 @@ class GroupServicesTest {
     }
 
     @Test
+    void invalidSqliteOpDefinitionsFailLoad() {
+        assertInvalidProtectedOpDatabase("UPDATE groups SET prefix = '&c[OP]' WHERE name = 'op'");
+        assertInvalidProtectedOpDatabase("DELETE FROM group_permissions WHERE group_name = 'op'");
+        assertInvalidProtectedOpDatabase("INSERT INTO group_permissions (group_name, node, value) VALUES ('op', 'extra.node', 'TRUE')");
+        assertInvalidProtectedOpDatabase("INSERT INTO group_parents (group_name, parent_name) VALUES ('op', 'staff')");
+        assertInvalidProtectedOpDatabase("INSERT INTO group_parents (group_name, parent_name) VALUES ('staff', 'op')");
+    }
+
+    @Test
     void parentMutationsRejectInvalidLinks() {
         GroupService groupService = new InMemoryGroupService();
         groupService.createGroup("admin");
@@ -244,14 +259,63 @@ class GroupServicesTest {
     }
 
     @Test
-    void defaultGroupIsAlwaysPresentAndCannotBeDeleted() {
+    void builtInGroupsAreAlwaysPresentAndProtected() {
         GroupService groupService = new InMemoryGroupService();
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> groupService.deleteGroup("default"));
+        IllegalArgumentException defaultDelete = assertThrows(IllegalArgumentException.class, () -> groupService.deleteGroup("default"));
+        IllegalArgumentException opDelete = assertThrows(IllegalArgumentException.class, () -> groupService.deleteGroup("op"));
+        IllegalArgumentException opRename = assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("op", "owner"));
+        IllegalArgumentException renameToOp = assertThrows(IllegalArgumentException.class, () -> {
+            groupService.createGroup("staff");
+            groupService.renameGroup("staff", "op");
+        });
 
-        assertEquals("default group cannot be deleted", exception.getMessage());
-        assertEquals(Set.of("default"), groupService.getGroups());
+        assertEquals("default group cannot be deleted", defaultDelete.getMessage());
+        assertEquals("op group cannot be deleted", opDelete.getMessage());
+        assertEquals("op group cannot be renamed", opRename.getMessage());
+        assertEquals("group cannot be renamed to op", renameToOp.getMessage());
+        assertEquals(Set.of("default", "op", "staff"), groupService.getGroups());
         assertTrue(groupService.hasGroup("default"));
+        assertTrue(groupService.hasGroup("op"));
+        assertEquals(Map.of("*", PermissionValue.TRUE), groupService.getGroupPermissions("op"));
+    }
+
+    @Test
+    void opGroupAllowsOnlyExplicitMembershipMutations() {
+        GroupService groupService = new InMemoryGroupService();
+        groupService.createGroup("staff");
+
+        assertThrows(IllegalArgumentException.class, () -> groupService.setGroupPermission("op", "example.node", PermissionValue.TRUE));
+        assertThrows(IllegalArgumentException.class, () -> groupService.clearGroupPermission("op", "*"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.clearGroupPermissions("op"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.setGroupPrefix("op", DisplayText.parse("&c[OP]")));
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("op", "staff"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("staff", "op"));
+
+        groupService.addSubjectGroup(FIRST_SUBJECT, "op");
+        assertEquals(Set.of("op"), groupService.getSubjectGroups(FIRST_SUBJECT));
+        assertEquals(Set.of(FIRST_SUBJECT), groupService.getGroupMembers("op"));
+        groupService.removeSubjectGroup(FIRST_SUBJECT, "op");
+        assertEquals(Set.of(), groupService.getSubjectGroups(FIRST_SUBJECT));
+        assertEquals(Set.of(), groupService.getGroupMembers("op"));
+        assertEquals(Map.of("*", PermissionValue.TRUE), groupService.getGroupPermissions("op"));
+    }
+
+    @Test
+    void resolverAppliesOpOnlyToExplicitMembers() {
+        PermissionService permissionService = new InMemoryPermissionService();
+        GroupService groupService = new InMemoryGroupService();
+        PermissionResolver resolver = new PermissionResolver(permissionService, groupService);
+
+        assertEquals(PermissionValue.UNSET, resolver.resolve(FIRST_SUBJECT, "example.node").value());
+        groupService.addSubjectGroup(FIRST_SUBJECT, "op");
+        resolver.invalidateSubject(FIRST_SUBJECT);
+
+        assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "example.node").value());
+        assertEquals(PermissionResolution.Source.GROUP, resolver.resolve(FIRST_SUBJECT, "example.node").source());
+        assertEquals("op", resolver.resolve(FIRST_SUBJECT, "example.node").groupName());
+        assertEquals("*", resolver.resolve(FIRST_SUBJECT, "example.node").assignmentNode());
+        assertEquals(PermissionValue.UNSET, resolver.resolve(SECOND_SUBJECT, "example.node").value());
     }
 
     @Test
@@ -387,6 +451,27 @@ class GroupServicesTest {
         }
     }
 
+    private void assertInvalidProtectedOpDatabase(String invalidSql) {
+        Path databaseFile = temporaryDirectory.resolve(UUID.randomUUID().toString()).resolve("database.db");
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT OR IGNORE INTO groups (name, prefix, suffix) VALUES ('staff', NULL, NULL)");
+                    statement.executeUpdate(invalidSql);
+                }
+            });
+        }
+
+        assertThrows(PermissionStorageException.class, () -> {
+            try (SqliteStore ignored = SqliteTestSupport.open(databaseFile)) {
+                // Opening live storage validates protected built-ins.
+            }
+        });
+        try (SqliteStore store = SqliteStore.openExisting(databaseFile, SqliteDependencyMode.ANY_VISIBLE)) {
+            assertThrows(PermissionStorageException.class, () -> GroupServices.sqlite(store));
+        }
+    }
+
     private static void assertGroupStatePreserved(GroupService groupService, Path databaseFile) {
         assertGroupRuntimeState(groupService);
         try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
@@ -395,7 +480,7 @@ class GroupServicesTest {
     }
 
     private static void assertGroupRuntimeState(GroupService groupService) {
-        assertEquals(Set.of("base", "default", "guest", "staff"), groupService.getGroups());
+        assertEquals(Set.of("base", "default", "guest", "op", "staff"), groupService.getGroups());
         assertFalse(groupService.hasGroup("new"));
         assertFalse(groupService.hasGroup("renamed"));
         assertEquals(PermissionValue.TRUE, groupService.getGroupPermission("staff", "old.node"));

@@ -70,6 +70,8 @@ Shared package ownership:
 - User group membership is direct only.
 - The `default` group always exists, applies implicitly to every subject, and cannot be deleted or renamed.
 - Users cannot be explicitly added to or removed from `default`.
+- The `op` group always exists, has no members by default, grants `* = TRUE`, and applies only to explicitly assigned subjects.
+- The `op` group is protected: it cannot be deleted, renamed, used as a rename target, edited for permissions/display, or used in parent links. Users can still be explicitly added to and removed from `op`.
 - Effective resolution order is direct user assignment, explicit user group hierarchy, then implicit `default` hierarchy.
 - Closer child group permissions beat parent permissions.
 - Within the same inheritance depth, `FALSE` wins over `TRUE`.
@@ -109,7 +111,7 @@ Locations:
 
 Storage expectations:
 
-- Treat missing database storage as empty state and ensure the built-in `default` group exists. Treat missing `config.json` as default config.
+- Treat missing database storage as empty state and ensure the built-in `default` and `op` groups exist. Treat missing `config.json` as default config.
 - After successful startup or reload, materialize missing `database.db` and `config.json` so fresh installs have visible files.
 - Save mutations immediately with transactional SQLite writes.
 - Validate mutation input before writing; commit the transaction, then update active in-memory state and fire observers.
@@ -119,7 +121,7 @@ Storage expectations:
 - In-game config management covers `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, and `chat.enabled`.
 - Backup layout is `backups/database/database-YYYYMMDD-HHMMSSSSS.db`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
-- Fail startup, validate, or reload on malformed config, unsupported schema versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- Fail startup, validate, or reload on malformed config, unsupported schema versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, invalid protected `op` definitions, unknown parent groups, and parent cycles.
 - Fail startup, validate, or reload on invalid stored display text, including raw section signs, invalid ampersand codes, blank display values, and over-length display values.
 - `/clutchperms validate` should parse config and database storage without replacing active services/config, refreshing runtime bridges, or mutating storage.
 - Reload should be atomic from the command perspective: if config or database storage fails, keep active runtime state unchanged.

@@ -2,7 +2,7 @@
 
 ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It provides shared `/clutchperms` commands, SQLite storage, users, groups, terminal wildcard permissions, prefixes/suffixes, backup/restore support, and runtime permission bridges for each platform.
 
-This is a usable prototype, not a mature permissions suite. The model is intentionally small: direct user permissions, inherited groups, a built-in implicit `default` group, terminal wildcards, and shared effective permission resolution.
+This is a usable prototype, not a mature permissions suite. The model is intentionally small: direct user permissions, inherited groups, built-in `default` and `op` groups, terminal wildcards, and shared effective permission resolution.
 
 For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 
@@ -13,7 +13,7 @@ For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 - `config.json` for runtime config and `database.db` for permissions, groups, subjects, and known nodes
 - Direct user permissions with `TRUE`, `FALSE`, and `UNSET`
 - Named groups with recursive parent inheritance
-- Built-in implicit `default` group
+- Built-in implicit `default` group and protected explicit-membership `op` group
 - Terminal wildcards: `*` and trailing `prefix.*`
 - Offline targeting by stored last-known name or UUID
 - User and group prefixes/suffixes with ampersand formatting
@@ -97,7 +97,7 @@ Useful grants:
 | `/clutchperms user <target> clear-all` | `clutchperms.admin.user.clear-all` | Removes every direct user permission. |
 | `/clutchperms user <target> check <node>` | `clutchperms.admin.user.check` | Shows the effective permission result. |
 | `/clutchperms user <target> explain <node>` | `clutchperms.admin.user.explain` | Explains matching assignments and the winner. |
-| `/clutchperms user <target> groups [page]` | `clutchperms.admin.user.groups` | Lists explicit group memberships and the implicit `default` group. |
+| `/clutchperms user <target> groups [page]` | `clutchperms.admin.user.groups` | Lists explicit group memberships, including `op` when assigned, and the implicit `default` group. |
 | `/clutchperms user <target> group add <group>` | `clutchperms.admin.user.group.add` | Adds an explicit group membership. |
 | `/clutchperms user <target> group remove <group>` | `clutchperms.admin.user.group.remove` | Removes an explicit group membership. |
 | `/clutchperms user <target> prefix get` | `clutchperms.admin.user.display.view` | Shows direct and effective user prefix values. |
@@ -109,7 +109,7 @@ Useful grants:
 
 ### Group Commands
 
-The built-in `default` group always exists, applies implicitly to every subject, and cannot be deleted or renamed.
+The built-in `default` group always exists, applies implicitly to every subject, and cannot be deleted or renamed. The protected built-in `op` group also always exists, grants `* = TRUE`, has no members by default, and only affects users explicitly added to it.
 
 | Command | Permission | Description |
 | --- | --- | --- |
@@ -160,6 +160,7 @@ Notes:
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
 - The `default` group always exists, applies implicitly to every subject, and cannot be deleted or renamed.
 - Users cannot be explicitly added to or removed from `default`.
+- The `op` group always exists, grants `* = TRUE` to explicit members only, and rejects definition, permission, display, and parent-link edits.
 - Display text accepts `&0-9`, `&a-f`, `&k-o`, `&r`, and `&&`; raw section signs, blank values, invalid codes, and values over 128 raw characters are rejected.
 - Permission assignments may use exact nodes, `*`, or terminal wildcards like `example.*`.
 - Mid-node wildcards such as `example.*.edit` are rejected.
@@ -192,9 +193,9 @@ Default `config.json`:
 }
 ```
 
-Missing database storage loads as empty state with the built-in `default` group. Missing `config.json` loads defaults. Missing files are materialized after successful startup or reload.
+Missing database storage loads as empty state with the built-in `default` and `op` groups. Missing `config.json` loads defaults. Missing files are materialized after successful startup or reload.
 
-Validation is strict. Malformed config, unsupported schema versions, invalid config keys or values, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
+Validation is strict. Malformed config, unsupported schema versions, invalid config keys or values, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, invalid protected `op` definitions, unknown parent groups, and parent cycles fail startup, validate, or reload.
 
 Display values are stored in the database as ampersand-formatted strings. Direct user display values are keyed by UUID, and group display values are keyed by normalized group name.
 

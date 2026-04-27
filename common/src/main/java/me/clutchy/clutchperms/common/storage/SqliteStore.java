@@ -185,6 +185,7 @@ public final class SqliteStore implements AutoCloseable {
                 validateSchemaVersion(connection);
                 statement.executeUpdate("INSERT OR IGNORE INTO groups (name, prefix, suffix) VALUES ('default', NULL, NULL)");
             }
+            materializeProtectedOpGroup(connection);
         });
     }
 
@@ -204,6 +205,67 @@ public final class SqliteStore implements AutoCloseable {
                 int version = rows.getInt(1);
                 if (version != CURRENT_SCHEMA_VERSION) {
                     throw new PermissionStorageException("Unsupported SQLite schema version " + version);
+                }
+            }
+        }
+    }
+
+    private static void materializeProtectedOpGroup(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            boolean opGroupExists;
+            try (ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM groups WHERE name = 'op'")) {
+                rows.next();
+                opGroupExists = rows.getInt(1) > 0;
+            }
+            if (!opGroupExists) {
+                validateNoDanglingOpReferences(statement);
+                statement.executeUpdate("INSERT INTO groups (name, prefix, suffix) VALUES ('op', NULL, NULL)");
+                statement.executeUpdate("INSERT INTO group_permissions (group_name, node, value) VALUES ('op', '*', 'TRUE')");
+                return;
+            }
+        }
+        validateProtectedOpGroup(connection);
+    }
+
+    private static void validateNoDanglingOpReferences(Statement statement) throws SQLException {
+        try (ResultSet rows = statement.executeQuery(
+                "SELECT (SELECT COUNT(*) FROM group_permissions WHERE group_name = 'op') + (SELECT COUNT(*) FROM memberships WHERE group_name = 'op') + (SELECT COUNT(*) FROM group_parents WHERE group_name = 'op' OR parent_name = 'op')")) {
+            rows.next();
+            if (rows.getInt(1) > 0) {
+                throw new PermissionStorageException("SQLite op group references exist without protected op group");
+            }
+        }
+    }
+
+    private static void validateProtectedOpGroup(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            try (ResultSet rows = statement.executeQuery("SELECT prefix, suffix FROM groups WHERE name = 'op'")) {
+                if (!rows.next()) {
+                    throw new PermissionStorageException("Missing protected op group");
+                }
+                if (rows.getString("prefix") != null || rows.getString("suffix") != null) {
+                    throw new PermissionStorageException("SQLite op group must not store display values");
+                }
+            }
+
+            int permissions = 0;
+            boolean hasWildcardGrant = false;
+            try (ResultSet rows = statement.executeQuery("SELECT node, value FROM group_permissions WHERE group_name = 'op' ORDER BY node")) {
+                while (rows.next()) {
+                    permissions++;
+                    if ("*".equals(rows.getString("node")) && "TRUE".equals(rows.getString("value"))) {
+                        hasWildcardGrant = true;
+                    }
+                }
+            }
+            if (permissions != 1 || !hasWildcardGrant) {
+                throw new PermissionStorageException("SQLite op group must contain only *=TRUE");
+            }
+
+            try (ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM group_parents WHERE group_name = 'op' OR parent_name = 'op'")) {
+                rows.next();
+                if (rows.getInt(1) > 0) {
+                    throw new PermissionStorageException("SQLite op group must not store parent links");
                 }
             }
         }

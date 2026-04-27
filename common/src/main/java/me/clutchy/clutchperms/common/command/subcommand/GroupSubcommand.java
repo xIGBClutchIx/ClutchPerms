@@ -16,6 +16,7 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.CommandArguments;
+import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 
 /**
@@ -225,8 +226,12 @@ public final class GroupSubcommand {
 
         String currentGroupName = normalizedGroupName;
         Set<String> currentParents = existingParents;
+        if (GroupService.OP_GROUP.equals(currentGroupName)) {
+            return builder.buildFuture();
+        }
         environment.groupService().getGroups().stream().sorted(Comparator.naturalOrder()).filter(group -> !group.equals(currentGroupName))
-                .filter(group -> !currentParents.contains(group)).filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining)).forEach(builder::suggest);
+                .filter(group -> !GroupService.OP_GROUP.equals(group)).filter(group -> !currentParents.contains(group))
+                .filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining)).forEach(builder::suggest);
         return builder.buildFuture();
     }
 
