@@ -25,6 +25,7 @@ import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.kyori.adventure.text.Component;
@@ -109,6 +110,11 @@ final class PaperClutchPermsCommand {
         @Override
         public StorageBackupService storageBackupService() {
             return plugin.getStorageBackupService();
+        }
+
+        @Override
+        public void restoreBackup(StorageFileKind kind, String backupFileName) {
+            plugin.restoreBackup(kind, backupFileName);
         }
 
         @Override

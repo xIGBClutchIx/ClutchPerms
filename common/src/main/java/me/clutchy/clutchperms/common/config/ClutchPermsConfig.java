@@ -2,8 +2,6 @@ package me.clutchy.clutchperms.common.config;
 
 import java.util.Objects;
 
-import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
-
 /**
  * Shared runtime configuration for ClutchPerms.
  *
@@ -46,12 +44,4 @@ public record ClutchPermsConfig(ClutchPermsBackupConfig backups, ClutchPermsComm
         return new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), ClutchPermsCommandConfig.defaults(), ClutchPermsChatConfig.defaults());
     }
 
-    /**
-     * Converts this runtime config to storage write options.
-     *
-     * @return storage write options
-     */
-    public StorageWriteOptions storageWriteOptions() {
-        return new StorageWriteOptions(backups.retentionLimit());
-    }
 }

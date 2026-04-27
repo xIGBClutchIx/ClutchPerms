@@ -3,12 +3,12 @@ package me.clutchy.clutchperms.common.config;
 /**
  * Backup-related runtime configuration.
  *
- * @param retentionLimit newest backups retained per storage kind
+ * @param retentionLimit newest database backups retained
  */
 public record ClutchPermsBackupConfig(int retentionLimit) {
 
     /**
-     * Default newest-backup retention per storage kind.
+     * Default newest-backup retention.
      */
     public static final int DEFAULT_RETENTION_LIMIT = 10;
 

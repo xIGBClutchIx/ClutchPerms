@@ -1,8 +1,8 @@
 package me.clutchy.clutchperms.common.node;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -12,175 +12,100 @@ import org.junit.jupiter.api.io.TempDir;
 
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
+import me.clutchy.clutchperms.common.storage.SqliteTestSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies known permission node registry implementations.
  */
 class PermissionNodeRegistriesTest {
 
-    /**
-     * Temporary directory used for JSON persistence test files.
-     */
     @TempDir
     private Path temporaryDirectory;
 
-    /**
-     * Confirms a missing JSON file starts with empty state.
-     */
     @Test
-    void missingFileLoadsEmptyKnownNodes() {
-        Path nodesFile = temporaryDirectory.resolve("nodes.json");
+    void missingDatabaseCreatesEmptyKnownNodesSchema() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
 
-        PermissionNodeRegistry registry = PermissionNodeRegistries.jsonFile(nodesFile);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            PermissionNodeRegistry registry = PermissionNodeRegistries.sqlite(store);
 
-        assertEquals(Set.of(), registry.getKnownNodes());
-        assertFalse(Files.exists(nodesFile));
+            assertEquals(Set.of(), registry.getKnownNodes());
+        }
+
+        assertTrue(Files.exists(databaseFile));
     }
 
-    /**
-     * Confirms manual nodes with and without descriptions survive a reload.
-     */
     @Test
-    void knownNodesRoundTripThroughJson() {
-        Path nodesFile = temporaryDirectory.resolve("nodes.json");
-        MutablePermissionNodeRegistry registry = PermissionNodeRegistries.jsonFile(nodesFile);
+    void knownNodesRoundTripThroughSqlite() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            MutablePermissionNodeRegistry registry = PermissionNodeRegistries.sqlite(store);
+            registry.addNode(" Example.Fly ", "Allows example flight.");
+            registry.addNode("Example.Build");
+        }
 
-        registry.addNode(" Example.Fly ", "Allows example flight.");
-        registry.addNode("Example.Build");
-
-        PermissionNodeRegistry reloadedRegistry = PermissionNodeRegistries.jsonFile(nodesFile);
-
-        assertEquals(Set.of(new KnownPermissionNode("example.build", "", PermissionNodeSource.MANUAL),
-                new KnownPermissionNode("example.fly", "Allows example flight.", PermissionNodeSource.MANUAL)), reloadedRegistry.getKnownNodes());
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            PermissionNodeRegistry reloadedRegistry = PermissionNodeRegistries.sqlite(store);
+            assertEquals(Set.of(new KnownPermissionNode("example.build", "", PermissionNodeSource.MANUAL),
+                    new KnownPermissionNode("example.fly", "Allows example flight.", PermissionNodeSource.MANUAL)), reloadedRegistry.getKnownNodes());
+        }
     }
 
-    /**
-     * Confirms saves create parent directories and use deterministic node ordering.
-     *
-     * @throws IOException if the persisted file cannot be read
-     */
     @Test
-    void saveCreatesParentDirectoriesAndWritesDeterministicJson() throws IOException {
-        Path nodesFile = temporaryDirectory.resolve("nested").resolve("data").resolve("nodes.json");
-        MutablePermissionNodeRegistry registry = PermissionNodeRegistries.jsonFile(nodesFile);
-
-        registry.addNode("z.node", "Last");
-        registry.addNode("A.Node");
-        registry.addNode("b.node", "Middle");
-
-        String persistedJson = Files.readString(nodesFile).replace("\r\n", "\n");
-
-        assertEquals("""
-                {
-                  "version": 1,
-                  "nodes": {
-                    "a.node": {},
-                    "b.node": {
-                      "description": "Middle"
-                    },
-                    "z.node": {
-                      "description": "Last"
-                    }
-                  }
-                }
-                """, persistedJson);
-    }
-
-    /**
-     * Confirms failed JSON saves leave manual node runtime state and persisted state unchanged.
-     *
-     * @throws IOException if test storage setup cannot be written or read
-     */
-    @Test
-    void failedSavesDoNotCommitNodeRegistryMutations() throws IOException {
-        Path nodesFile = temporaryDirectory.resolve("nodes.json");
-        Files.writeString(nodesFile, """
-                {
-                  "version": 1,
-                  "nodes": {
-                    "existing.node": {
-                      "description": "Existing"
-                    },
-                    "remove.node": {}
-                  }
-                }
-                """);
-        MutablePermissionNodeRegistry registry = PermissionNodeRegistries.jsonFile(nodesFile);
-        String persistedJson = Files.readString(nodesFile);
-        blockBackupRoot();
+    void failedWritesDoNotCommitNodeRegistryMutations() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        SqliteStore store = SqliteTestSupport.open(databaseFile);
+        MutablePermissionNodeRegistry registry = PermissionNodeRegistries.sqlite(store);
+        registry.addNode("existing.node", "Existing");
+        registry.addNode("remove.node");
+        store.close();
 
         assertThrows(PermissionStorageException.class, () -> registry.addNode("new.node", "New"));
-        assertNodeRegistryStatePreserved(registry, nodesFile, persistedJson);
+        assertNodeRegistryStatePreserved(registry, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> registry.removeNode("remove.node"));
-        assertNodeRegistryStatePreserved(registry, nodesFile, persistedJson);
+        assertNodeRegistryStatePreserved(registry, databaseFile);
     }
 
-    /**
-     * Confirms malformed or invalid node registry files fail during construction.
-     *
-     * @throws IOException if a test file cannot be written
-     */
     @Test
-    void invalidJsonFilesFailLoad() throws IOException {
-        assertFailsToLoad("{not-json");
-        assertFailsToLoad("""
-                {
-                  "version": 2,
-                  "nodes": {}
+    void invalidSqliteKnownNodeRowsFailLoad() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO known_nodes (node, description) VALUES ('example.*', '')");
                 }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "nodes": {
-                    "   ": {}
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "nodes": {
-                    "example node": {}
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "nodes": {
-                    "example.*": {}
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "nodes": {
-                    "example.node": "description"
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "nodes": {
-                    "example.node": {
-                      "description": 1
-                    }
-                  }
-                }
-                """);
+            });
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertThrows(PermissionStorageException.class, () -> PermissionNodeRegistries.sqlite(store));
+        }
     }
 
-    /**
-     * Confirms in-memory mutations normalize nodes and reject wildcard known nodes.
-     */
+    @Test
+    void duplicateNormalizedSqliteKnownNodeRowsFailLoad() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO known_nodes (node, description) VALUES ('Example.Node', 'first')");
+                    statement.executeUpdate("INSERT INTO known_nodes (node, description) VALUES (' example.node ', 'second')");
+                }
+            });
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertThrows(PermissionStorageException.class, () -> PermissionNodeRegistries.sqlite(store));
+        }
+    }
+
     @Test
     void inMemoryRegistryNormalizesAndRejectsWildcards() {
         MutablePermissionNodeRegistry registry = PermissionNodeRegistries.inMemory();
@@ -192,9 +117,6 @@ class PermissionNodeRegistriesTest {
         assertThrows(IllegalArgumentException.class, () -> registry.removeNode("missing.node"));
     }
 
-    /**
-     * Confirms composite registries merge sources deterministically and keep the first descriptor for duplicates.
-     */
     @Test
     void compositeRegistryMergesSourcesInPrecedenceOrder() {
         PermissionNodeRegistry builtIn = PermissionNodeRegistries.staticNodes(List.of(new KnownPermissionNode("clutchperms.admin", "Admin", PermissionNodeSource.BUILT_IN)));
@@ -209,9 +131,6 @@ class PermissionNodeRegistriesTest {
                 new KnownPermissionNode("shared.node", "Manual wins", PermissionNodeSource.MANUAL)), composite.getKnownNodes());
     }
 
-    /**
-     * Confirms the built-in registry exposes exact command permission nodes, not wildcard assignments.
-     */
     @Test
     void builtInRegistryExposesExactCommandPermissionNodes() {
         Set<String> builtInNodes = PermissionNodeRegistries.builtIn().getKnownNodes().stream().map(KnownPermissionNode::node).collect(java.util.stream.Collectors.toSet());
@@ -221,9 +140,6 @@ class PermissionNodeRegistriesTest {
         assertFalse(builtInNodes.contains(PermissionNodes.ADMIN_ALL));
     }
 
-    /**
-     * Confirms observing registries delegate reads and report successful mutations only.
-     */
     @Test
     void observingRegistryReportsSuccessfulMutationsOnly() {
         List<String> events = new ArrayList<>();
@@ -237,26 +153,16 @@ class PermissionNodeRegistriesTest {
         assertEquals(List.of("changed", "changed"), events);
     }
 
-    private void assertFailsToLoad(String json) throws IOException {
-        Path nodesFile = temporaryDirectory.resolve("invalid-nodes.json");
-        Files.writeString(nodesFile, json);
-
-        assertThrows(PermissionStorageException.class, () -> PermissionNodeRegistries.jsonFile(nodesFile));
-    }
-
-    private void assertNodeRegistryStatePreserved(PermissionNodeRegistry registry, Path nodesFile, String persistedJson) throws IOException {
+    private static void assertNodeRegistryStatePreserved(PermissionNodeRegistry registry, Path databaseFile) {
         assertNodeRegistryRuntimeState(registry);
-        assertEquals(persistedJson, Files.readString(nodesFile));
-        assertNodeRegistryRuntimeState(PermissionNodeRegistries.jsonFile(nodesFile));
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertNodeRegistryRuntimeState(PermissionNodeRegistries.sqlite(store));
+        }
     }
 
     private static void assertNodeRegistryRuntimeState(PermissionNodeRegistry registry) {
         assertEquals(
                 Set.of(new KnownPermissionNode("existing.node", "Existing", PermissionNodeSource.MANUAL), new KnownPermissionNode("remove.node", "", PermissionNodeSource.MANUAL)),
                 registry.getKnownNodes());
-    }
-
-    private void blockBackupRoot() throws IOException {
-        Files.writeString(temporaryDirectory.resolve("backups"), "blocked");
     }
 }

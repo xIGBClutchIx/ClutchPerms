@@ -1,8 +1,8 @@
 package me.clutchy.clutchperms.common.group;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +19,8 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
+import me.clutchy.clutchperms.common.storage.SqliteTestSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Verifies JSON-backed group service loading, persistence, observing, and effective resolution.
+ * Verifies SQLite-backed group service loading, persistence, observing, and effective resolution.
  */
 class GroupServicesTest {
 
@@ -37,338 +39,210 @@ class GroupServicesTest {
     @TempDir
     private Path temporaryDirectory;
 
-    /**
-     * Confirms a missing groups file starts with the built-in default group.
-     */
     @Test
-    void missingFileLoadsDefaultGroup() {
-        Path groupsFile = temporaryDirectory.resolve("groups.json");
+    void missingDatabaseCreatesDefaultGroupSchema() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
 
-        GroupService groupService = GroupServices.jsonFile(groupsFile);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService groupService = GroupServices.sqlite(store);
 
-        assertEquals(Set.of("default"), groupService.getGroups());
-        assertTrue(groupService.hasGroup("default"));
-        assertEquals(0, groupService.clearGroupPermissions("default"));
-        assertFalse(Files.exists(groupsFile));
+            assertEquals(Set.of("default"), groupService.getGroups());
+            assertTrue(groupService.hasGroup("default"));
+            assertEquals(0, groupService.clearGroupPermissions("default"));
+        }
+
+        assertTrue(Files.exists(databaseFile));
     }
 
-    /**
-     * Confirms group permissions and memberships survive a reload.
-     */
     @Test
-    void groupsRoundTripThroughJson() {
-        Path groupsFile = temporaryDirectory.resolve("groups.json");
-        GroupService groupService = GroupServices.jsonFile(groupsFile);
+    void groupsRoundTripThroughSqlite() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService groupService = GroupServices.sqlite(store);
+            groupService.createGroup("Staff");
+            groupService.createGroup("Admin");
+            groupService.setGroupPermission("staff", "Staff.Node", PermissionValue.TRUE);
+            groupService.setGroupPermission("staff", "Staff.*", PermissionValue.FALSE);
+            groupService.setGroupPermission("admin", "Example.Node", PermissionValue.TRUE);
+            groupService.setGroupPermission("admin", "Example.Denied", PermissionValue.FALSE);
+            groupService.setGroupPrefix("admin", DisplayText.parse("&c[Admin]"));
+            groupService.setGroupSuffix("admin", DisplayText.parse("&f*"));
+            groupService.addGroupParent("admin", "staff");
+            groupService.addSubjectGroup(FIRST_SUBJECT, "admin");
+        }
 
-        groupService.createGroup("Staff");
-        groupService.createGroup("Admin");
-        groupService.setGroupPermission("staff", "Staff.Node", PermissionValue.TRUE);
-        groupService.setGroupPermission("staff", "Staff.*", PermissionValue.FALSE);
-        groupService.setGroupPermission("admin", "Example.Node", PermissionValue.TRUE);
-        groupService.setGroupPermission("admin", "Example.Denied", PermissionValue.FALSE);
-        groupService.setGroupPrefix("admin", DisplayText.parse("&c[Admin]"));
-        groupService.setGroupSuffix("admin", DisplayText.parse("&f*"));
-        groupService.addGroupParent("admin", "staff");
-        groupService.addSubjectGroup(FIRST_SUBJECT, "admin");
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService reloadedGroupService = GroupServices.sqlite(store);
 
-        GroupService reloadedGroupService = GroupServices.jsonFile(groupsFile);
-
-        assertEquals(Set.of("admin", "default", "staff"), reloadedGroupService.getGroups());
-        assertEquals(PermissionValue.TRUE, reloadedGroupService.getGroupPermission("admin", "example.node"));
-        assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("admin", "example.denied"));
-        assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("staff", "staff.*"));
-        assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE), reloadedGroupService.getGroupPermissions("admin"));
-        assertEquals("&c[Admin]", reloadedGroupService.getGroupDisplay("admin").prefix().orElseThrow().rawText());
-        assertEquals("&f*", reloadedGroupService.getGroupDisplay("admin").suffix().orElseThrow().rawText());
-        assertEquals(Set.of("staff"), reloadedGroupService.getGroupParents("admin"));
-        assertEquals(Set.of(), reloadedGroupService.getGroupParents("staff"));
-        assertEquals(Set.of("admin"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
-        assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("admin"));
+            assertEquals(Set.of("admin", "default", "staff"), reloadedGroupService.getGroups());
+            assertEquals(PermissionValue.TRUE, reloadedGroupService.getGroupPermission("admin", "example.node"));
+            assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("admin", "example.denied"));
+            assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("staff", "staff.*"));
+            assertEquals(Map.of("example.node", PermissionValue.TRUE, "example.denied", PermissionValue.FALSE), reloadedGroupService.getGroupPermissions("admin"));
+            assertEquals("&c[Admin]", reloadedGroupService.getGroupDisplay("admin").prefix().orElseThrow().rawText());
+            assertEquals("&f*", reloadedGroupService.getGroupDisplay("admin").suffix().orElseThrow().rawText());
+            assertEquals(Set.of("staff"), reloadedGroupService.getGroupParents("admin"));
+            assertEquals(Set.of("admin"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
+            assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("admin"));
+        }
     }
 
-    /**
-     * Confirms renaming a group preserves its state and updates every stored reference.
-     */
     @Test
-    void renameGroupPreservesStateAndPersistsThroughJson() {
-        Path groupsFile = temporaryDirectory.resolve("groups.json");
-        GroupService groupService = GroupServices.jsonFile(groupsFile);
+    void renameGroupPreservesStateAndPersistsThroughSqlite() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService groupService = GroupServices.sqlite(store);
+            groupService.createGroup("base");
+            groupService.setGroupPermission("base", "base.node", PermissionValue.TRUE);
+            groupService.createGroup("staff");
+            groupService.setGroupPermission("staff", "staff.node", PermissionValue.FALSE);
+            groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+            groupService.setGroupSuffix("staff", DisplayText.parse("&f*"));
+            groupService.addGroupParent("staff", "base");
+            groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
+            groupService.createGroup("child");
+            groupService.addGroupParent("child", "staff");
 
-        groupService.createGroup("base");
-        groupService.setGroupPermission("base", "base.node", PermissionValue.TRUE);
-        groupService.createGroup("staff");
-        groupService.setGroupPermission("staff", "staff.node", PermissionValue.FALSE);
-        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
-        groupService.setGroupSuffix("staff", DisplayText.parse("&f*"));
-        groupService.addGroupParent("staff", "base");
-        groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
-        groupService.createGroup("child");
-        groupService.addGroupParent("child", "staff");
+            groupService.renameGroup("staff", "Moderator");
+        }
 
-        groupService.renameGroup("staff", "Moderator");
-        GroupService reloadedGroupService = GroupServices.jsonFile(groupsFile);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService reloadedGroupService = GroupServices.sqlite(store);
 
-        assertFalse(reloadedGroupService.hasGroup("staff"));
-        assertTrue(reloadedGroupService.hasGroup("moderator"));
-        assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("moderator", "staff.node"));
-        assertEquals("&7[Staff]", reloadedGroupService.getGroupDisplay("moderator").prefix().orElseThrow().rawText());
-        assertEquals("&f*", reloadedGroupService.getGroupDisplay("moderator").suffix().orElseThrow().rawText());
-        assertEquals(Set.of("base"), reloadedGroupService.getGroupParents("moderator"));
-        assertEquals(Set.of("moderator"), reloadedGroupService.getGroupParents("child"));
-        assertEquals(Set.of("moderator"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
-        assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("moderator"));
+            assertFalse(reloadedGroupService.hasGroup("staff"));
+            assertTrue(reloadedGroupService.hasGroup("moderator"));
+            assertEquals(PermissionValue.FALSE, reloadedGroupService.getGroupPermission("moderator", "staff.node"));
+            assertEquals("&7[Staff]", reloadedGroupService.getGroupDisplay("moderator").prefix().orElseThrow().rawText());
+            assertEquals("&f*", reloadedGroupService.getGroupDisplay("moderator").suffix().orElseThrow().rawText());
+            assertEquals(Set.of("base"), reloadedGroupService.getGroupParents("moderator"));
+            assertEquals(Set.of("moderator"), reloadedGroupService.getGroupParents("child"));
+            assertEquals(Set.of("moderator"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
+            assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("moderator"));
+        }
     }
 
-    /**
-     * Confirms bulk group permission clears preserve group metadata, parents, and memberships.
-     */
     @Test
     void clearGroupPermissionsRemovesOnlyDirectPermissionsAndPersists() {
-        Path groupsFile = temporaryDirectory.resolve("groups.json");
-        GroupService groupService = GroupServices.jsonFile(groupsFile);
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService groupService = GroupServices.sqlite(store);
+            groupService.createGroup("base");
+            groupService.createGroup("staff");
+            groupService.setGroupPermission("staff", "staff.node", PermissionValue.TRUE);
+            groupService.setGroupPermission("staff", "staff.*", PermissionValue.FALSE);
+            groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+            groupService.addGroupParent("staff", "base");
+            groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
+            groupService.setGroupPermission("base", "base.node", PermissionValue.TRUE);
 
+            assertEquals(2, groupService.clearGroupPermissions("staff"));
+            assertEquals(0, groupService.clearGroupPermissions("staff"));
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService reloadedGroupService = GroupServices.sqlite(store);
+            assertEquals(Map.of(), reloadedGroupService.getGroupPermissions("staff"));
+            assertEquals(Map.of("base.node", PermissionValue.TRUE), reloadedGroupService.getGroupPermissions("base"));
+            assertEquals("&7[Staff]", reloadedGroupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
+            assertEquals(Set.of("base"), reloadedGroupService.getGroupParents("staff"));
+            assertEquals(Set.of("staff"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
+        }
+    }
+
+    @Test
+    void failedWritesDoNotCommitGroupMutations() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        SqliteStore store = SqliteTestSupport.open(databaseFile);
+        GroupService groupService = GroupServices.sqlite(store);
         groupService.createGroup("base");
+        groupService.createGroup("guest");
         groupService.createGroup("staff");
-        groupService.setGroupPermission("staff", "staff.node", PermissionValue.TRUE);
-        groupService.setGroupPermission("staff", "staff.*", PermissionValue.FALSE);
-        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+        groupService.setGroupPermission("staff", "old.node", PermissionValue.TRUE);
+        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Old]"));
         groupService.addGroupParent("staff", "base");
         groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
-        groupService.setGroupPermission("base", "base.node", PermissionValue.TRUE);
-
-        assertEquals(2, groupService.clearGroupPermissions("staff"));
-        assertEquals(0, groupService.clearGroupPermissions("staff"));
-
-        GroupService reloadedGroupService = GroupServices.jsonFile(groupsFile);
-        assertEquals(Map.of(), reloadedGroupService.getGroupPermissions("staff"));
-        assertEquals(Map.of("base.node", PermissionValue.TRUE), reloadedGroupService.getGroupPermissions("base"));
-        assertEquals("&7[Staff]", reloadedGroupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
-        assertEquals(Set.of("base"), reloadedGroupService.getGroupParents("staff"));
-        assertEquals(Set.of("staff"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
-    }
-
-    /**
-     * Confirms in-memory bulk group clears remove only direct permission assignments.
-     */
-    @Test
-    void inMemoryClearGroupPermissionsRemovesOnlyDirectPermissions() {
-        GroupService groupService = new InMemoryGroupService();
-
-        groupService.createGroup("base");
-        groupService.createGroup("staff");
-        groupService.setGroupPermission("staff", "staff.node", PermissionValue.TRUE);
-        groupService.setGroupPermission("staff", "staff.*", PermissionValue.FALSE);
-        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
-        groupService.addGroupParent("staff", "base");
-        groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
-        groupService.setGroupPermission("base", "base.node", PermissionValue.TRUE);
-
-        assertEquals(2, groupService.clearGroupPermissions("staff"));
-        assertEquals(0, groupService.clearGroupPermissions("staff"));
-
-        assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
-        assertEquals(Map.of("base.node", PermissionValue.TRUE), groupService.getGroupPermissions("base"));
-        assertEquals("&7[Staff]", groupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
-        assertEquals(Set.of("base"), groupService.getGroupParents("staff"));
-        assertEquals(Set.of("staff"), groupService.getSubjectGroups(FIRST_SUBJECT));
-    }
-
-    /**
-     * Confirms invalid group rename targets fail without mutating existing state.
-     */
-    @Test
-    void renameGroupRejectsInvalidTargets() {
-        GroupService groupService = new InMemoryGroupService();
-        groupService.createGroup("staff");
-        groupService.createGroup("admin");
-
-        assertEquals("default group cannot be renamed", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("default", "fallback")).getMessage());
-        assertEquals("group cannot be renamed to default", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("staff", "default")).getMessage());
-        assertEquals("group name must not be blank", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("staff", "   ")).getMessage());
-        assertEquals("unknown group: missing", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("missing", "new")).getMessage());
-        assertEquals("group already exists: admin", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("staff", "admin")).getMessage());
-        assertEquals("group already exists: staff", assertThrows(IllegalArgumentException.class, () -> groupService.renameGroup("staff", "Staff")).getMessage());
-
-        assertEquals(Set.of("admin", "default", "staff"), groupService.getGroups());
-    }
-
-    /**
-     * Confirms legacy group files without parent arrays load with empty parent state.
-     *
-     * @throws IOException if the test file cannot be written
-     */
-    @Test
-    void missingParentsFieldLoadsEmptyParents() throws IOException {
-        Path groupsFile = temporaryDirectory.resolve("groups.json");
-        Files.writeString(groupsFile, """
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {}
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-
-        GroupService groupService = GroupServices.jsonFile(groupsFile);
-
-        assertEquals(Set.of(), groupService.getGroupParents("admin"));
-    }
-
-    /**
-     * Confirms group saves create parent directories and write deterministic JSON.
-     *
-     * @throws IOException if the persisted file cannot be read
-     */
-    @Test
-    void saveCreatesParentDirectoriesAndWritesDeterministicJson() throws IOException {
-        Path groupsFile = temporaryDirectory.resolve("nested").resolve("data").resolve("groups.json");
-        GroupService groupService = GroupServices.jsonFile(groupsFile);
-
-        groupService.createGroup("zeta");
-        groupService.setGroupPermission("zeta", "z.node", PermissionValue.FALSE);
-        groupService.createGroup("alpha");
-        groupService.setGroupPermission("alpha", "B.Node", PermissionValue.TRUE);
-        groupService.setGroupPermission("alpha", "a.node", PermissionValue.FALSE);
-        groupService.addGroupParent("alpha", "zeta");
-        groupService.addSubjectGroup(SECOND_SUBJECT, "zeta");
-        groupService.addSubjectGroup(FIRST_SUBJECT, "alpha");
-
-        String persistedJson = Files.readString(groupsFile).replace("\r\n", "\n");
-
-        assertEquals("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "alpha": {
-                      "permissions": {
-                        "a.node": "FALSE",
-                        "b.node": "TRUE"
-                      },
-                      "parents": [
-                        "zeta"
-                      ]
-                    },
-                    "default": {
-                      "permissions": {}
-                    },
-                    "zeta": {
-                      "permissions": {
-                        "z.node": "FALSE"
-                      }
-                    }
-                  },
-                  "memberships": {
-                    "00000000-0000-0000-0000-000000000001": [
-                      "alpha"
-                    ],
-                    "00000000-0000-0000-0000-000000000002": [
-                      "zeta"
-                    ]
-                  }
-                }
-                """, persistedJson);
-    }
-
-    /**
-     * Confirms failed JSON saves leave group runtime state and persisted state unchanged.
-     *
-     * @throws IOException if test storage setup cannot be written or read
-     */
-    @Test
-    void failedSavesDoNotCommitGroupMutations() throws IOException {
-        Path groupsFile = temporaryDirectory.resolve("groups.json");
-        Files.writeString(groupsFile, """
-                {
-                  "version": 1,
-                  "groups": {
-                    "base": {
-                      "permissions": {}
-                    },
-                    "guest": {
-                      "permissions": {}
-                    },
-                    "staff": {
-                      "permissions": {
-                        "old.node": "TRUE"
-                      },
-                      "prefix": "&7[Old]",
-                      "parents": [
-                        "base"
-                      ]
-                    }
-                  },
-                  "memberships": {
-                    "00000000-0000-0000-0000-000000000001": [
-                      "staff"
-                    ]
-                  }
-                }
-                """);
-        GroupService groupService = GroupServices.jsonFile(groupsFile);
-        String persistedJson = Files.readString(groupsFile);
-        blockBackupRoot();
+        store.close();
 
         assertThrows(PermissionStorageException.class, () -> groupService.createGroup("new"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+        assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.deleteGroup("staff"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+        assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.renameGroup("staff", "renamed"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+        assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.setGroupPermission("staff", "new.node", PermissionValue.FALSE));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+        assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.clearGroupPermission("staff", "old.node"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
-
-        assertThrows(PermissionStorageException.class, () -> groupService.clearGroupPermissions("staff"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+        assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.setGroupPrefix("staff", DisplayText.parse("&c[New]")));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
-
-        assertThrows(PermissionStorageException.class, () -> groupService.clearGroupPrefix("staff"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
-
-        assertThrows(PermissionStorageException.class, () -> groupService.setGroupSuffix("staff", DisplayText.parse("&f*")));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+        assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.addSubjectGroup(SECOND_SUBJECT, "base"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
-
-        assertThrows(PermissionStorageException.class, () -> groupService.removeSubjectGroup(FIRST_SUBJECT, "staff"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+        assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.addGroupParent("guest", "base"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
-
-        assertThrows(PermissionStorageException.class, () -> groupService.removeGroupParent("staff", "base"));
-        assertGroupStatePreserved(groupService, groupsFile, persistedJson);
+        assertGroupStatePreserved(groupService, databaseFile);
     }
 
-    /**
-     * Confirms deleting a group removes parent references to it.
-     */
     @Test
-    void deleteGroupRemovesParentReferences() {
+    void duplicateNormalizedSqliteGroupsFailLoad() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO groups (name, prefix, suffix) VALUES ('Admin', NULL, NULL)");
+                    statement.executeUpdate("INSERT INTO groups (name, prefix, suffix) VALUES (' admin ', NULL, NULL)");
+                }
+            });
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertThrows(PermissionStorageException.class, () -> GroupServices.sqlite(store));
+        }
+    }
+
+    @Test
+    void invalidSqliteDisplayRowsFailLoad() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("UPDATE groups SET prefix = '§cBad' WHERE name = 'default'");
+                }
+            });
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertThrows(PermissionStorageException.class, () -> GroupServices.sqlite(store));
+        }
+    }
+
+    @Test
+    void invalidSqliteParentsAndMembershipsFailLoad() {
+        assertInvalidGroupDatabase("INSERT INTO group_parents (group_name, parent_name) VALUES ('default', 'default')");
+        assertInvalidGroupDatabase("INSERT INTO memberships (subject_id, group_name) VALUES ('00000000-0000-0000-0000-000000000001', 'default')");
+    }
+
+    @Test
+    void parentMutationsRejectInvalidLinks() {
         GroupService groupService = new InMemoryGroupService();
-        groupService.createGroup("base");
+        groupService.createGroup("admin");
         groupService.createGroup("staff");
+        groupService.createGroup("base");
+
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "missing"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "admin"));
+
+        groupService.addGroupParent("admin", "staff");
         groupService.addGroupParent("staff", "base");
 
-        groupService.deleteGroup("base");
-
-        assertEquals(Set.of(), groupService.getGroupParents("staff"));
+        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("base", "admin"));
     }
 
-    /**
-     * Confirms the built-in default group is always present and cannot be deleted.
-     */
     @Test
     void defaultGroupIsAlwaysPresentAndCannotBeDeleted() {
         GroupService groupService = new InMemoryGroupService();
@@ -380,263 +254,6 @@ class GroupServicesTest {
         assertTrue(groupService.hasGroup("default"));
     }
 
-    /**
-     * Confirms malformed or invalid group files fail during construction.
-     *
-     * @throws IOException if the test file cannot be written
-     */
-    @Test
-    void invalidJsonFilesFailLoad() throws IOException {
-        assertFailsToLoad("{not-json");
-        assertFailsToLoad("""
-                {
-                  "version": 2,
-                  "groups": {},
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "   ": {
-                      "permissions": {}
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {
-                        "Example.Node": "TRUE",
-                        " example.node ": "FALSE"
-                      }
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {
-                        "example.node": "UNSET"
-                      }
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {}
-                    }
-                  },
-                  "memberships": {
-                    "not-a-uuid": [
-                      "admin"
-                    ]
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {}
-                    }
-                  },
-                  "memberships": {
-                    "00000000-0000-0000-0000-000000000001": [
-                      "missing"
-                    ]
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {},
-                      "parents": {}
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {},
-                      "parents": [
-                        "   "
-                      ]
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {},
-                      "parents": [
-                        "staff",
-                        " Staff "
-                      ]
-                    },
-                    "staff": {
-                      "permissions": {}
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {},
-                      "parents": [
-                        "missing"
-                      ]
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {},
-                      "parents": [
-                        "admin"
-                      ]
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {},
-                      "parents": [
-                        "staff"
-                      ]
-                    },
-                    "staff": {
-                      "permissions": {},
-                      "parents": [
-                        "admin"
-                      ]
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {},
-                      "parents": [
-                        "staff"
-                      ]
-                    },
-                    "staff": {
-                      "permissions": {},
-                      "parents": [
-                        "base"
-                      ]
-                    },
-                    "base": {
-                      "permissions": {},
-                      "parents": [
-                        "admin"
-                      ]
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {
-                        "example*": "TRUE"
-                      }
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {
-                        "example.*.node": "TRUE"
-                      }
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {
-                        " .* ": "TRUE"
-                      }
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "groups": {
-                    "admin": {
-                      "permissions": {},
-                      "prefix": "§cBad"
-                    }
-                  },
-                  "memberships": {}
-                }
-                """);
-    }
-
-    /**
-     * Confirms effective resolution uses direct, group, and default precedence.
-     */
     @Test
     void resolverAppliesDirectGroupAndDefaultPrecedence() {
         PermissionService permissionService = new InMemoryPermissionService();
@@ -689,9 +306,6 @@ class GroupServicesTest {
                 "same-depth.node", PermissionValue.FALSE, "default.parent", PermissionValue.TRUE), resolver.getEffectivePermissions(FIRST_SUBJECT));
     }
 
-    /**
-     * Confirms effective resolution supports terminal wildcard assignments without changing source-tier precedence.
-     */
     @Test
     void resolverAppliesWildcardPermissionPrecedence() {
         PermissionService permissionService = new InMemoryPermissionService();
@@ -716,63 +330,8 @@ class GroupServicesTest {
         assertEquals("*", resolver.resolve(FIRST_SUBJECT, "example").assignmentNode());
         assertEquals(PermissionValue.TRUE, resolver.resolve(FIRST_SUBJECT, "tier.node").value());
         assertEquals(PermissionResolution.Source.DIRECT, resolver.resolve(FIRST_SUBJECT, "tier.node").source());
-        assertEquals(Map.of("*", PermissionValue.TRUE, "example.*", PermissionValue.FALSE, "example.node", PermissionValue.TRUE, "tier.*", PermissionValue.TRUE, "tier.node",
-                PermissionValue.TRUE), resolver.getEffectivePermissions(FIRST_SUBJECT));
-
-        groupService.createGroup("parent");
-        groupService.setGroupPermission("parent", "child.node", PermissionValue.TRUE);
-        groupService.createGroup("child");
-        groupService.setGroupPermission("child", "child.*", PermissionValue.FALSE);
-        groupService.addGroupParent("child", "parent");
-        groupService.createGroup("allow");
-        groupService.setGroupPermission("allow", "same.*", PermissionValue.TRUE);
-        groupService.setGroupPermission("allow", "specific.node", PermissionValue.TRUE);
-        groupService.createGroup("deny");
-        groupService.setGroupPermission("deny", "same.*", PermissionValue.FALSE);
-        groupService.setGroupPermission("deny", "specific.*", PermissionValue.FALSE);
-        groupService.addSubjectGroup(SECOND_SUBJECT, "child");
-        groupService.addSubjectGroup(SECOND_SUBJECT, "allow");
-        groupService.addSubjectGroup(SECOND_SUBJECT, "deny");
-        groupService.setGroupPermission("default", "default.node", PermissionValue.TRUE);
-        groupService.createGroup("default-parent");
-        groupService.setGroupPermission("default-parent", "default.parent.*", PermissionValue.TRUE);
-        groupService.addGroupParent("default", "default-parent");
-        UUID defaultOnlySubject = UUID.randomUUID();
-
-        assertEquals(PermissionValue.FALSE, resolver.resolve(SECOND_SUBJECT, "child.node").value());
-        assertEquals("child", resolver.resolve(SECOND_SUBJECT, "child.node").groupName());
-        assertEquals("child.*", resolver.resolve(SECOND_SUBJECT, "child.node").assignmentNode());
-        assertEquals(PermissionValue.FALSE, resolver.resolve(SECOND_SUBJECT, "same.node").value());
-        assertEquals("same.*", resolver.resolve(SECOND_SUBJECT, "same.node").assignmentNode());
-        assertEquals(PermissionValue.TRUE, resolver.resolve(SECOND_SUBJECT, "specific.node").value());
-        assertEquals("specific.node", resolver.resolve(SECOND_SUBJECT, "specific.node").assignmentNode());
-        assertEquals(PermissionValue.TRUE, resolver.resolve(defaultOnlySubject, "default.parent.node").value());
-        assertEquals(PermissionResolution.Source.DEFAULT, resolver.resolve(defaultOnlySubject, "default.parent.node").source());
-        assertEquals("default.parent.*", resolver.resolve(defaultOnlySubject, "default.parent.node").assignmentNode());
     }
 
-    /**
-     * Confirms parent mutation validation catches unknown groups, self-parenting, and cycles.
-     */
-    @Test
-    void parentMutationsRejectInvalidLinks() {
-        GroupService groupService = new InMemoryGroupService();
-        groupService.createGroup("admin");
-        groupService.createGroup("staff");
-        groupService.createGroup("base");
-
-        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "missing"));
-        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("admin", "admin"));
-
-        groupService.addGroupParent("admin", "staff");
-        groupService.addGroupParent("staff", "base");
-
-        assertThrows(IllegalArgumentException.class, () -> groupService.addGroupParent("base", "admin"));
-    }
-
-    /**
-     * Confirms observing group services notify after successful mutations only.
-     */
     @Test
     void observingServiceReportsSuccessfulMutations() {
         GroupService delegate = new InMemoryGroupService();
@@ -812,17 +371,27 @@ class GroupServicesTest {
         assertEquals(List.of(FIRST_SUBJECT, FIRST_SUBJECT), subjectRefreshes);
     }
 
-    private void assertFailsToLoad(String json) throws IOException {
-        Path groupsFile = temporaryDirectory.resolve("invalid-groups.json");
-        Files.writeString(groupsFile, json);
+    private void assertInvalidGroupDatabase(String invalidSql) {
+        Path databaseFile = temporaryDirectory.resolve(UUID.randomUUID().toString()).resolve("database.db");
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT OR IGNORE INTO groups (name, prefix, suffix) VALUES ('staff', NULL, NULL)");
+                    statement.executeUpdate(invalidSql);
+                }
+            });
+        }
 
-        assertThrows(PermissionStorageException.class, () -> GroupServices.jsonFile(groupsFile));
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertThrows(PermissionStorageException.class, () -> GroupServices.sqlite(store));
+        }
     }
 
-    private void assertGroupStatePreserved(GroupService groupService, Path groupsFile, String persistedJson) throws IOException {
+    private static void assertGroupStatePreserved(GroupService groupService, Path databaseFile) {
         assertGroupRuntimeState(groupService);
-        assertEquals(persistedJson, Files.readString(groupsFile));
-        assertGroupRuntimeState(GroupServices.jsonFile(groupsFile));
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertGroupRuntimeState(GroupServices.sqlite(store));
+        }
     }
 
     private static void assertGroupRuntimeState(GroupService groupService) {
@@ -839,9 +408,5 @@ class GroupServicesTest {
         assertEquals(Set.of("staff"), groupService.getSubjectGroups(FIRST_SUBJECT));
         assertEquals(Set.of(), groupService.getSubjectGroups(SECOND_SUBJECT));
         assertEquals(Set.of(FIRST_SUBJECT), groupService.getGroupMembers("staff"));
-    }
-
-    private void blockBackupRoot() throws IOException {
-        Files.writeString(temporaryDirectory.resolve("backups"), "blocked");
     }
 }

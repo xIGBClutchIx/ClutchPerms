@@ -10,6 +10,8 @@ val commonProject = project(":common")
 val paperApiVersion: String by project
 val mockBukkitVersion: String by project
 val mockBukkitPaperApiVersion: String by project
+val hikariCpVersion: String by project
+val sqliteJdbcVersion: String by project
 val slf4jVersion = "2.0.16"
 val pluginVersion = project.version.toString()
 
@@ -20,6 +22,8 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:$paperApiVersion")
     testImplementation("io.papermc.paper:paper-api:$mockBukkitPaperApiVersion")
     testImplementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:$mockBukkitVersion")
+    testRuntimeOnly("com.zaxxer:HikariCP:$hikariCpVersion")
+    testRuntimeOnly("org.xerial:sqlite-jdbc:$sqliteJdbcVersion")
     testRuntimeOnly("org.slf4j:slf4j-nop:$slf4jVersion")
 }
 
@@ -35,4 +39,9 @@ tasks.jar {
     dependsOn(commonProject.tasks.named("classes"))
     from(commonProject.the<SourceSetContainer>()["main"].output)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.test {
+    dependsOn(tasks.jar)
+    systemProperty("clutchperms.jar", tasks.jar.get().archiveFile.get().asFile.absolutePath)
 }

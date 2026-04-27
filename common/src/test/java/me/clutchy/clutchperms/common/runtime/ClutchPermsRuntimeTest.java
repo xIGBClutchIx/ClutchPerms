@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.common.runtime;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -21,6 +22,8 @@ import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
+import me.clutchy.clutchperms.common.storage.SqliteTestSupport;
 import me.clutchy.clutchperms.common.storage.StorageBackup;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 
@@ -32,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Verifies the shared platform-neutral storage runtime lifecycle.
+ * Verifies the shared platform-neutral SQLite storage runtime lifecycle.
  */
 class ClutchPermsRuntimeTest {
 
@@ -41,11 +44,6 @@ class ClutchPermsRuntimeTest {
     @TempDir
     private Path temporaryDirectory;
 
-    /**
-     * Confirms reload loads storage, composes platform known nodes, and materializes missing files.
-     *
-     * @throws IOException if materialized storage cannot be inspected
-     */
     @Test
     void reloadLoadsServicesAndMaterializesMissingFiles() throws IOException {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
@@ -62,19 +60,12 @@ class ClutchPermsRuntimeTest {
         assertNotNull(runtime.permissionResolver());
         assertTrue(runtime.groupService().hasGroup("default"));
         assertTrue(runtime.permissionNodeRegistry().getKnownNode("platform.node").isPresent());
-        assertTrue(Files.exists(storagePaths.permissionsFile()));
-        assertTrue(Files.exists(storagePaths.subjectsFile()));
-        assertTrue(Files.exists(storagePaths.groupsFile()));
-        assertTrue(Files.readString(storagePaths.groupsFile()).contains("\"default\""));
-        assertTrue(Files.exists(storagePaths.nodesFile()));
+        assertTrue(Files.exists(storagePaths.databaseFile()));
         assertTrue(Files.exists(storagePaths.configFile()));
         assertEquals(ClutchPermsConfig.defaults(), runtime.config());
         assertEquals(ClutchPermsConfig.defaults(), ClutchPermsConfigs.jsonFile(storagePaths.configFile()));
     }
 
-    /**
-     * Confirms validation parses disk state without replacing active services.
-     */
     @Test
     void validateDoesNotReplaceActiveServices() throws IOException {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
@@ -82,7 +73,9 @@ class ClutchPermsRuntimeTest {
         runtime.reload();
         ClutchPermsRuntimeServices activeServices = runtime.services();
 
-        PermissionServices.jsonFile(storagePaths.permissionsFile()).setPermission(SUBJECT_ID, "example.validate", PermissionValue.TRUE);
+        try (SqliteStore externalStore = SqliteTestSupport.open(storagePaths.databaseFile())) {
+            PermissionServices.sqlite(externalStore).setPermission(SUBJECT_ID, "example.validate", PermissionValue.TRUE);
+        }
         Files.writeString(storagePaths.configFile(), customConfig(3, 4, 5));
 
         runtime.validate();
@@ -92,29 +85,19 @@ class ClutchPermsRuntimeTest {
         assertEquals(PermissionValue.UNSET, runtime.permissionService().getPermission(SUBJECT_ID, "example.validate"));
     }
 
-    /**
-     * Confirms failed reload attempts leave the previous runtime snapshot active.
-     *
-     * @throws IOException if the test file cannot be overwritten
-     */
     @Test
-    void failedReloadKeepsPreviousServices() throws IOException {
+    void failedReloadKeepsPreviousServices() {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
         ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, ClutchPermsRuntimeHooks.noop());
         runtime.reload();
         ClutchPermsRuntimeServices activeServices = runtime.services();
 
-        Files.writeString(storagePaths.permissionsFile(), "{not-json");
+        insertInvalidPermissionRow(runtime.services().sqliteStore());
 
         assertThrows(PermissionStorageException.class, runtime::reload);
         assertSame(activeServices, runtime.services());
     }
 
-    /**
-     * Confirms a failed config reload leaves the previous runtime snapshot and config active.
-     *
-     * @throws IOException if the config file cannot be overwritten
-     */
     @Test
     void failedConfigReloadKeepsPreviousServicesAndConfig() throws IOException {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
@@ -131,9 +114,6 @@ class ClutchPermsRuntimeTest {
         assertEquals(activeConfig, runtime.config());
     }
 
-    /**
-     * Confirms config updates write disk config and replace active runtime services.
-     */
     @Test
     void updateConfigWritesConfigAndReloadsServices() {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
@@ -149,11 +129,6 @@ class ClutchPermsRuntimeTest {
         assertEquals(runtime.config(), ClutchPermsConfigs.jsonFile(storagePaths.configFile()));
     }
 
-    /**
-     * Confirms failed config updates restore disk config and leave active runtime services unchanged.
-     *
-     * @throws IOException if test file setup or inspection fails
-     */
     @Test
     void failedUpdateConfigRestoresConfigAndKeepsPreviousServices() throws IOException {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
@@ -161,8 +136,7 @@ class ClutchPermsRuntimeTest {
         runtime.reload();
         ClutchPermsRuntimeServices activeServices = runtime.services();
         String configBefore = Files.readString(storagePaths.configFile());
-
-        Files.writeString(storagePaths.permissionsFile(), "{not-json");
+        insertInvalidPermissionRow(runtime.services().sqliteStore());
 
         assertThrows(PermissionStorageException.class, () -> runtime.updateConfig(config -> new ClutchPermsConfig(new ClutchPermsBackupConfig(3), config.commands())));
         assertSame(activeServices, runtime.services());
@@ -171,11 +145,6 @@ class ClutchPermsRuntimeTest {
         assertEquals(ClutchPermsConfig.defaults(), ClutchPermsConfigs.jsonFile(storagePaths.configFile()));
     }
 
-    /**
-     * Confirms reload picks up chat formatting changes from config.json.
-     *
-     * @throws IOException if the config file cannot be written
-     */
     @Test
     void reloadUpdatesChatConfigFromDisk() throws IOException {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
@@ -189,9 +158,6 @@ class ClutchPermsRuntimeTest {
         assertEquals(false, runtime.config().chat().enabled());
     }
 
-    /**
-     * Confirms storage mutation observers invalidate resolver cache and invoke runtime refresh hooks.
-     */
     @Test
     void mutationObserversInvalidateResolverCacheAndRefreshRuntimeHooks() {
         List<UUID> refreshedSubjects = new ArrayList<>();
@@ -220,29 +186,21 @@ class ClutchPermsRuntimeTest {
         assertEquals(2, fullRefreshes.get());
     }
 
-    /**
-     * Confirms backup services are created from the shared storage path map and backup root.
-     */
     @Test
-    void backupServiceUsesStoragePathMapAndBackupRoot() {
+    void backupServiceUsesDatabasePathAndBackupRoot() {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
         ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, ClutchPermsRuntimeHooks.noop());
         runtime.reload();
 
-        StorageBackup backup = runtime.storageBackupService().backupExistingFile(StorageFileKind.PERMISSIONS).orElseThrow();
+        StorageBackup backup = runtime.storageBackupService().createBackup().orElseThrow();
 
-        assertEquals(List.of(StorageFileKind.PERMISSIONS, StorageFileKind.SUBJECTS, StorageFileKind.GROUPS, StorageFileKind.NODES), runtime.storageBackupService().fileKinds());
+        assertEquals(List.of(StorageFileKind.DATABASE), runtime.storageBackupService().fileKinds());
         assertEquals(ClutchPermsConfig.defaults().backups().retentionLimit(), runtime.storageBackupService().retentionLimit());
-        assertTrue(backup.path().startsWith(storagePaths.backupRoot().resolve(StorageFileKind.PERMISSIONS.token())));
+        assertTrue(backup.path().startsWith(storagePaths.backupRoot().resolve(StorageFileKind.DATABASE.token())));
     }
 
-    /**
-     * Confirms configured retention applies to ordinary JSON-backed service mutations.
-     *
-     * @throws IOException if the config file cannot be written
-     */
     @Test
-    void configuredBackupRetentionAppliesToJsonBackedMutations() throws IOException {
+    void configuredBackupRetentionAppliesToManualDatabaseSnapshots() throws IOException {
         ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
         Files.writeString(storagePaths.configFile(), customConfig(2, 7, 8));
         ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, ClutchPermsRuntimeHooks.noop());
@@ -250,16 +208,19 @@ class ClutchPermsRuntimeTest {
 
         for (int index = 0; index < 4; index++) {
             runtime.permissionService().setPermission(SUBJECT_ID, "example.retention", index % 2 == 0 ? PermissionValue.TRUE : PermissionValue.FALSE);
-            runtime.subjectMetadataService().recordSubject(SUBJECT_ID, "Subject" + index, java.time.Instant.parse("2026-04-24T12:00:0" + index + "Z"));
-            runtime.groupService().createGroup("group" + index);
-            runtime.manualPermissionNodeRegistry().addNode("example.retention" + index);
+            runtime.storageBackupService().createBackup();
         }
 
         assertEquals(2, runtime.storageBackupService().retentionLimit());
-        assertEquals(2, runtime.storageBackupService().listBackups(StorageFileKind.PERMISSIONS).size());
-        assertEquals(2, runtime.storageBackupService().listBackups(StorageFileKind.SUBJECTS).size());
-        assertEquals(2, runtime.storageBackupService().listBackups(StorageFileKind.GROUPS).size());
-        assertEquals(2, runtime.storageBackupService().listBackups(StorageFileKind.NODES).size());
+        assertEquals(2, runtime.storageBackupService().listBackups(StorageFileKind.DATABASE).size());
+    }
+
+    private static void insertInvalidPermissionRow(SqliteStore store) {
+        store.write(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("INSERT INTO subject_permissions (subject_id, node, value) VALUES ('00000000-0000-0000-0000-000000000001', 'example*', 'TRUE')");
+            }
+        });
     }
 
     private static String customConfig(int retentionLimit, int helpPageSize, int resultPageSize) {

@@ -3,6 +3,8 @@ version: ${version}
 main: me.clutchy.clutchperms.paper.ClutchPermsPaperPlugin
 description: Shared permission scaffolding for Paper.
 api-version: "26.1.2"
+libraries:
+  - com.zaxxer:HikariCP:7.0.2
 permissions:
   clutchperms.admin.*:
     description: Allows all ClutchPerms admin commands.
@@ -33,6 +35,9 @@ permissions:
     default: false
   clutchperms.admin.backup.list:
     description: Allows listing ClutchPerms backups.
+    default: false
+  clutchperms.admin.backup.create:
+    description: Allows creating ClutchPerms database backups.
     default: false
   clutchperms.admin.backup.restore:
     description: Allows restoring ClutchPerms backups.

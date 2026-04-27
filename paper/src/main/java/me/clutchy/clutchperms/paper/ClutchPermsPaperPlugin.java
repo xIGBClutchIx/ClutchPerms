@@ -29,7 +29,9 @@ import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeServices;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 /**
@@ -67,7 +69,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         permissionManagerBridge.setRegistryChangeListener(runtimePermissionBridge::refreshOnlinePlayers);
         runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(getDataFolder().toPath()),
                 () -> PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, this::getKnownPaperPlatformPermissionNodes),
-                new ClutchPermsRuntimeHooks(this::refreshRuntimeSubject, this::refreshRuntimePermissions));
+                new ClutchPermsRuntimeHooks(this::refreshRuntimeSubject, this::refreshRuntimePermissions), SqliteDependencyMode.PAPER_BUILT_IN_SQLITE);
         logStorageLoadStart();
         try {
             runtime.reload();
@@ -243,6 +245,26 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     }
 
     /**
+     * Restores one database backup after closing the active SQLite pool.
+     *
+     * @param kind selected storage kind
+     * @param backupFileName backup filename
+     */
+    void restoreBackup(StorageFileKind kind, String backupFileName) {
+        logStorageLoadStart();
+        try {
+            ClutchPermsRuntimeServices previousServices = getRuntime().restoreBackup(kind, backupFileName);
+            unregisterServices(previousServices);
+            registerServices();
+            refreshRuntimePermissions();
+            logStorageLoadSuccess();
+        } catch (RuntimeException exception) {
+            getLogger().log(Level.SEVERE, "Failed to restore ClutchPerms database backup " + backupFileName + " from " + getDataFolder(), exception);
+            throw exception;
+        }
+    }
+
+    /**
      * Refreshes every online player after a reload command replaces storage state.
      */
     void refreshRuntimePermissions() {
@@ -317,8 +339,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
     }
 
     private void logStorageLoadStart() {
-        getLogger().fine("ClutchPerms storage files: permissions=" + getRuntime().storagePaths().permissionsFile() + ", subjects=" + getRuntime().storagePaths().subjectsFile()
-                + ", groups=" + getRuntime().storagePaths().groupsFile() + ", nodes=" + getRuntime().storagePaths().nodesFile());
+        getLogger().fine("ClutchPerms database file: " + getRuntime().storagePaths().databaseFile());
     }
 
     private void logStorageLoadSuccess() {

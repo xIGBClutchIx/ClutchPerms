@@ -17,6 +17,8 @@ import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
@@ -135,20 +137,34 @@ public interface ClutchPermsCommandEnvironment<S> {
     }
 
     /**
-     * Validates one selected backup file before it replaces live storage.
+     * Validates one selected database backup file before it replaces live storage.
      *
      * @param kind selected storage file kind
      * @param backupFile selected backup path
      */
     default void validateBackup(StorageFileKind kind, Path backupFile) {
-        StorageFileKind requiredKind = Objects.requireNonNull(kind, "kind");
-        Path requiredBackupFile = Objects.requireNonNull(backupFile, "backupFile");
-        switch (requiredKind) {
-            case PERMISSIONS -> PermissionServices.jsonFile(requiredBackupFile);
-            case SUBJECTS -> SubjectMetadataServices.jsonFile(requiredBackupFile);
-            case GROUPS -> GroupServices.jsonFile(requiredBackupFile);
-            case NODES -> PermissionNodeRegistries.jsonFile(requiredBackupFile);
+        if (Objects.requireNonNull(kind, "kind") != StorageFileKind.DATABASE) {
+            throw new IllegalArgumentException("unsupported backup kind: " + kind.token());
         }
+        try (SqliteStore store = SqliteStore.openExisting(Objects.requireNonNull(backupFile, "backupFile"), SqliteDependencyMode.ANY_VISIBLE)) {
+            PermissionServices.sqlite(store);
+            SubjectMetadataServices.sqlite(store);
+            GroupServices.sqlite(store);
+            PermissionNodeRegistries.sqlite(store);
+        }
+    }
+
+    /**
+     * Restores one selected database backup file.
+     *
+     * @param kind selected storage file kind
+     * @param backupFileName selected backup filename
+     */
+    default void restoreBackup(StorageFileKind kind, String backupFileName) {
+        storageBackupService().restoreBackup(kind, backupFileName, () -> {
+            reloadStorage();
+            refreshRuntimePermissions();
+        });
     }
 
     /**

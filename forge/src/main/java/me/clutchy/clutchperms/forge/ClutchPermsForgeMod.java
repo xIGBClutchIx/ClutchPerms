@@ -23,7 +23,9 @@ import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntime;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.minecraft.network.chat.Component;
@@ -62,7 +64,8 @@ public final class ClutchPermsForgeMod {
     public ClutchPermsForgeMod() {
         Path storageDirectory = FMLPaths.CONFIGDIR.get().resolve(MOD_ID);
         runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(storageDirectory),
-                () -> PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsForgeMod::registeredBooleanPermissionNodes), ClutchPermsRuntimeHooks.noop());
+                () -> PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsForgeMod::registeredBooleanPermissionNodes), ClutchPermsRuntimeHooks.noop(),
+                SqliteDependencyMode.BUNDLED_WITH_CLUTCHPERMS);
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -84,7 +87,7 @@ public final class ClutchPermsForgeMod {
                         ClutchPermsForgeMod::getGroupService, ClutchPermsForgeMod::getPermissionNodeRegistry, ClutchPermsForgeMod::getManualPermissionNodeRegistry,
                         ClutchPermsForgeMod::getPermissionResolver, ClutchPermsForgeMod::getStatusDiagnostics, ClutchPermsForgeMod::reloadStorage,
                         ClutchPermsForgeMod::validateStorage, ClutchPermsForgeMod::getStorageBackupService, ClutchPermsForgeMod::getClutchPermsConfig,
-                        ClutchPermsForgeMod::updateConfig, ClutchPermsForgeMod::refreshRuntimePermissions, rootLiteral)));
+                        ClutchPermsForgeMod::updateConfig, ClutchPermsForgeMod::restoreBackup, ClutchPermsForgeMod::refreshRuntimePermissions, rootLiteral)));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -245,6 +248,24 @@ public final class ClutchPermsForgeMod {
     }
 
     /**
+     * Restores one database backup after closing the active SQLite pool.
+     *
+     * @param kind selected storage kind
+     * @param backupFileName backup filename
+     */
+    public static void restoreBackup(StorageFileKind kind, String backupFileName) {
+        logStorageLoadStart();
+        try {
+            getRuntime().restoreBackup(kind, backupFileName);
+            refreshRuntimePermissions();
+            logStorageLoadSuccess();
+        } catch (RuntimeException exception) {
+            LOGGER.error("Failed to restore ClutchPerms database backup {} from {}", backupFileName, storageRoot(), exception);
+            throw exception;
+        }
+    }
+
+    /**
      * Refreshes Forge runtime permission state after reload.
      */
     public static void refreshRuntimePermissions() {
@@ -271,8 +292,7 @@ public final class ClutchPermsForgeMod {
     }
 
     private static void logStorageLoadStart() {
-        LOGGER.debug("ClutchPerms storage files: permissions={}, subjects={}, groups={}, nodes={}", getRuntime().storagePaths().permissionsFile(),
-                getRuntime().storagePaths().subjectsFile(), getRuntime().storagePaths().groupsFile(), getRuntime().storagePaths().nodesFile());
+        LOGGER.debug("ClutchPerms database file: {}", getRuntime().storagePaths().databaseFile());
     }
 
     private static void logStorageLoadSuccess() {

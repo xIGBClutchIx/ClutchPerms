@@ -21,7 +21,9 @@ import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntime;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.fabricmc.api.ModInitializer;
@@ -60,19 +62,19 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     @Override
     public void onInitialize() {
         Path storageDirectory = FabricLoader.getInstance().getConfigDir().resolve(MOD_ID);
-        runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(storageDirectory), ClutchPermsRuntimeHooks.noop());
+        runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(storageDirectory), ClutchPermsRuntimeHooks.noop(), SqliteDependencyMode.BUNDLED_WITH_CLUTCHPERMS);
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
             throw new IllegalStateException("Failed to load ClutchPerms storage", exception);
         }
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> ClutchPermsCommands.ROOT_LITERALS
-                .forEach(rootLiteral -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService,
-                        ClutchPermsFabricMod::getSubjectMetadataService, ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionNodeRegistry,
-                        ClutchPermsFabricMod::getManualPermissionNodeRegistry, ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics,
-                        ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::validateStorage, ClutchPermsFabricMod::getStorageBackupService,
-                        ClutchPermsFabricMod::getClutchPermsConfig, ClutchPermsFabricMod::updateConfig, ClutchPermsFabricMod::refreshRuntimePermissions, rootLiteral))));
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> ClutchPermsCommands.ROOT_LITERALS.forEach(
+                rootLiteral -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService,
+                        ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionNodeRegistry, ClutchPermsFabricMod::getManualPermissionNodeRegistry,
+                        ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics, ClutchPermsFabricMod::reloadStorage,
+                        ClutchPermsFabricMod::validateStorage, ClutchPermsFabricMod::getStorageBackupService, ClutchPermsFabricMod::getClutchPermsConfig,
+                        ClutchPermsFabricMod::updateConfig, ClutchPermsFabricMod::restoreBackup, ClutchPermsFabricMod::refreshRuntimePermissions, rootLiteral))));
         FabricRuntimePermissionBridge.register(ClutchPermsFabricMod::getPermissionResolver);
         runtimeBridgeRegistered = true;
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> recordSubject(handler.getPlayer()));
@@ -217,6 +219,24 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     }
 
     /**
+     * Restores one database backup after closing the active SQLite pool.
+     *
+     * @param kind selected storage kind
+     * @param backupFileName backup filename
+     */
+    public static void restoreBackup(StorageFileKind kind, String backupFileName) {
+        logStorageLoadStart();
+        try {
+            getRuntime().restoreBackup(kind, backupFileName);
+            refreshRuntimePermissions();
+            logStorageLoadSuccess();
+        } catch (RuntimeException exception) {
+            LOGGER.error("Failed to restore ClutchPerms database backup {} from {}", backupFileName, storageRoot(), exception);
+            throw exception;
+        }
+    }
+
+    /**
      * Refreshes Fabric runtime permission state after reload.
      */
     public static void refreshRuntimePermissions() {
@@ -232,8 +252,7 @@ public final class ClutchPermsFabricMod implements ModInitializer {
     }
 
     private static void logStorageLoadStart() {
-        LOGGER.debug("ClutchPerms storage files: permissions={}, subjects={}, groups={}, nodes={}", getRuntime().storagePaths().permissionsFile(),
-                getRuntime().storagePaths().subjectsFile(), getRuntime().storagePaths().groupsFile(), getRuntime().storagePaths().nodesFile());
+        LOGGER.debug("ClutchPerms database file: {}", getRuntime().storagePaths().databaseFile());
     }
 
     private static void logStorageLoadSuccess() {

@@ -43,17 +43,11 @@ final class CommandLang {
 
     private static final String AVAILABLE_PAGES = "Available pages: 1-%s.";
 
-    private static final String STATUS_PERMISSIONS_FILE = "Permissions file: %s";
-
-    private static final String STATUS_SUBJECTS_FILE = "Subjects file: %s";
-
-    private static final String STATUS_GROUPS_FILE = "Groups file: %s";
-
-    private static final String STATUS_NODES_FILE = "Known nodes file: %s";
+    private static final String STATUS_DATABASE_FILE = "Database file: %s";
 
     private static final String STATUS_CONFIG_FILE = "Config file: %s";
 
-    private static final String STATUS_BACKUP_RETENTION = "Backup retention: newest %s per storage kind.";
+    private static final String STATUS_BACKUP_RETENTION = "Backup retention: newest %s database backups.";
 
     private static final String STATUS_COMMAND_PAGE_SIZES = "Command page sizes: help %s, lists %s.";
 
@@ -69,9 +63,9 @@ final class CommandLang {
 
     private static final String STATUS_RUNTIME_BRIDGE = "Runtime bridge: %s";
 
-    private static final String RELOAD_SUCCESS = "Reloaded config, permissions, subjects, groups, and known nodes from disk.";
+    private static final String RELOAD_SUCCESS = "Reloaded config and database storage from disk.";
 
-    private static final String VALIDATE_SUCCESS = "Validated config, permissions, subjects, groups, and known nodes from disk.";
+    private static final String VALIDATE_SUCCESS = "Validated config and database storage from disk.";
 
     private static final String ERROR_UNKNOWN_USER_TARGET = "Unknown user target: %s";
 
@@ -143,25 +137,15 @@ final class CommandLang {
 
     private static final String CONFIG_VALUE_REQUIREMENT = "%s %s";
 
-    private static final String ERROR_UNKNOWN_BACKUP_KIND = "Unknown backup file kind: %s";
-
-    private static final String VALID_BACKUP_KINDS = "Valid backup kinds: %s";
-
-    private static final String CLOSEST_BACKUP_KINDS = "Closest backup kinds: %s";
-
-    private static final String ERROR_UNKNOWN_BACKUP_FILE = "Unknown %s backup file: %s";
-
-    private static final String NO_BACKUPS_FOR_KIND = "No backups exist for %s.";
+    private static final String ERROR_UNKNOWN_BACKUP_FILE = "Unknown database backup file: %s";
 
     private static final String CLOSEST_BACKUP_FILES = "Closest backup files: %s";
 
     private static final String BACKUPS_EMPTY = "No backups found.";
 
-    private static final String BACKUPS_EMPTY_FOR_KIND = "No backups found for %s.";
+    private static final String BACKUP_CREATED = "Created database backup %s.";
 
-    private static final String BACKUPS_LIST = "Backups for %s: %s";
-
-    private static final String BACKUP_RESTORED = "Restored %s from backup %s.";
+    private static final String BACKUP_RESTORED = "Restored database from backup %s.";
 
     private static final String PERMISSIONS_EMPTY = "No permissions set for %s.";
 
@@ -367,20 +351,8 @@ final class CommandLang {
         return heading(STATUS);
     }
 
-    static CommandMessage statusPermissionsFile(String permissionsFile) {
-        return detail(STATUS_PERMISSIONS_FILE, permissionsFile);
-    }
-
-    static CommandMessage statusSubjectsFile(String subjectsFile) {
-        return detail(STATUS_SUBJECTS_FILE, subjectsFile);
-    }
-
-    static CommandMessage statusGroupsFile(String groupsFile) {
-        return detail(STATUS_GROUPS_FILE, groupsFile);
-    }
-
-    static CommandMessage statusNodesFile(String nodesFile) {
-        return detail(STATUS_NODES_FILE, nodesFile);
+    static CommandMessage statusDatabaseFile(String databaseFile) {
+        return detail(STATUS_DATABASE_FILE, databaseFile);
     }
 
     static CommandMessage statusConfigFile(String configFile) {
@@ -567,24 +539,8 @@ final class CommandLang {
         return detail(CONFIG_VALUE_REQUIREMENT, key, requirement);
     }
 
-    static CommandMessage unknownBackupKind(String token) {
-        return error(ERROR_UNKNOWN_BACKUP_KIND, token);
-    }
-
-    static CommandMessage validBackupKinds(String kinds) {
-        return detail(VALID_BACKUP_KINDS, kinds);
-    }
-
-    static CommandMessage closestBackupKinds(String kinds) {
-        return detail(CLOSEST_BACKUP_KINDS, kinds);
-    }
-
-    static CommandMessage unknownBackupFile(String kind, String backupFileName) {
-        return error(ERROR_UNKNOWN_BACKUP_FILE, kind, backupFileName);
-    }
-
-    static CommandMessage noBackupsForKind(String kind) {
-        return detail(NO_BACKUPS_FOR_KIND, kind);
+    static CommandMessage unknownBackupFile(String backupFileName) {
+        return error(ERROR_UNKNOWN_BACKUP_FILE, backupFileName);
     }
 
     static CommandMessage closestBackupFiles(String backupFileNames) {
@@ -595,16 +551,12 @@ final class CommandLang {
         return detail(BACKUPS_EMPTY);
     }
 
-    static CommandMessage backupsEmpty(String kind) {
-        return detail(BACKUPS_EMPTY_FOR_KIND, kind);
+    static CommandMessage backupCreated(String backupFileName) {
+        return success(BACKUP_CREATED, backupFileName);
     }
 
-    static CommandMessage backupsList(String kind, String backups) {
-        return detail(BACKUPS_LIST, kind, backups);
-    }
-
-    static CommandMessage backupRestored(String kind, String backupFileName) {
-        return success(BACKUP_RESTORED, kind, backupFileName);
+    static CommandMessage backupRestored(String backupFileName) {
+        return success(BACKUP_RESTORED, backupFileName);
     }
 
     static CommandMessage permissionsEmpty(String subject) {

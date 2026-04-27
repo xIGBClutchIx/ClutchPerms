@@ -1,7 +1,6 @@
 package me.clutchy.clutchperms.common.command;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -99,8 +98,6 @@ public final class ClutchPermsCommands {
 
     private static final String PARENT_ARGUMENT = CommandArguments.PARENT;
 
-    private static final String BACKUP_KIND_ARGUMENT = CommandArguments.BACKUP_KIND;
-
     private static final String BACKUP_FILE_ARGUMENT = CommandArguments.BACKUP_FILE;
 
     private static final String CONFIG_KEY_ARGUMENT = CommandArguments.CONFIG_KEY;
@@ -140,8 +137,8 @@ public final class ClutchPermsCommands {
     private static final DynamicCommandExceptionType DISPLAY_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final List<ConfigEntry> CONFIG_ENTRIES = List.of(
-            integerConfig("backups.retentionLimit", "newest backups kept per storage kind", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT,
-                    ClutchPermsBackupConfig.MAX_RETENTION_LIMIT, ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(),
+            integerConfig("backups.retentionLimit", "newest database backups kept", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT, ClutchPermsBackupConfig.MAX_RETENTION_LIMIT,
+                    ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(),
                     (config, value) -> new ClutchPermsConfig(new ClutchPermsBackupConfig(value), config.commands(), config.chat())),
             integerConfig("commands.helpPageSize", "command rows shown per help page", ClutchPermsCommandConfig.MIN_PAGE_SIZE, ClutchPermsCommandConfig.MAX_PAGE_SIZE,
                     ClutchPermsCommandConfig.DEFAULT_HELP_PAGE_SIZE, config -> config.commands().helpPageSize(),
@@ -156,15 +153,16 @@ public final class ClutchPermsCommands {
 
     private static final List<CommandHelpEntry> COMMAND_HELP = List.of(new CommandHelpEntry("help [page]", PermissionNodes.ADMIN_HELP, "Shows paged command help."),
             new CommandHelpEntry("status", PermissionNodes.ADMIN_STATUS, "Shows storage, counts, resolver cache, and bridge status."),
-            new CommandHelpEntry("reload", PermissionNodes.ADMIN_RELOAD, "Reloads config and JSON storage, then refreshes runtime permissions."),
-            new CommandHelpEntry("validate", PermissionNodes.ADMIN_VALIDATE, "Checks config and JSON storage without applying it."),
+            new CommandHelpEntry("reload", PermissionNodes.ADMIN_RELOAD, "Reloads config and database storage, then refreshes runtime permissions."),
+            new CommandHelpEntry("validate", PermissionNodes.ADMIN_VALIDATE, "Checks config and database storage without applying it."),
             new CommandHelpEntry("config list", PermissionNodes.ADMIN_CONFIG_VIEW, "Lists active runtime config values."),
             new CommandHelpEntry("config get <key>", PermissionNodes.ADMIN_CONFIG_VIEW, "Shows one config value."),
             new CommandHelpEntry("config set <key> <value>", PermissionNodes.ADMIN_CONFIG_SET, "Updates config and reloads runtime."),
             new CommandHelpEntry("config reset <key|all>", PermissionNodes.ADMIN_CONFIG_RESET, "Restores config defaults."),
-            new CommandHelpEntry("backup list [kind] [page]", PermissionNodes.ADMIN_BACKUP_LIST, "Lists backups by file kind."),
+            new CommandHelpEntry("backup create", PermissionNodes.ADMIN_BACKUP_CREATE, "Creates a database backup."),
+            new CommandHelpEntry("backup list [page]", PermissionNodes.ADMIN_BACKUP_LIST, "Lists database backups."),
             new CommandHelpEntry("backup list page <page>", PermissionNodes.ADMIN_BACKUP_LIST, "Lists all backups on a specific page."),
-            new CommandHelpEntry("backup restore <kind> <backup-file>", PermissionNodes.ADMIN_BACKUP_RESTORE, "Restores one validated backup file."),
+            new CommandHelpEntry("backup restore <backup-file>", PermissionNodes.ADMIN_BACKUP_RESTORE, "Restores one validated database backup."),
             new CommandHelpEntry("user <target> info", PermissionNodes.ADMIN_USER_INFO, "Shows a quick user summary."),
             new CommandHelpEntry("user <target> list [page]", PermissionNodes.ADMIN_USER_LIST, "Lists direct user permissions."),
             new CommandHelpEntry("user <target> get <node>", PermissionNodes.ADMIN_USER_GET, "Shows one direct user permission."),
@@ -357,13 +355,13 @@ public final class ClutchPermsCommands {
             }
 
             @Override
-            public int listPageUsage(CommandContext<S> context) {
-                return sendUsage(environment, context, "Missing page number.", "Choose a backup list page.", List.of("backup list page <page>"));
+            public int create(CommandContext<S> context) throws CommandSyntaxException {
+                return createBackup(environment, context);
             }
 
             @Override
-            public int restoreKindUsage(CommandContext<S> context) {
-                return sendBackupRestoreKindUsage(environment, context);
+            public int listPageUsage(CommandContext<S> context) {
+                return sendUsage(environment, context, "Missing page number.", "Choose a backup list page.", List.of("backup list page <page>"));
             }
 
             @Override
@@ -853,10 +851,7 @@ public final class ClutchPermsCommands {
     private static <S> int sendStatus(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         CommandStatusDiagnostics diagnostics = environment.statusDiagnostics();
         environment.sendMessage(context.getSource(), CommandLang.status());
-        environment.sendMessage(context.getSource(), CommandLang.statusPermissionsFile(diagnostics.permissionsFile()));
-        environment.sendMessage(context.getSource(), CommandLang.statusSubjectsFile(diagnostics.subjectsFile()));
-        environment.sendMessage(context.getSource(), CommandLang.statusGroupsFile(diagnostics.groupsFile()));
-        environment.sendMessage(context.getSource(), CommandLang.statusNodesFile(diagnostics.nodesFile()));
+        environment.sendMessage(context.getSource(), CommandLang.statusDatabaseFile(diagnostics.databaseFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusConfigFile(diagnostics.configFile()));
         environment.sendMessage(context.getSource(), CommandLang.statusBackupRetention(environment.config().backups().retentionLimit()));
         environment.sendMessage(context.getSource(),
@@ -872,7 +867,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int sendBackupUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
-        return sendUsage(environment, context, "Missing backup command.", "Backups can be listed by storage kind or restored by file name.", backupUsages());
+        return sendUsage(environment, context, "Missing backup command.", "Database backups can be created, listed, or restored by file name.", backupUsages());
     }
 
     private static <S> int sendConfigUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -901,20 +896,13 @@ public final class ClutchPermsCommands {
                 "Config commands inspect and update runtime config.", configUsages());
     }
 
-    private static <S> int sendBackupRestoreKindUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
-        return sendUsage(environment, context, "Missing backup file kind.", "Choose permissions, subjects, groups, or nodes.",
-                List.of("backup restore <permissions|subjects|groups|nodes> <backup-file>"));
-    }
-
-    private static <S> int sendBackupRestoreFileUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        StorageFileKind kind = getBackupKind(environment, context);
-        return sendUsage(environment, context, "Missing backup file.", "Pick a backup file for " + kind.token() + ".",
-                List.of("backup restore " + kind.token() + " <backup-file>"));
+    private static <S> int sendBackupRestoreFileUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing backup file.", "Pick a database backup file.", List.of("backup restore <backup-file>"));
     }
 
     private static <S> int sendUnknownBackupUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
-        return sendUsage(environment, context, "Unknown backup command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT), "Backup supports list and restore commands.",
-                backupUsages());
+        return sendUsage(environment, context, "Unknown backup command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "Backup supports create, list, and restore commands.", backupUsages());
     }
 
     private static <S> int sendUserRootUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -1185,7 +1173,7 @@ public final class ClutchPermsCommands {
     }
 
     private static List<String> backupUsages() {
-        return List.of("backup list [permissions|subjects|groups|nodes]", "backup restore <permissions|subjects|groups|nodes> <backup-file>");
+        return List.of("backup create", "backup list [page]", "backup restore <backup-file>");
     }
 
     private static List<String> configUsages() {
@@ -1323,17 +1311,8 @@ public final class ClutchPermsCommands {
 
     private static <S> int listBackups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         StorageBackupService backupService = environment.storageBackupService();
-        Optional<StorageFileKind> requestedKind = getOptionalBackupKind(environment, context);
         try {
-            if (requestedKind.isPresent()) {
-                sendBackupList(environment, context, requestedKind.get(), backupService.listBackups(requestedKind.get()), "backup list " + requestedKind.get().token());
-                return Command.SINGLE_SUCCESS;
-            }
-
-            Map<StorageFileKind, List<StorageBackup>> backups = backupService.listBackups();
-            List<PagedRow> rows = backups.entrySet().stream().sorted(Map.Entry.comparingByKey(Comparator.comparing(StorageFileKind::token))).flatMap(
-                    entry -> entry.getValue().stream().map(backup -> backupRow(rootLiteral(context), entry.getKey(), backup, entry.getKey().token() + ": " + backup.fileName())))
-                    .toList();
+            List<PagedRow> rows = backupService.listBackups(StorageFileKind.DATABASE).stream().map(backup -> backupRow(rootLiteral(context), backup, backup.fileName())).toList();
             if (rows.isEmpty()) {
                 environment.sendMessage(context.getSource(), CommandLang.backupsEmpty());
                 return Command.SINGLE_SUCCESS;
@@ -1345,41 +1324,36 @@ public final class ClutchPermsCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    private static <S> int createBackup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        try {
+            StorageBackup backup = environment.storageBackupService().createBackup()
+                    .orElseThrow(() -> new PermissionStorageException("Cannot create database backup because database.db does not exist"));
+            environment.sendMessage(context.getSource(), CommandLang.backupCreated(backup.fileName()));
+            return Command.SINGLE_SUCCESS;
+        } catch (RuntimeException exception) {
+            throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
+        }
+    }
+
     private static <S> int restoreBackup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        StorageFileKind kind = getBackupKind(environment, context);
         String backupFileName = StringArgumentType.getString(context, BACKUP_FILE_ARGUMENT);
         StorageBackupService backupService = environment.storageBackupService();
         List<StorageBackup> backups;
         try {
-            backups = backupService.listBackups(kind);
+            backups = backupService.listBackups(StorageFileKind.DATABASE);
         } catch (RuntimeException exception) {
             throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
         }
-        StorageBackup backup = requireKnownBackupFile(context, kind, backupFileName, backups);
-        validateBackup(environment, kind, backup);
+        StorageBackup backup = requireKnownBackupFile(context, backupFileName, backups);
+        validateBackup(environment, StorageFileKind.DATABASE, backup);
         try {
-            backupService.restoreBackup(kind, backupFileName, () -> {
-                environment.reloadStorage();
-                environment.refreshRuntimePermissions();
-            });
+            environment.restoreBackup(StorageFileKind.DATABASE, backupFileName);
         } catch (RuntimeException exception) {
             throw BACKUP_OPERATION_FAILED.create(CommandLang.backupOperationFailed(exception));
         }
 
-        environment.sendMessage(context.getSource(), CommandLang.backupRestored(kind.token(), backupFileName));
+        environment.sendMessage(context.getSource(), CommandLang.backupRestored(backupFileName));
         return Command.SINGLE_SUCCESS;
-    }
-
-    private static <S> void sendBackupList(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, StorageFileKind kind, List<StorageBackup> backups,
-            String pageCommand) throws CommandSyntaxException {
-        if (backups.isEmpty()) {
-            environment.sendMessage(context.getSource(), CommandLang.backupsEmpty(kind.token()));
-            return;
-        }
-
-        String rootLiteral = rootLiteral(context);
-        List<PagedRow> rows = backups.stream().map(backup -> backupRow(rootLiteral, kind, backup, backup.fileName())).toList();
-        sendPagedRows(environment, context, "Backups for " + kind.token(), rows, pageCommand);
     }
 
     private static <S> boolean canUse(ClutchPermsCommandEnvironment<S> environment, S source, String requiredPermission) {
@@ -2083,23 +2057,6 @@ public final class ClutchPermsCommands {
         return Optional.of(new CommandSubject(subject.subjectId(), subject.lastKnownName()));
     }
 
-    private static <S> Optional<StorageFileKind> getOptionalBackupKind(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        boolean hasBackupKind = context.getNodes().stream().anyMatch(node -> BACKUP_KIND_ARGUMENT.equals(node.getNode().getName()));
-        if (!hasBackupKind) {
-            return Optional.empty();
-        }
-        return Optional.of(getBackupKind(environment, context));
-    }
-
-    private static <S> StorageFileKind getBackupKind(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        String token = StringArgumentType.getString(context, BACKUP_KIND_ARGUMENT).toLowerCase(Locale.ROOT);
-        Optional<StorageFileKind> kind = StorageFileKind.fromToken(token);
-        if (kind.isEmpty()) {
-            throw unknownBackupKindFeedback(environment, context, token);
-        }
-        return kind.get();
-    }
-
     private static <S> ConfigEntry getConfigEntry(CommandContext<S> context) throws CommandSyntaxException {
         String key = StringArgumentType.getString(context, CONFIG_KEY_ARGUMENT);
         return findConfigEntry(key).orElseThrow(() -> unknownConfigKeyFeedback(context, key));
@@ -2213,25 +2170,20 @@ public final class ClutchPermsCommands {
         return normalizedGroupName;
     }
 
-    private static <S> StorageBackup requireKnownBackupFile(CommandContext<S> context, StorageFileKind kind, String backupFileName, List<StorageBackup> backups)
-            throws CommandSyntaxException {
+    private static <S> StorageBackup requireKnownBackupFile(CommandContext<S> context, String backupFileName, List<StorageBackup> backups) throws CommandSyntaxException {
         Optional<StorageBackup> knownBackupFile = backups.stream().filter(backup -> backup.fileName().equals(backupFileName)).findFirst();
         if (knownBackupFile.isPresent()) {
             return knownBackupFile.get();
         }
 
         List<CommandMessage> messages = new ArrayList<>();
-        messages.add(CommandLang.unknownBackupFile(kind.token(), backupFileName));
-        if (backups.isEmpty()) {
-            messages.add(CommandLang.noBackupsForKind(kind.token()));
-        } else {
-            List<String> matches = closestMatches(backupFileName, backups.stream().map(backup -> candidate(backup.fileName())).toList());
-            if (!matches.isEmpty()) {
-                messages.add(CommandLang.closestBackupFiles(String.join(", ", matches)));
-            }
+        messages.add(CommandLang.unknownBackupFile(backupFileName));
+        List<String> matches = closestMatches(backupFileName, backups.stream().map(backup -> candidate(backup.fileName())).toList());
+        if (!matches.isEmpty()) {
+            messages.add(CommandLang.closestBackupFiles(String.join(", ", matches)));
         }
         messages.add(CommandLang.tryHeader());
-        messages.add(CommandLang.suggestion(rootLiteral(context), "backup list " + kind.token()));
+        messages.add(CommandLang.suggestion(rootLiteral(context), "backup list"));
         throw feedback(messages);
     }
 
@@ -2329,28 +2281,6 @@ public final class ClutchPermsCommands {
             messages.add(CommandLang.noGroupTargetMatches());
             messages.add(CommandLang.tryHeader());
             messages.add(CommandLang.suggestion(rootLiteral(context), "group list"));
-        }
-        return feedback(messages);
-    }
-
-    private static <S> CommandFeedbackException unknownBackupKindFeedback(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String token) {
-        List<String> validKinds;
-        try {
-            validKinds = environment.storageBackupService().fileKinds().stream().map(StorageFileKind::token).sorted().toList();
-        } catch (RuntimeException exception) {
-            validKinds = Arrays.stream(StorageFileKind.values()).map(StorageFileKind::token).sorted().toList();
-        }
-        if (validKinds.isEmpty()) {
-            validKinds = Arrays.stream(StorageFileKind.values()).map(StorageFileKind::token).sorted().toList();
-        }
-
-        List<CommandMessage> messages = new ArrayList<>();
-        messages.add(CommandLang.unknownBackupKind(token));
-        List<String> matches = closestMatches(token, validKinds.stream().map(ClutchPermsCommands::candidate).toList());
-        if (matches.isEmpty()) {
-            messages.add(CommandLang.validBackupKinds(String.join(", ", validKinds)));
-        } else {
-            messages.add(CommandLang.closestBackupKinds(String.join(", ", matches)));
         }
         return feedback(messages);
     }
@@ -2622,8 +2552,8 @@ public final class ClutchPermsCommands {
         };
     }
 
-    private static PagedRow backupRow(String rootLiteral, StorageFileKind kind, StorageBackup backup, String text) {
-        return new PagedRow(text, fullCommand(rootLiteral, "backup restore " + kind.token() + " " + backup.fileName()));
+    private static PagedRow backupRow(String rootLiteral, StorageBackup backup, String text) {
+        return new PagedRow(text, fullCommand(rootLiteral, "backup restore " + backup.fileName()));
     }
 
     private static String knownNodeCommand(String rootLiteral, KnownPermissionNode node) {

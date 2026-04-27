@@ -4,29 +4,14 @@ import java.util.Arrays;
 import java.util.Optional;
 
 /**
- * Identifies the persisted ClutchPerms JSON files that can be backed up and restored.
+ * Identifies the persisted ClutchPerms database that can be backed up and restored.
  */
 public enum StorageFileKind {
 
     /**
-     * Direct subject permission assignments.
+     * SQLite database containing permissions, subjects, groups, and manual known nodes.
      */
-    PERMISSIONS("permissions", "permissions.json"),
-
-    /**
-     * Subject metadata and last-known names.
-     */
-    SUBJECTS("subjects", "subjects.json"),
-
-    /**
-     * Group definitions, permissions, parents, and memberships.
-     */
-    GROUPS("groups", "groups.json"),
-
-    /**
-     * Manual known permission node registry.
-     */
-    NODES("nodes", "nodes.json");
+    DATABASE("database", "database.db");
 
     private final String token;
 
@@ -47,9 +32,9 @@ public enum StorageFileKind {
     }
 
     /**
-     * Returns the live JSON filename for this storage kind.
+     * Returns the live filename for this storage kind.
      *
-     * @return live JSON filename
+     * @return live database filename
      */
     public String fileName() {
         return fileName;

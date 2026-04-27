@@ -23,7 +23,9 @@ import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntime;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsRuntimeHooks;
 import me.clutchy.clutchperms.common.runtime.ClutchPermsStoragePaths;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.minecraft.network.chat.Component;
@@ -63,7 +65,8 @@ public final class ClutchPermsNeoForgeMod {
     public ClutchPermsNeoForgeMod() {
         Path storageDirectory = FMLPaths.CONFIGDIR.get().resolve(MOD_ID);
         runtime = new ClutchPermsRuntime(ClutchPermsStoragePaths.inDirectory(storageDirectory),
-                () -> PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsNeoForgeMod::registeredBooleanPermissionNodes), ClutchPermsRuntimeHooks.noop());
+                () -> PermissionNodeRegistries.supplying(PermissionNodeSource.PLATFORM, ClutchPermsNeoForgeMod::registeredBooleanPermissionNodes), ClutchPermsRuntimeHooks.noop(),
+                SqliteDependencyMode.BUNDLED_WITH_CLUTCHPERMS);
         try {
             reloadStorage();
         } catch (PermissionStorageException exception) {
@@ -85,7 +88,7 @@ public final class ClutchPermsNeoForgeMod {
                         ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getPermissionNodeRegistry, ClutchPermsNeoForgeMod::getManualPermissionNodeRegistry,
                         ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage,
                         ClutchPermsNeoForgeMod::validateStorage, ClutchPermsNeoForgeMod::getStorageBackupService, ClutchPermsNeoForgeMod::getClutchPermsConfig,
-                        ClutchPermsNeoForgeMod::updateConfig, ClutchPermsNeoForgeMod::refreshRuntimePermissions, rootLiteral)));
+                        ClutchPermsNeoForgeMod::updateConfig, ClutchPermsNeoForgeMod::restoreBackup, ClutchPermsNeoForgeMod::refreshRuntimePermissions, rootLiteral)));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -246,6 +249,24 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     /**
+     * Restores one database backup after closing the active SQLite pool.
+     *
+     * @param kind selected storage kind
+     * @param backupFileName backup filename
+     */
+    public static void restoreBackup(StorageFileKind kind, String backupFileName) {
+        logStorageLoadStart();
+        try {
+            getRuntime().restoreBackup(kind, backupFileName);
+            refreshRuntimePermissions();
+            logStorageLoadSuccess();
+        } catch (RuntimeException exception) {
+            LOGGER.error("Failed to restore ClutchPerms database backup {} from {}", backupFileName, storageRoot(), exception);
+            throw exception;
+        }
+    }
+
+    /**
      * Refreshes NeoForge runtime permission state after reload.
      */
     public static void refreshRuntimePermissions() {
@@ -272,8 +293,7 @@ public final class ClutchPermsNeoForgeMod {
     }
 
     private static void logStorageLoadStart() {
-        LOGGER.debug("ClutchPerms storage files: permissions={}, subjects={}, groups={}, nodes={}", getRuntime().storagePaths().permissionsFile(),
-                getRuntime().storagePaths().subjectsFile(), getRuntime().storagePaths().groupsFile(), getRuntime().storagePaths().nodesFile());
+        LOGGER.debug("ClutchPerms database file: {}", getRuntime().storagePaths().databaseFile());
     }
 
     private static void logStorageLoadSuccess() {

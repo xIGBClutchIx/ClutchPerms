@@ -1,33 +1,16 @@
 package me.clutchy.clutchperms.common.subject;
 
-import java.nio.file.Path;
+import java.util.Objects;
 
-import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
 
 /**
  * Factory methods for subject metadata services.
  */
 public final class SubjectMetadataServices {
 
-    /**
-     * Creates a JSON-backed subject metadata service.
-     *
-     * @param subjectsFile path to the JSON metadata file
-     * @return subject metadata service backed by {@code subjectsFile}
-     */
-    public static SubjectMetadataService jsonFile(Path subjectsFile) {
-        return jsonFile(subjectsFile, StorageWriteOptions.defaults());
-    }
-
-    /**
-     * Creates a JSON-backed subject metadata service.
-     *
-     * @param subjectsFile path to the JSON metadata file
-     * @param writeOptions storage write options used for future mutations
-     * @return subject metadata service backed by {@code subjectsFile}
-     */
-    public static SubjectMetadataService jsonFile(Path subjectsFile, StorageWriteOptions writeOptions) {
-        return new JsonFileSubjectMetadataService(subjectsFile, StorageWriteOptions.defaultIfNull(writeOptions));
+    public static SubjectMetadataService sqlite(SqliteStore store) {
+        return new SqliteSubjectMetadataService(Objects.requireNonNull(store, "store"));
     }
 
     private SubjectMetadataServices() {

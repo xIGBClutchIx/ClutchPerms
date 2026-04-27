@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.fabric;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
@@ -20,6 +21,7 @@ import me.clutchy.clutchperms.common.node.PermissionNodeRegistry;
 import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 
 import net.minecraft.ChatFormatting;
@@ -43,7 +45,7 @@ final class FabricClutchPermsCommand {
         return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
                 storageReloader, storageValidator, storageBackupService, ClutchPermsConfig::defaults, updater -> {
                     throw new UnsupportedOperationException("Config updates are not available for this command environment");
-                }, runtimePermissionRefresher, ClutchPermsCommands.ROOT_LITERAL);
+                }, defaultBackupRestorer(storageBackupService, storageReloader, runtimePermissionRefresher), runtimePermissionRefresher, ClutchPermsCommands.ROOT_LITERAL);
     }
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
@@ -54,7 +56,7 @@ final class FabricClutchPermsCommand {
         return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
                 storageReloader, storageValidator, storageBackupService, ClutchPermsConfig::defaults, updater -> {
                     throw new UnsupportedOperationException("Config updates are not available for this command environment");
-                }, runtimePermissionRefresher, rootLiteral);
+                }, defaultBackupRestorer(storageBackupService, storageReloader, runtimePermissionRefresher), runtimePermissionRefresher, rootLiteral);
     }
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
@@ -62,11 +64,21 @@ final class FabricClutchPermsCommand {
             Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
             Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
             Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater, Runnable runtimePermissionRefresher, String rootLiteral) {
-        return ClutchPermsCommands
-                .builder(
-                        new FabricCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry,
-                                permissionResolver, statusDiagnostics, storageReloader, storageValidator, storageBackupService, config, configUpdater, runtimePermissionRefresher),
-                        rootLiteral);
+        return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
+                storageReloader, storageValidator, storageBackupService, config, configUpdater,
+                defaultBackupRestorer(storageBackupService, storageReloader, runtimePermissionRefresher), runtimePermissionRefresher, rootLiteral);
+    }
+
+    static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
+            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
+            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
+            Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater, BiConsumer<StorageFileKind, String> backupRestorer,
+            Runnable runtimePermissionRefresher, String rootLiteral) {
+        return ClutchPermsCommands.builder(
+                new FabricCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver,
+                        statusDiagnostics, storageReloader, storageValidator, storageBackupService, config, configUpdater, backupRestorer, runtimePermissionRefresher),
+                rootLiteral);
     }
 
     private FabricClutchPermsCommand() {
@@ -77,7 +89,7 @@ final class FabricClutchPermsCommand {
             Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistrySupplier, Supplier<PermissionResolver> permissionResolverSupplier,
             Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier, Runnable storageReloader, Runnable storageValidator,
             Supplier<StorageBackupService> storageBackupServiceSupplier, Supplier<ClutchPermsConfig> configSupplier, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater,
-            Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
+            BiConsumer<StorageFileKind, String> backupRestorer, Runnable runtimePermissionRefresher) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
 
         @Override
         public PermissionService permissionService() {
@@ -137,6 +149,11 @@ final class FabricClutchPermsCommand {
         @Override
         public StorageBackupService storageBackupService() {
             return storageBackupServiceSupplier.get();
+        }
+
+        @Override
+        public void restoreBackup(StorageFileKind kind, String backupFileName) {
+            backupRestorer.accept(kind, backupFileName);
         }
 
         @Override
@@ -228,5 +245,13 @@ final class FabricClutchPermsCommand {
             String textName = source.getTextName();
             return source.getEntity() == null && ("Server".equals(textName) || "Rcon".equalsIgnoreCase(textName));
         }
+    }
+
+    private static BiConsumer<StorageFileKind, String> defaultBackupRestorer(Supplier<StorageBackupService> storageBackupService, Runnable storageReloader,
+            Runnable runtimePermissionRefresher) {
+        return (kind, backupFileName) -> storageBackupService.get().restoreBackup(kind, backupFileName, () -> {
+            storageReloader.run();
+            runtimePermissionRefresher.run();
+        });
     }
 }

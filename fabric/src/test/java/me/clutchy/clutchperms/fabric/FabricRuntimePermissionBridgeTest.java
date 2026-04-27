@@ -1,8 +1,8 @@
 package me.clutchy.clutchperms.fabric;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -33,6 +33,8 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
 import me.clutchy.clutchperms.common.storage.StorageBackup;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
@@ -133,147 +135,123 @@ final class FabricRuntimePermissionBridgeTest {
 
     @Test
     void commandMutationPersistsAndResolvesThroughBridge(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
-        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
-        Path groupsFile = temporaryDirectory.resolve("groups.json");
-        PermissionService persistedPermissionService = PermissionServices.jsonFile(permissionsFile);
-        GroupService persistedGroupService = GroupServices.jsonFile(groupsFile);
-        PermissionResolver persistedPermissionResolver = new PermissionResolver(persistedPermissionService, persistedGroupService);
-        CommandDispatcher<TestSource> dispatcher = dispatcher(persistedPermissionService, persistedGroupService, persistedPermissionResolver, temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
+        PermissionResolver persistedPermissionResolver = environment.permissionResolver();
+        CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.smoke true", console));
-        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "example.smoke"));
+        assertEquals(PermissionValue.TRUE, persistedPermissionValue(temporaryDirectory, "example.smoke"));
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.smoke"));
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.smoke false", console));
-        assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "example.smoke"));
+        assertEquals(PermissionValue.FALSE, persistedPermissionValue(temporaryDirectory, "example.smoke"));
         assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.smoke"));
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " clear example.smoke", console));
-        assertEquals(PermissionValue.UNSET, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "example.smoke"));
+        assertEquals(PermissionValue.UNSET, persistedPermissionValue(temporaryDirectory, "example.smoke"));
         assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.smoke"));
 
         assertEquals(1, dispatcher.execute("clutchperms group admin create", console));
         assertEquals(1, dispatcher.execute("clutchperms group admin set example.group true", console));
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " group add admin", console));
-        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("admin", "example.group"));
+        assertEquals(PermissionValue.TRUE, persistedGroupPermissionValue(temporaryDirectory, "admin", "example.group"));
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.group"));
 
         assertEquals(1, dispatcher.execute("clutchperms group base create", console));
         assertEquals(1, dispatcher.execute("clutchperms group base set example.inherited true", console));
         assertEquals(1, dispatcher.execute("clutchperms group admin parent add base", console));
-        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("base", "example.inherited"));
+        assertEquals(PermissionValue.TRUE, persistedGroupPermissionValue(temporaryDirectory, "base", "example.inherited"));
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "example.inherited"));
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set wildcard.* false", console));
-        assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(SUBJECT_ID, "wildcard.*"));
+        assertEquals(PermissionValue.FALSE, persistedPermissionValue(temporaryDirectory, "wildcard.*"));
         assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(persistedPermissionResolver, SUBJECT_ID, "wildcard.node"));
     }
 
     @Test
     void backupRestoreReloadsBridgeVisibleState(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
-        TestEnvironment environment = new TestEnvironment(PermissionServices.jsonFile(temporaryDirectory.resolve("permissions.json")), temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.backup true", console));
+        assertEquals(1, dispatcher.execute("clutchperms backup create", console));
         assertEquals(1, dispatcher.execute("clutchperms user " + SUBJECT_ID + " set example.backup false", console));
         assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.backup"));
-        StorageBackup backup = environment.storageBackupService().listBackups(StorageFileKind.PERMISSIONS).getFirst();
-        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(backup.path()).getPermission(SUBJECT_ID, "example.backup"));
+        StorageBackup backup = environment.storageBackupService().listBackups(StorageFileKind.DATABASE).getFirst();
+        assertEquals(PermissionValue.TRUE, persistedPermissionValueFromDatabase(backup.path(), "example.backup"));
 
-        assertEquals(1, dispatcher.execute("clutchperms backup restore permissions " + backup.fileName(), console));
+        assertEquals(1, dispatcher.execute("clutchperms backup restore " + backup.fileName(), console));
 
-        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(temporaryDirectory.resolve("permissions.json")).getPermission(SUBJECT_ID, "example.backup"));
+        assertEquals(PermissionValue.TRUE, persistedPermissionValue(temporaryDirectory, "example.backup"));
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.backup"));
         assertEquals(1, environment.runtimeRefreshes());
     }
 
     @Test
     void malformedBackupRestoreFailsValidationAndPreservesBridgeState(@TempDir Path temporaryDirectory) throws Exception {
-        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
-        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
-        activePermissionService.setPermission(SUBJECT_ID, "Example.Backup", PermissionValue.TRUE);
-        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
+        environment.permissionService().setPermission(SUBJECT_ID, "Example.Backup", PermissionValue.TRUE);
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
-        String liveBeforeRestore = Files.readString(permissionsFile);
-        Path backupDirectory = temporaryDirectory.resolve("backups").resolve("permissions");
+        PermissionValue liveBeforeRestore = persistedPermissionValue(temporaryDirectory, "example.backup");
+        Path backupDirectory = temporaryDirectory.resolve("backups").resolve("database");
         Files.createDirectories(backupDirectory);
-        String backupFileName = "permissions-20260424-120000000.json";
-        Files.writeString(backupDirectory.resolve(backupFileName), """
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "example.*.bad": "TRUE"
-                    }
-                  }
-                }
-                """, StandardCharsets.UTF_8);
+        String backupFileName = "database-20260424-120000000.db";
+        Files.writeString(backupDirectory.resolve(backupFileName), "not sqlite");
 
-        assertCommandFails(dispatcher, "clutchperms backup restore permissions " + backupFileName, console,
-                "Backup operation failed: Failed to validate permissions backup " + backupFileName);
+        assertCommandFails(dispatcher, "clutchperms backup restore " + backupFileName, console, "Backup operation failed: Failed to validate database backup " + backupFileName);
 
-        assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
+        assertEquals(liveBeforeRestore, persistedPermissionValue(temporaryDirectory, "example.backup"));
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.backup"));
         assertEquals(0, environment.runtimeRefreshes());
     }
 
     @Test
     void reloadCommandReloadsStorageForBridgeResolution(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
-        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
-        TestEnvironment environment = new TestEnvironment(PermissionServices.jsonFile(permissionsFile), temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        PermissionServices.jsonFile(permissionsFile).setPermission(SUBJECT_ID, "Example.Reload", PermissionValue.TRUE);
+        try (SqliteStore store = openStore(temporaryDirectory)) {
+            PermissionServices.sqlite(store).setPermission(SUBJECT_ID, "Example.Reload", PermissionValue.TRUE);
+        }
         assertEquals(TriState.DEFAULT, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.reload"));
 
         assertEquals(1, dispatcher.execute("clutchperms reload", console));
 
         assertEquals(TriState.TRUE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.reload"));
         assertEquals(1, environment.runtimeRefreshes());
-        assertEquals(List.of("Reloaded config, permissions, subjects, groups, and known nodes from disk."), console.messages());
+        assertEquals(List.of("Reloaded config and database storage from disk."), console.messages());
     }
 
     @Test
     void validateCommandChecksStorageWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
-        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
-        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
-        activePermissionService.setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.FALSE);
-        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
+        environment.permissionService().setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.FALSE);
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        PermissionServices.jsonFile(permissionsFile).setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.TRUE);
+        try (SqliteStore store = openStore(temporaryDirectory)) {
+            PermissionServices.sqlite(store).setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.TRUE);
+        }
 
         assertEquals(1, dispatcher.execute("clutchperms validate", console));
 
         assertEquals(TriState.FALSE, FabricRuntimePermissionBridge.resolve(environment.permissionResolver(), SUBJECT_ID, "example.validate"));
         assertEquals(0, environment.runtimeRefreshes());
-        assertEquals(List.of("Validated config, permissions, subjects, groups, and known nodes from disk."), console.messages());
+        assertEquals(List.of("Validated config and database storage from disk."), console.messages());
     }
 
     @Test
     void malformedPermissionsFileFailsValidateWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws Exception {
-        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
-        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
-        activePermissionService.setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.FALSE);
-        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
+        environment.permissionService().setPermission(SUBJECT_ID, "Example.Validate", PermissionValue.FALSE);
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        Files.writeString(permissionsFile, """
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "example.*.bad": "TRUE"
-                    }
-                  }
-                }
-                """, StandardCharsets.UTF_8);
+        insertInvalidPermissionRow(temporaryDirectory);
 
         assertCommandFails(dispatcher, "clutchperms validate", console, "Failed to validate ClutchPerms storage:");
 
@@ -283,23 +261,12 @@ final class FabricRuntimePermissionBridgeTest {
 
     @Test
     void malformedPermissionsFileFailsReloadWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws Exception {
-        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
-        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
-        activePermissionService.setPermission(SUBJECT_ID, "Example.Reload", PermissionValue.TRUE);
-        TestEnvironment environment = new TestEnvironment(activePermissionService, temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
+        environment.permissionService().setPermission(SUBJECT_ID, "Example.Reload", PermissionValue.TRUE);
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        Files.writeString(permissionsFile, """
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "example.*.bad": "TRUE"
-                    }
-                  }
-                }
-                """, StandardCharsets.UTF_8);
+        insertInvalidPermissionRow(temporaryDirectory);
 
         assertCommandFails(dispatcher, "clutchperms reload", console, "Failed to reload ClutchPerms storage:");
 
@@ -309,30 +276,20 @@ final class FabricRuntimePermissionBridgeTest {
 
     @Test
     void malformedGroupsFileFailsReloadWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws Exception {
-        Path permissionsFile = temporaryDirectory.resolve("permissions.json");
-        Path groupsFile = temporaryDirectory.resolve("groups.json");
-        PermissionService activePermissionService = PermissionServices.jsonFile(permissionsFile);
-        GroupService activeGroupService = GroupServices.jsonFile(groupsFile);
-        activeGroupService.createGroup("staff");
-        activeGroupService.setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
-        activeGroupService.addSubjectGroup(SUBJECT_ID, "staff");
-        TestEnvironment environment = new TestEnvironment(activePermissionService, activeGroupService, new PermissionResolver(activePermissionService, activeGroupService),
-                temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
+        environment.groupService().createGroup("staff");
+        environment.groupService().setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
+        environment.groupService().addSubjectGroup(SUBJECT_ID, "staff");
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        Files.writeString(groupsFile, """
-                {
-                  "version": 1,
-                  "groups": {
-                    "staff": {
-                      "permissions": {},
-                      "parents": {}
-                    }
-                  },
-                  "memberships": {}
+        try (SqliteStore store = openStore(temporaryDirectory)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO group_parents (group_name, parent_name) VALUES ('staff', 'staff')");
                 }
-                """, StandardCharsets.UTF_8);
+            });
+        }
 
         assertCommandFails(dispatcher, "clutchperms reload", console, "Failed to reload ClutchPerms storage:");
 
@@ -342,16 +299,17 @@ final class FabricRuntimePermissionBridgeTest {
 
     @Test
     void commandMutationPersistsAndReloadsKnownNodes(@TempDir Path temporaryDirectory) throws CommandSyntaxException {
-        Path nodesFile = temporaryDirectory.resolve("nodes.json");
-        TestEnvironment environment = new TestEnvironment(PermissionServices.jsonFile(temporaryDirectory.resolve("permissions.json")), temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
         assertEquals(1, dispatcher.execute("clutchperms nodes add example.fabric Fabric node", console));
-        assertTrue(PermissionNodeRegistries.jsonFile(nodesFile).getKnownNode("example.fabric").isPresent());
+        assertTrue(persistedKnownNode(temporaryDirectory, "example.fabric"));
         assertEquals(1, environment.runtimeRefreshes());
 
-        PermissionNodeRegistries.jsonFile(nodesFile).addNode("manual.reload", "Reloaded node");
+        try (SqliteStore store = openStore(temporaryDirectory)) {
+            PermissionNodeRegistries.sqlite(store).addNode("manual.reload", "Reloaded node");
+        }
         assertTrue(environment.permissionNodeRegistry().getKnownNode("manual.reload").isEmpty());
 
         assertEquals(1, dispatcher.execute("clutchperms reload", console));
@@ -361,30 +319,29 @@ final class FabricRuntimePermissionBridgeTest {
 
     @Test
     void malformedNodesFileFailsReloadWithoutReplacingBridgeState(@TempDir Path temporaryDirectory) throws Exception {
-        Path nodesFile = temporaryDirectory.resolve("nodes.json");
-        PermissionNodeRegistries.jsonFile(nodesFile).addNode("active.node", "Active");
-        TestEnvironment environment = new TestEnvironment(PermissionServices.jsonFile(temporaryDirectory.resolve("permissions.json")), temporaryDirectory);
+        TestEnvironment environment = new TestEnvironment(temporaryDirectory);
+        environment.manualPermissionNodeRegistry().addNode("active.node", "Active");
+        int refreshesBeforeReload = environment.runtimeRefreshes();
         CommandDispatcher<TestSource> dispatcher = dispatcher(environment);
         TestSource console = TestSource.console();
 
-        Files.writeString(nodesFile, """
-                {
-                  "version": 1,
-                  "nodes": {
-                    "bad.*": {}
-                  }
+        try (SqliteStore store = openStore(temporaryDirectory)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO known_nodes (node, description) VALUES ('bad.*', '')");
                 }
-                """, StandardCharsets.UTF_8);
+            });
+        }
 
         assertCommandFails(dispatcher, "clutchperms reload", console, "Failed to reload ClutchPerms storage:");
 
         assertTrue(environment.permissionNodeRegistry().getKnownNode("active.node").isPresent());
-        assertEquals(0, environment.runtimeRefreshes());
+        assertEquals(refreshesBeforeReload, environment.runtimeRefreshes());
     }
 
     private static CommandDispatcher<TestSource> dispatcher(PermissionService permissionService, GroupService groupService, PermissionResolver permissionResolver,
             Path storageDirectory) {
-        return dispatcher(new TestEnvironment(permissionService, groupService, permissionResolver, storageDirectory));
+        return dispatcher(new TestEnvironment(storageDirectory));
     }
 
     private static CommandDispatcher<TestSource> dispatcher(TestEnvironment environment) {
@@ -404,6 +361,46 @@ final class FabricRuntimePermissionBridgeTest {
                 () -> "Expected latest message to contain <" + expectedMessage + "> but was " + source.messages());
     }
 
+    private static SqliteStore openStore(Path storageDirectory) {
+        return SqliteStore.open(databaseFile(storageDirectory), SqliteDependencyMode.ANY_VISIBLE);
+    }
+
+    private static Path databaseFile(Path storageDirectory) {
+        return storageDirectory.resolve("database.db");
+    }
+
+    private static PermissionValue persistedPermissionValue(Path storageDirectory, String node) {
+        return persistedPermissionValueFromDatabase(databaseFile(storageDirectory), node);
+    }
+
+    private static PermissionValue persistedPermissionValueFromDatabase(Path databaseFile, String node) {
+        try (SqliteStore store = SqliteStore.open(databaseFile, SqliteDependencyMode.ANY_VISIBLE)) {
+            return PermissionServices.sqlite(store).getPermission(SUBJECT_ID, node);
+        }
+    }
+
+    private static PermissionValue persistedGroupPermissionValue(Path storageDirectory, String groupName, String node) {
+        try (SqliteStore store = openStore(storageDirectory)) {
+            return GroupServices.sqlite(store).getGroupPermission(groupName, node);
+        }
+    }
+
+    private static boolean persistedKnownNode(Path storageDirectory, String node) {
+        try (SqliteStore store = openStore(storageDirectory)) {
+            return PermissionNodeRegistries.sqlite(store).getKnownNode(node).isPresent();
+        }
+    }
+
+    private static void insertInvalidPermissionRow(Path storageDirectory) {
+        try (SqliteStore store = openStore(storageDirectory)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO subject_permissions (subject_id, node, value) VALUES ('00000000-0000-0000-0000-000000000001', 'example.*.bad', 'TRUE')");
+                }
+            });
+        }
+    }
+
     private static final class TestEnvironment implements ClutchPermsCommandEnvironment<TestSource> {
 
         private PermissionService permissionService;
@@ -420,19 +417,31 @@ final class FabricRuntimePermissionBridgeTest {
 
         private final Path storageDirectory;
 
+        private SqliteStore store;
+
         private int runtimeRefreshes;
 
-        private TestEnvironment(PermissionService permissionService, Path storageDirectory) {
-            this(permissionService, GroupServices.jsonFile(storageDirectory.resolve("groups.json")), null, storageDirectory);
+        private TestEnvironment(Path storageDirectory) {
+            this(openStore(storageDirectory), storageDirectory);
         }
 
-        private TestEnvironment(PermissionService permissionService, GroupService groupService, PermissionResolver permissionResolver, Path storageDirectory) {
-            this.permissionResolver = permissionResolver == null ? new PermissionResolver(permissionService, groupService) : permissionResolver;
-            this.permissionService = PermissionServices.observing(permissionService, this.permissionResolver::invalidateSubject);
-            this.groupService = observingGroupService(groupService, this.permissionResolver);
+        private TestEnvironment(SqliteStore store, Path storageDirectory) {
             this.storageDirectory = storageDirectory;
-            this.manualPermissionNodeRegistry = PermissionNodeRegistries.observing(PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json")),
+            applyStore(store);
+        }
+
+        private void applyStore(SqliteStore newStore) {
+            this.store = newStore;
+            PermissionService storagePermissionService = PermissionServices.sqlite(newStore);
+            GroupService storageGroupService = GroupServices.sqlite(newStore);
+            SubjectMetadataService storageSubjectMetadataService = SubjectMetadataServices.sqlite(newStore);
+            MutablePermissionNodeRegistry storageManualPermissionNodeRegistry = PermissionNodeRegistries.observing(PermissionNodeRegistries.sqlite(newStore),
                     this::refreshRuntimePermissions);
+            this.permissionResolver = new PermissionResolver(storagePermissionService, storageGroupService);
+            this.permissionService = PermissionServices.observing(storagePermissionService, this.permissionResolver::invalidateSubject);
+            this.groupService = observingGroupService(storageGroupService, this.permissionResolver);
+            this.subjectMetadataService = storageSubjectMetadataService;
+            this.manualPermissionNodeRegistry = storageManualPermissionNodeRegistry;
             this.permissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), manualPermissionNodeRegistry);
         }
 
@@ -468,39 +477,29 @@ final class FabricRuntimePermissionBridgeTest {
 
         @Override
         public CommandStatusDiagnostics statusDiagnostics() {
-            return new CommandStatusDiagnostics(storageDirectory.resolve("permissions.json").toString(), storageDirectory.resolve("subjects.json").toString(),
-                    storageDirectory.resolve("groups.json").toString(), storageDirectory.resolve("nodes.json").toString(), "test fabric bridge");
+            return new CommandStatusDiagnostics(databaseFile(storageDirectory).toString(), "test fabric bridge", storageDirectory.resolve("config.json").toString());
         }
 
         @Override
         public void reloadStorage() {
-            PermissionService reloadedStoragePermissionService = PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
-            SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
-            GroupService reloadedStorageGroupService = GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
-            MutablePermissionNodeRegistry reloadedManualPermissionNodeRegistry = PermissionNodeRegistries
-                    .observing(PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json")), this::refreshRuntimePermissions);
-            PermissionNodeRegistry reloadedPermissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), reloadedManualPermissionNodeRegistry);
-            permissionResolver = new PermissionResolver(reloadedStoragePermissionService, reloadedStorageGroupService);
-            permissionService = PermissionServices.observing(reloadedStoragePermissionService, permissionResolver::invalidateSubject);
-            subjectMetadataService = reloadedSubjectMetadataService;
-            groupService = observingGroupService(reloadedStorageGroupService, permissionResolver);
-            manualPermissionNodeRegistry = reloadedManualPermissionNodeRegistry;
-            permissionNodeRegistry = reloadedPermissionNodeRegistry;
+            SqliteStore previousStore = store;
+            applyStore(openStore(storageDirectory));
+            previousStore.close();
         }
 
         @Override
         public void validateStorage() {
-            PermissionServices.jsonFile(storageDirectory.resolve("permissions.json"));
-            SubjectMetadataServices.jsonFile(storageDirectory.resolve("subjects.json"));
-            GroupServices.jsonFile(storageDirectory.resolve("groups.json"));
-            PermissionNodeRegistries.jsonFile(storageDirectory.resolve("nodes.json"));
+            try (SqliteStore validationStore = SqliteStore.openExisting(databaseFile(storageDirectory), SqliteDependencyMode.ANY_VISIBLE)) {
+                PermissionServices.sqlite(validationStore);
+                SubjectMetadataServices.sqlite(validationStore);
+                GroupServices.sqlite(validationStore);
+                PermissionNodeRegistries.sqlite(validationStore);
+            }
         }
 
         @Override
         public StorageBackupService storageBackupService() {
-            return StorageBackupService.forFiles(storageDirectory.resolve("backups"),
-                    java.util.Map.of(StorageFileKind.PERMISSIONS, storageDirectory.resolve("permissions.json"), StorageFileKind.SUBJECTS, storageDirectory.resolve("subjects.json"),
-                            StorageFileKind.GROUPS, storageDirectory.resolve("groups.json"), StorageFileKind.NODES, storageDirectory.resolve("nodes.json")));
+            return StorageBackupService.forDatabase(storageDirectory.resolve("backups"), databaseFile(storageDirectory), store, 10);
         }
 
         @Override

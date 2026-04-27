@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.sql.Statement;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -18,181 +19,213 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
+
 /**
- * Creates, lists, prunes, and restores rolling per-file backups for ClutchPerms JSON storage.
+ * Creates, lists, prunes, and restores rolling SQLite database backups.
  */
 public final class StorageBackupService {
 
     /**
-     * Number of newest backups retained per storage file.
+     * Number of newest backups retained.
      */
     public static final int RETENTION_LIMIT = 10;
 
     private static final DateTimeFormatter BACKUP_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmssSSS").withZone(ZoneOffset.UTC);
 
+    private static final String BACKUP_EXTENSION = ".db";
+
     private final Path backupRoot;
 
-    private final Map<StorageFileKind, Path> liveFiles;
+    private final Path databaseFile;
+
+    private final SqliteStore sqliteStore;
 
     private final Clock clock;
 
     private final int retentionLimit;
 
     /**
-     * Creates a backup service for a set of live storage files.
+     * Creates a backup service for the active SQLite database.
      *
-     * @param backupRoot root directory that contains per-kind backup directories
-     * @param liveFiles live storage files by kind
+     * @param backupRoot root directory that contains database backups
+     * @param databaseFile live database file
+     * @param sqliteStore active SQLite store used for consistent snapshots
+     * @param retentionLimit newest backups retained
      * @return backup service
      */
-    public static StorageBackupService forFiles(Path backupRoot, Map<StorageFileKind, Path> liveFiles) {
-        return forFiles(backupRoot, liveFiles, RETENTION_LIMIT);
+    public static StorageBackupService forDatabase(Path backupRoot, Path databaseFile, SqliteStore sqliteStore, int retentionLimit) {
+        return new StorageBackupService(backupRoot, databaseFile, sqliteStore, Clock.systemUTC(), retentionLimit);
     }
 
-    /**
-     * Creates a backup service for a set of live storage files.
-     *
-     * @param backupRoot root directory that contains per-kind backup directories
-     * @param liveFiles live storage files by kind
-     * @param retentionLimit newest backups retained per storage file
-     * @return backup service
-     */
-    public static StorageBackupService forFiles(Path backupRoot, Map<StorageFileKind, Path> liveFiles, int retentionLimit) {
-        return new StorageBackupService(backupRoot, liveFiles, Clock.systemUTC(), retentionLimit);
+    StorageBackupService(Path backupRoot, Path databaseFile, SqliteStore sqliteStore, Clock clock) {
+        this(backupRoot, databaseFile, sqliteStore, clock, RETENTION_LIMIT);
     }
 
-    StorageBackupService(Path backupRoot, Map<StorageFileKind, Path> liveFiles, Clock clock) {
-        this(backupRoot, liveFiles, clock, RETENTION_LIMIT);
-    }
-
-    StorageBackupService(Path backupRoot, Map<StorageFileKind, Path> liveFiles, Clock clock, int retentionLimit) {
+    StorageBackupService(Path backupRoot, Path databaseFile, SqliteStore sqliteStore, Clock clock, int retentionLimit) {
         this.backupRoot = Objects.requireNonNull(backupRoot, "backupRoot").toAbsolutePath().normalize();
-        this.liveFiles = normalizeLiveFiles(liveFiles);
+        this.databaseFile = Objects.requireNonNull(databaseFile, "databaseFile").toAbsolutePath().normalize();
+        this.sqliteStore = Objects.requireNonNull(sqliteStore, "sqliteStore");
         this.clock = Objects.requireNonNull(clock, "clock");
-        this.retentionLimit = new StorageWriteOptions(retentionLimit).backupRetentionLimit();
+        this.retentionLimit = new ClutchPermsBackupConfig(retentionLimit).retentionLimit();
     }
 
     /**
-     * Returns all known live file kinds for this backup service.
+     * Returns the only storage kind backed up by this service.
      *
-     * @return storage file kinds
+     * @return database storage kind
      */
     public List<StorageFileKind> fileKinds() {
-        return List.copyOf(liveFiles.keySet());
+        return List.of(StorageFileKind.DATABASE);
     }
 
     /**
      * Returns newest-backup retention for this service.
      *
-     * @return newest backups retained per storage file
+     * @return newest backups retained
      */
     public int retentionLimit() {
         return retentionLimit;
     }
 
     /**
-     * Lists backups for every live file kind, newest first within each kind.
+     * Lists database backups, newest first.
      *
-     * @return backups grouped by storage file kind
+     * @return backups grouped by database kind
      */
     public Map<StorageFileKind, List<StorageBackup>> listBackups() {
         EnumMap<StorageFileKind, List<StorageBackup>> backups = new EnumMap<>(StorageFileKind.class);
-        for (StorageFileKind kind : liveFiles.keySet()) {
-            backups.put(kind, listBackups(kind));
-        }
+        backups.put(StorageFileKind.DATABASE, listBackups(StorageFileKind.DATABASE));
         return Collections.unmodifiableMap(backups);
     }
 
     /**
-     * Lists backups for one storage file kind, newest first.
+     * Lists database backups, newest first.
      *
-     * @param kind storage file kind
+     * @param kind storage kind; must be {@link StorageFileKind#DATABASE}
      * @return backup descriptors
      */
     public List<StorageBackup> listBackups(StorageFileKind kind) {
-        StorageFileKind requiredKind = Objects.requireNonNull(kind, "kind");
-        Path backupDirectory = backupDirectory(requiredKind);
+        requireDatabaseKind(kind);
+        Path backupDirectory = backupDirectory();
         if (Files.notExists(backupDirectory)) {
             return List.of();
         }
 
         try (Stream<Path> paths = Files.list(backupDirectory)) {
-            return paths.filter(Files::isRegularFile).map(path -> toBackup(requiredKind, path)).filter(Optional::isPresent).map(Optional::orElseThrow)
-                    .sorted(StorageBackupService::compareNewestFirst).toList();
+            return paths.filter(Files::isRegularFile).map(this::toBackup).filter(Optional::isPresent).map(Optional::orElseThrow).sorted(StorageBackupService::compareNewestFirst)
+                    .toList();
         } catch (NoSuchFileException exception) {
             return List.of();
         } catch (IOException exception) {
-            throw new PermissionStorageException("Failed to list " + requiredKind.token() + " backups from " + backupDirectory, exception);
+            throw new PermissionStorageException("Failed to list database backups from " + backupDirectory, exception);
         }
     }
 
     /**
-     * Creates a backup of the current live file when it exists.
+     * Creates a consistent SQLite database snapshot.
      *
-     * @param kind storage file kind
-     * @return created backup descriptor, or empty when the live file is missing
+     * @return created backup descriptor, or empty when the live database is missing
+     */
+    public Optional<StorageBackup> createBackup() {
+        return backupExistingFile(StorageFileKind.DATABASE);
+    }
+
+    /**
+     * Creates a consistent SQLite database snapshot.
+     *
+     * @param kind storage kind; must be {@link StorageFileKind#DATABASE}
+     * @return created backup descriptor, or empty when the live database is missing
      */
     public Optional<StorageBackup> backupExistingFile(StorageFileKind kind) {
-        StorageFileKind requiredKind = Objects.requireNonNull(kind, "kind");
-        Path liveFile = liveFile(requiredKind);
-        if (Files.notExists(liveFile)) {
+        requireDatabaseKind(kind);
+        if (Files.notExists(databaseFile)) {
             return Optional.empty();
         }
 
-        Path backupDirectory = backupDirectory(requiredKind);
+        Path backupDirectory = backupDirectory();
+        Path backupFile = null;
         try {
             Files.createDirectories(backupDirectory);
-            Path backupFile = uniqueBackupPath(requiredKind, backupDirectory, clock.instant());
-            Files.copy(liveFile, backupFile, StandardCopyOption.COPY_ATTRIBUTES);
-            pruneBackups(requiredKind);
-            return Optional.of(new StorageBackup(requiredKind, backupFile.getFileName().toString(), backupFile));
-        } catch (IOException exception) {
-            throw new PermissionStorageException("Failed to create " + requiredKind.token() + " backup for " + liveFile, exception);
+            backupFile = uniqueBackupPath(backupDirectory, clock.instant());
+            Path snapshotFile = backupFile;
+            sqliteStore.read(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("VACUUM INTO '" + sqlLiteral(snapshotFile.toString()) + "'");
+                }
+                return null;
+            });
+            pruneBackups();
+            return Optional.of(new StorageBackup(StorageFileKind.DATABASE, backupFile.getFileName().toString(), backupFile));
+        } catch (RuntimeException | IOException exception) {
+            if (backupFile != null) {
+                try {
+                    Files.deleteIfExists(backupFile);
+                } catch (IOException ignored) {
+                    // Primary failure is reported below.
+                }
+            }
+            throw new PermissionStorageException("Failed to create database backup for " + databaseFile, exception);
         }
     }
 
     /**
-     * Restores one backup file, applies the restored storage, and rolls the live file back if applying fails.
+     * Restores one backup file and rolls the live file back if applying restored storage fails.
      *
-     * @param kind storage file kind
+     * @param kind storage kind; must be {@link StorageFileKind#DATABASE}
      * @param backupFileName backup filename from {@link #listBackups(StorageFileKind)}
      * @param applyRestoredStorage action that reloads and refreshes restored storage
      */
     public void restoreBackup(StorageFileKind kind, String backupFileName, Runnable applyRestoredStorage) {
-        StorageFileKind requiredKind = Objects.requireNonNull(kind, "kind");
+        restoreBackup(kind, backupFileName, () -> {
+        }, applyRestoredStorage);
+    }
+
+    /**
+     * Restores one backup file and rolls the live file back if applying restored storage fails.
+     *
+     * @param kind storage kind; must be {@link StorageFileKind#DATABASE}
+     * @param backupFileName backup filename from {@link #listBackups(StorageFileKind)}
+     * @param beforeReplace action run after the restored copy is staged and before the live database is replaced
+     * @param applyRestoredStorage action that reloads and refreshes restored storage
+     */
+    public void restoreBackup(StorageFileKind kind, String backupFileName, Runnable beforeReplace, Runnable applyRestoredStorage) {
+        requireDatabaseKind(kind);
+        Objects.requireNonNull(beforeReplace, "beforeReplace");
         Objects.requireNonNull(applyRestoredStorage, "applyRestoredStorage");
-        Path backupFile = resolveBackupFile(requiredKind, backupFileName);
-        Path liveFile = liveFile(requiredKind);
-        Path parentDirectory = liveFile.getParent();
+        Path backupFile = resolveBackupFile(backupFileName);
+        Path parentDirectory = databaseFile.getParent();
         Path rollbackFile = null;
         Path restoreFile = null;
-        boolean liveFileExisted = Files.exists(liveFile);
+        boolean liveFileExisted = Files.exists(databaseFile);
         try {
             if (parentDirectory != null) {
                 Files.createDirectories(parentDirectory);
             }
             if (liveFileExisted) {
                 rollbackFile = parentDirectory == null
-                        ? Files.createTempFile(liveFile.getFileName().toString(), ".restore")
-                        : Files.createTempFile(parentDirectory, liveFile.getFileName().toString(), ".restore");
-                Files.copy(liveFile, rollbackFile, StandardCopyOption.REPLACE_EXISTING);
+                        ? Files.createTempFile(databaseFile.getFileName().toString(), ".restore")
+                        : Files.createTempFile(parentDirectory, databaseFile.getFileName().toString(), ".restore");
+                Files.copy(databaseFile, rollbackFile, StandardCopyOption.REPLACE_EXISTING);
             }
 
             restoreFile = parentDirectory == null
-                    ? Files.createTempFile(liveFile.getFileName().toString(), ".restore")
-                    : Files.createTempFile(parentDirectory, liveFile.getFileName().toString(), ".restore");
+                    ? Files.createTempFile(databaseFile.getFileName().toString(), ".restore")
+                    : Files.createTempFile(parentDirectory, databaseFile.getFileName().toString(), ".restore");
             Files.copy(backupFile, restoreFile, StandardCopyOption.REPLACE_EXISTING);
-            StorageFiles.moveAtomically(restoreFile, liveFile);
+            beforeReplace.run();
+            deleteSidecars(databaseFile);
+            StorageFiles.moveAtomically(restoreFile, databaseFile);
             restoreFile = null;
             try {
                 applyRestoredStorage.run();
             } catch (RuntimeException exception) {
-                rollbackLiveFile(liveFile, rollbackFile, liveFileExisted, exception);
-                throw new PermissionStorageException("Failed to apply restored " + requiredKind.token() + " backup " + backupFile.getFileName(), exception);
+                rollbackLiveFile(rollbackFile, liveFileExisted, exception);
+                throw new PermissionStorageException("Failed to apply restored database backup " + backupFile.getFileName(), exception);
             }
         } catch (IOException exception) {
-            rollbackLiveFile(liveFile, rollbackFile, liveFileExisted, exception);
-            throw new PermissionStorageException("Failed to restore " + requiredKind.token() + " backup " + backupFile.getFileName(), exception);
+            rollbackLiveFile(rollbackFile, liveFileExisted, exception);
+            throw new PermissionStorageException("Failed to restore database backup " + backupFile.getFileName(), exception);
         } finally {
             if (restoreFile != null) {
                 try {
@@ -211,34 +244,68 @@ public final class StorageBackupService {
         }
     }
 
-    private Path liveFile(StorageFileKind kind) {
-        Path liveFile = liveFiles.get(kind);
-        if (liveFile == null) {
-            throw new IllegalArgumentException("storage file kind is not configured for backups: " + kind.token());
-        }
-        return liveFile;
+    private Path backupDirectory() {
+        return backupRoot.resolve(StorageFileKind.DATABASE.token());
     }
 
-    private Path backupDirectory(StorageFileKind kind) {
-        return backupRoot.resolve(kind.token());
-    }
-
-    private void pruneBackups(StorageFileKind kind) throws IOException {
-        List<StorageBackup> backups = new ArrayList<>(listBackups(kind));
+    private void pruneBackups() throws IOException {
+        List<StorageBackup> backups = new ArrayList<>(listBackups(StorageFileKind.DATABASE));
         for (int index = retentionLimit; index < backups.size(); index++) {
             Files.deleteIfExists(backups.get(index).path());
         }
     }
 
-    private Path uniqueBackupPath(StorageFileKind kind, Path backupDirectory, Instant instant) {
-        String baseName = kind.token() + "-" + BACKUP_TIMESTAMP_FORMATTER.format(instant);
-        Path backupFile = backupDirectory.resolve(baseName + ".json");
+    private Path uniqueBackupPath(Path backupDirectory, Instant instant) {
+        String baseName = StorageFileKind.DATABASE.token() + "-" + BACKUP_TIMESTAMP_FORMATTER.format(instant);
+        Path backupFile = backupDirectory.resolve(baseName + BACKUP_EXTENSION);
         int counter = 2;
         while (Files.exists(backupFile)) {
-            backupFile = backupDirectory.resolve(baseName + "-" + counter + ".json");
+            backupFile = backupDirectory.resolve(baseName + "-" + counter + BACKUP_EXTENSION);
             counter++;
         }
         return backupFile;
+    }
+
+    private Path resolveBackupFile(String backupFileName) {
+        String requiredFileName = Objects.requireNonNull(backupFileName, "backupFileName");
+        if (requiredFileName.isBlank() || !Path.of(requiredFileName).getFileName().toString().equals(requiredFileName)) {
+            throw new IllegalArgumentException("invalid backup filename: " + requiredFileName);
+        }
+
+        Path backupFile = backupDirectory().resolve(requiredFileName).toAbsolutePath().normalize();
+        if (!backupFile.startsWith(backupDirectory().toAbsolutePath().normalize())) {
+            throw new IllegalArgumentException("invalid backup filename: " + requiredFileName);
+        }
+        if (!Files.isRegularFile(backupFile)) {
+            throw new IllegalArgumentException("unknown database backup: " + requiredFileName);
+        }
+        return backupFile;
+    }
+
+    private Optional<StorageBackup> toBackup(Path path) {
+        String fileName = path.getFileName().toString();
+        if (!fileName.startsWith(StorageFileKind.DATABASE.token() + "-") || !fileName.endsWith(BACKUP_EXTENSION)) {
+            return Optional.empty();
+        }
+        return Optional.of(new StorageBackup(StorageFileKind.DATABASE, fileName, path));
+    }
+
+    private void rollbackLiveFile(Path rollbackFile, boolean liveFileExisted, Throwable restoreFailure) {
+        try {
+            deleteSidecars(databaseFile);
+            if (liveFileExisted) {
+                if (rollbackFile == null) {
+                    return;
+                }
+                Files.copy(Objects.requireNonNull(rollbackFile, "rollbackFile"), databaseFile, StandardCopyOption.REPLACE_EXISTING);
+            } else {
+                Files.deleteIfExists(databaseFile);
+            }
+        } catch (IOException rollbackFailure) {
+            PermissionStorageException failure = new PermissionStorageException("Failed to roll back live database " + databaseFile + " after restore failure", restoreFailure);
+            failure.addSuppressed(rollbackFailure);
+            throw failure;
+        }
     }
 
     private static int compareNewestFirst(StorageBackup first, StorageBackup second) {
@@ -255,58 +322,25 @@ public final class StorageBackupService {
         return second.fileName().compareTo(first.fileName());
     }
 
-    private Path resolveBackupFile(StorageFileKind kind, String backupFileName) {
-        String requiredFileName = Objects.requireNonNull(backupFileName, "backupFileName");
-        if (requiredFileName.isBlank() || !Path.of(requiredFileName).getFileName().toString().equals(requiredFileName)) {
-            throw new IllegalArgumentException("invalid backup filename: " + requiredFileName);
-        }
-
-        Path backupFile = backupDirectory(kind).resolve(requiredFileName).toAbsolutePath().normalize();
-        if (!backupFile.startsWith(backupDirectory(kind).toAbsolutePath().normalize())) {
-            throw new IllegalArgumentException("invalid backup filename: " + requiredFileName);
-        }
-        if (!Files.isRegularFile(backupFile)) {
-            throw new IllegalArgumentException("unknown " + kind.token() + " backup: " + requiredFileName);
-        }
-        return backupFile;
-    }
-
-    private Optional<StorageBackup> toBackup(StorageFileKind kind, Path path) {
-        String fileName = path.getFileName().toString();
-        if (!fileName.startsWith(kind.token() + "-") || !fileName.endsWith(".json")) {
-            return Optional.empty();
-        }
-        return Optional.of(new StorageBackup(kind, fileName, path));
-    }
-
-    private void rollbackLiveFile(Path liveFile, Path rollbackFile, boolean liveFileExisted, Throwable restoreFailure) {
-        try {
-            if (liveFileExisted) {
-                if (rollbackFile == null) {
-                    return;
-                }
-                Files.copy(Objects.requireNonNull(rollbackFile, "rollbackFile"), liveFile, StandardCopyOption.REPLACE_EXISTING);
-            } else {
-                Files.deleteIfExists(liveFile);
-            }
-        } catch (IOException rollbackFailure) {
-            PermissionStorageException failure = new PermissionStorageException("Failed to roll back live file " + liveFile + " after restore failure", restoreFailure);
-            failure.addSuppressed(rollbackFailure);
-            throw failure;
+    private static void requireDatabaseKind(StorageFileKind kind) {
+        if (Objects.requireNonNull(kind, "kind") != StorageFileKind.DATABASE) {
+            throw new IllegalArgumentException("storage kind is not backed up by SQLite storage: " + kind.token());
         }
     }
 
-    private static Map<StorageFileKind, Path> normalizeLiveFiles(Map<StorageFileKind, Path> liveFiles) {
-        Objects.requireNonNull(liveFiles, "liveFiles");
-        EnumMap<StorageFileKind, Path> normalized = new EnumMap<>(StorageFileKind.class);
-        liveFiles.forEach((kind, path) -> normalized.put(Objects.requireNonNull(kind, "kind"), Objects.requireNonNull(path, "path").toAbsolutePath().normalize()));
-        return Collections.unmodifiableMap(normalized);
+    private static void deleteSidecars(Path databaseFile) throws IOException {
+        Files.deleteIfExists(Path.of(databaseFile.toString() + "-wal"));
+        Files.deleteIfExists(Path.of(databaseFile.toString() + "-shm"));
+    }
+
+    private static String sqlLiteral(String value) {
+        return value.replace("'", "''");
     }
 
     private record BackupFileOrder(String timestamp, int counter) {
 
         private static BackupFileOrder from(String fileName) {
-            String withoutExtension = fileName.substring(0, fileName.length() - ".json".length());
+            String withoutExtension = fileName.substring(0, fileName.length() - BACKUP_EXTENSION.length());
             int firstDash = withoutExtension.indexOf('-');
             if (firstDash < 0 || firstDash + 1 >= withoutExtension.length()) {
                 return new BackupFileOrder(withoutExtension, 1);

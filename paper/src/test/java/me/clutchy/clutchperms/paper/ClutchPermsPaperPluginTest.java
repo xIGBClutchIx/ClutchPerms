@@ -3,6 +3,7 @@ package me.clutchy.clutchperms.paper;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -41,6 +42,8 @@ import me.clutchy.clutchperms.common.permission.PermissionResolverCacheStats;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.permission.PermissionValue;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
 import me.clutchy.clutchperms.common.storage.StorageBackup;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadata;
@@ -106,10 +109,7 @@ class ClutchPermsPaperPluginTest {
     void startupMaterializesStorageFiles() {
         Path dataFolder = plugin.getDataFolder().toPath();
 
-        assertTrue(Files.exists(dataFolder.resolve("permissions.json")));
-        assertTrue(Files.exists(dataFolder.resolve("subjects.json")));
-        assertTrue(Files.exists(dataFolder.resolve("groups.json")));
-        assertTrue(Files.exists(dataFolder.resolve("nodes.json")));
+        assertTrue(Files.exists(dataFolder.resolve("database.db")));
         assertTrue(Files.exists(dataFolder.resolve("config.json")));
         assertEquals(ClutchPermsConfig.defaults(), plugin.getClutchPermsConfig());
         assertFalse(Files.exists(dataFolder.resolve("backups")));
@@ -214,12 +214,9 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms status", new TestCommandSourceStack(player)));
         assertNextMessage(player, ClutchPermsPaperPlugin.STATUS_MESSAGE);
-        assertNextMessage(player, "Permissions file: " + plugin.getDataFolder().toPath().resolve("permissions.json").toAbsolutePath().normalize());
-        assertNextMessage(player, "Subjects file: " + plugin.getDataFolder().toPath().resolve("subjects.json").toAbsolutePath().normalize());
-        assertNextMessage(player, "Groups file: " + plugin.getDataFolder().toPath().resolve("groups.json").toAbsolutePath().normalize());
-        assertNextMessage(player, "Known nodes file: " + plugin.getDataFolder().toPath().resolve("nodes.json").toAbsolutePath().normalize());
+        assertNextMessage(player, "Database file: " + plugin.getDataFolder().toPath().resolve("database.db").toAbsolutePath().normalize());
         assertNextMessage(player, "Config file: " + plugin.getDataFolder().toPath().resolve("config.json").toAbsolutePath().normalize());
-        assertNextMessage(player, "Backup retention: newest 10 per storage kind.");
+        assertNextMessage(player, "Backup retention: newest 10 database backups.");
         assertNextMessage(player, "Command page sizes: help 7, lists 8.");
         assertNextMessage(player, "Chat formatting: enabled.");
         assertNextMessage(player, "Known subjects: 1");
@@ -582,47 +579,43 @@ class ClutchPermsPaperPluginTest {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
-        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
-        Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
-        Path nodesFile = plugin.getDataFolder().toPath().resolve("nodes.json");
-
         assertEquals(1, dispatcher.execute("clutchperms user Target set example.smoke true", adminSource));
-        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
+        assertEquals(PermissionValue.TRUE, persistedPermissionValue(target.getUniqueId(), "example.smoke"));
         assertTrue(target.isPermissionSet("example.smoke"));
         assertTrue(target.hasPermission("example.smoke"));
 
         assertEquals(1, dispatcher.execute("clutchperms user Target set example.smoke false", adminSource));
-        assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
+        assertEquals(PermissionValue.FALSE, persistedPermissionValue(target.getUniqueId(), "example.smoke"));
         assertTrue(target.isPermissionSet("example.smoke"));
         assertFalse(target.hasPermission("example.smoke"));
 
         assertEquals(1, dispatcher.execute("clutchperms user Target clear example.smoke", adminSource));
-        assertEquals(PermissionValue.UNSET, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.smoke"));
+        assertEquals(PermissionValue.UNSET, persistedPermissionValue(target.getUniqueId(), "example.smoke"));
         assertFalse(target.isPermissionSet("example.smoke"));
         assertFalse(target.hasPermission("example.smoke"));
 
         assertEquals(1, dispatcher.execute("clutchperms group admin create", adminSource));
         assertEquals(1, dispatcher.execute("clutchperms group admin set example.group true", adminSource));
         assertEquals(1, dispatcher.execute("clutchperms user Target group add admin", adminSource));
-        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("admin", "example.group"));
+        assertEquals(PermissionValue.TRUE, persistedGroupPermissionValue("admin", "example.group"));
         assertTrue(target.isPermissionSet("example.group"));
         assertTrue(target.hasPermission("example.group"));
 
         assertEquals(1, dispatcher.execute("clutchperms group base create", adminSource));
         assertEquals(1, dispatcher.execute("clutchperms group base set example.inherited true", adminSource));
         assertEquals(1, dispatcher.execute("clutchperms group admin parent add base", adminSource));
-        assertEquals(PermissionValue.TRUE, GroupServices.jsonFile(groupsFile).getGroupPermission("base", "example.inherited"));
-        assertTrue(GroupServices.jsonFile(groupsFile).getGroupParents("admin").contains("base"));
+        assertEquals(PermissionValue.TRUE, persistedGroupPermissionValue("base", "example.inherited"));
+        assertTrue(persistedGroupParents("admin").contains("base"));
         assertTrue(target.isPermissionSet("example.inherited"));
         assertTrue(target.hasPermission("example.inherited"));
 
         assertEquals(1, dispatcher.execute("clutchperms user Target set wildcard.* false", adminSource));
-        assertEquals(PermissionValue.FALSE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "wildcard.*"));
+        assertEquals(PermissionValue.FALSE, persistedPermissionValue(target.getUniqueId(), "wildcard.*"));
         assertTrue(target.isPermissionSet("wildcard.*"));
         assertFalse(target.hasPermission("wildcard.*"));
 
         assertEquals(1, dispatcher.execute("clutchperms nodes add wildcard.node Paper smoke node", adminSource));
-        assertTrue(PermissionNodeRegistries.jsonFile(nodesFile).getKnownNode("wildcard.node").isPresent());
+        assertTrue(persistedKnownNode("wildcard.node"));
         assertTrue(target.isPermissionSet("wildcard.node"));
         assertFalse(target.hasPermission("wildcard.node"));
     }
@@ -640,21 +633,21 @@ class ClutchPermsPaperPluginTest {
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
         TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
-        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
 
         assertEquals(1, dispatcher.execute("clutchperms user Target set example.backup true", adminSource));
         assertTrue(target.hasPermission("example.backup"));
+        assertEquals(1, dispatcher.execute("clutchperms backup create", adminSource));
         assertEquals(1, dispatcher.execute("clutchperms user Target set example.backup false", adminSource));
         assertFalse(target.hasPermission("example.backup"));
 
-        StorageBackup backup = plugin.getStorageBackupService().listBackups(StorageFileKind.PERMISSIONS).stream()
-                .filter(candidate -> PermissionServices.jsonFile(candidate.path()).getPermission(target.getUniqueId(), "example.backup") == PermissionValue.TRUE).findFirst()
+        StorageBackup backup = plugin.getStorageBackupService().listBackups(StorageFileKind.DATABASE).stream()
+                .filter(candidate -> persistedPermissionValue(candidate.path(), target.getUniqueId(), "example.backup") == PermissionValue.TRUE).findFirst()
                 .orElseThrow(() -> new AssertionError("Expected a permissions backup containing example.backup=true"));
-        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(backup.path()).getPermission(target.getUniqueId(), "example.backup"));
+        assertEquals(PermissionValue.TRUE, persistedPermissionValue(backup.path(), target.getUniqueId(), "example.backup"));
 
-        assertEquals(1, dispatcher.execute("clutchperms backup restore permissions " + backup.fileName(), adminSource));
+        assertEquals(1, dispatcher.execute("clutchperms backup restore " + backup.fileName(), adminSource));
 
-        assertEquals(PermissionValue.TRUE, PermissionServices.jsonFile(permissionsFile).getPermission(target.getUniqueId(), "example.backup"));
+        assertEquals(PermissionValue.TRUE, persistedPermissionValue(target.getUniqueId(), "example.backup"));
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.backup"));
         assertTrue(target.isPermissionSet("example.backup"));
         assertTrue(target.hasPermission("example.backup"));
@@ -673,26 +666,15 @@ class ClutchPermsPaperPluginTest {
         plugin.getPermissionService().setPermission(target.getUniqueId(), "Example.Backup", PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
-        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
-        String liveBeforeRestore = Files.readString(permissionsFile);
-        Path backupDirectory = plugin.getDataFolder().toPath().resolve("backups").resolve("permissions");
+        PermissionValue liveBeforeRestore = persistedPermissionValue(target.getUniqueId(), "example.backup");
+        Path backupDirectory = plugin.getDataFolder().toPath().resolve("backups").resolve("database");
         Files.createDirectories(backupDirectory);
-        String backupFileName = "permissions-20260424-120000000.json";
-        Files.writeString(backupDirectory.resolve(backupFileName), """
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "bad.*.node": "TRUE"
-                    }
-                  }
-                }
-                """, StandardCharsets.UTF_8);
+        String backupFileName = "database-20260424-120000000.db";
+        Files.writeString(backupDirectory.resolve(backupFileName), "not sqlite", StandardCharsets.UTF_8);
 
-        assertCommandFails(dispatcher, "clutchperms backup restore permissions " + backupFileName, admin,
-                "Backup operation failed: Failed to validate permissions backup " + backupFileName);
+        assertCommandFails(dispatcher, "clutchperms backup restore " + backupFileName, admin, "Backup operation failed: Failed to validate database backup " + backupFileName);
 
-        assertEquals(liveBeforeRestore, Files.readString(permissionsFile));
+        assertEquals(liveBeforeRestore, persistedPermissionValue(target.getUniqueId(), "example.backup"));
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.backup"));
         assertTrue(target.isPermissionSet("example.backup"));
         assertTrue(target.hasPermission("example.backup"));
@@ -711,19 +693,16 @@ class ClutchPermsPaperPluginTest {
         plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
-        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
-        Path subjectsFile = plugin.getDataFolder().toPath().resolve("subjects.json");
-        Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
-        Path nodesFile = plugin.getDataFolder().toPath().resolve("nodes.json");
-
-        PermissionServices.jsonFile(permissionsFile).setPermission(target.getUniqueId(), "Example.Reload", PermissionValue.TRUE);
-        SubjectMetadataServices.jsonFile(subjectsFile).recordSubject(offlineId, "OfflineReload", Instant.parse("2026-04-24T12:00:00Z"));
-        GroupService groupStorage = GroupServices.jsonFile(groupsFile);
-        groupStorage.createGroup("staff");
-        groupStorage.setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
-        groupStorage.addSubjectGroup(target.getUniqueId(), "staff");
-        PermissionNodeRegistries.jsonFile(nodesFile).addNode("example.reloadknown", "Reloaded known node");
-        PermissionServices.jsonFile(permissionsFile).setPermission(target.getUniqueId(), "Example.*", PermissionValue.TRUE);
+        try (SqliteStore store = openStore()) {
+            PermissionServices.sqlite(store).setPermission(target.getUniqueId(), "Example.Reload", PermissionValue.TRUE);
+            SubjectMetadataServices.sqlite(store).recordSubject(offlineId, "OfflineReload", Instant.parse("2026-04-24T12:00:00Z"));
+            GroupService groupStorage = GroupServices.sqlite(store);
+            groupStorage.createGroup("staff");
+            groupStorage.setGroupPermission("staff", "Example.GroupReload", PermissionValue.TRUE);
+            groupStorage.addSubjectGroup(target.getUniqueId(), "staff");
+            PermissionNodeRegistries.sqlite(store).addNode("example.reloadknown", "Reloaded known node");
+            PermissionServices.sqlite(store).setPermission(target.getUniqueId(), "Example.*", PermissionValue.TRUE);
+        }
 
         assertEquals(PermissionValue.UNSET, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
         assertFalse(target.isPermissionSet("example.reload"));
@@ -731,7 +710,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms reload", new TestCommandSourceStack(admin)));
 
-        assertNextMessage(admin, "Reloaded config, permissions, subjects, groups, and known nodes from disk.");
+        assertNextMessage(admin, "Reloaded config and database storage from disk.");
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.reload"));
         assertTrue(target.isPermissionSet("example.reload"));
         assertTrue(target.hasPermission("example.reload"));
@@ -789,13 +768,13 @@ class ClutchPermsPaperPluginTest {
         PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
-        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
-
-        PermissionServices.jsonFile(permissionsFile).setPermission(target.getUniqueId(), "Example.Validate", PermissionValue.TRUE);
+        try (SqliteStore store = openStore()) {
+            PermissionServices.sqlite(store).setPermission(target.getUniqueId(), "Example.Validate", PermissionValue.TRUE);
+        }
 
         assertEquals(1, dispatcher.execute("clutchperms validate", new TestCommandSourceStack(admin)));
 
-        assertNextMessage(admin, "Validated config, permissions, subjects, groups, and known nodes from disk.");
+        assertNextMessage(admin, "Validated config and database storage from disk.");
         assertSame(activePermissionService, plugin.getPermissionService());
         assertSame(activePermissionResolver, plugin.getPermissionResolver());
         assertSame(activePermissionService, server.getServicesManager().getRegistration(PermissionService.class).getProvider());
@@ -819,18 +798,7 @@ class ClutchPermsPaperPluginTest {
         PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
-        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
-
-        Files.writeString(permissionsFile, """
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "example.*.bad": "TRUE"
-                    }
-                  }
-                }
-                """, StandardCharsets.UTF_8);
+        insertInvalidPermissionRow();
 
         assertCommandFails(dispatcher, "clutchperms validate", admin, "Failed to validate ClutchPerms storage:");
 
@@ -859,18 +827,7 @@ class ClutchPermsPaperPluginTest {
         PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
-        Path permissionsFile = plugin.getDataFolder().toPath().resolve("permissions.json");
-
-        Files.writeString(permissionsFile, """
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "example.*.bad": "TRUE"
-                    }
-                  }
-                }
-                """, StandardCharsets.UTF_8);
+        insertInvalidPermissionRow();
 
         assertCommandFails(dispatcher, "clutchperms reload", admin, "Failed to reload ClutchPerms storage:");
 
@@ -933,20 +890,13 @@ class ClutchPermsPaperPluginTest {
         PermissionResolver activePermissionResolver = plugin.getPermissionResolver();
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
-        Path groupsFile = plugin.getDataFolder().toPath().resolve("groups.json");
-
-        Files.writeString(groupsFile, """
-                {
-                  "version": 1,
-                  "groups": {
-                    "staff": {
-                      "permissions": {},
-                      "parents": {}
-                    }
-                  },
-                  "memberships": {}
+        try (SqliteStore store = openStore()) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO group_parents (group_name, parent_name) VALUES ('staff', 'staff')");
                 }
-                """, StandardCharsets.UTF_8);
+            });
+        }
 
         assertCommandFails(dispatcher, "clutchperms reload", admin, "Failed to reload ClutchPerms storage:");
 
@@ -973,16 +923,13 @@ class ClutchPermsPaperPluginTest {
         PermissionNodeRegistry activeNodeRegistry = plugin.getPermissionNodeRegistry();
         CommandDispatcher<CommandSourceStack> dispatcher = new CommandDispatcher<>();
         dispatcher.getRoot().addChild(PaperClutchPermsCommand.create(plugin));
-        Path nodesFile = plugin.getDataFolder().toPath().resolve("nodes.json");
-
-        Files.writeString(nodesFile, """
-                {
-                  "version": 1,
-                  "nodes": {
-                    "example.*": {}
-                  }
+        try (SqliteStore store = openStore()) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO known_nodes (node, description) VALUES ('example.*', '')");
                 }
-                """, StandardCharsets.UTF_8);
+            });
+        }
 
         assertCommandFails(dispatcher, "clutchperms reload", admin, "Failed to reload ClutchPerms storage:");
 
@@ -1016,6 +963,48 @@ class ClutchPermsPaperPluginTest {
 
     private static UUID playerId() {
         return UUID.fromString("00000000-0000-0000-0000-000000000001");
+    }
+
+    private SqliteStore openStore() {
+        return SqliteStore.open(plugin.getDataFolder().toPath().resolve("database.db"), SqliteDependencyMode.ANY_VISIBLE);
+    }
+
+    private PermissionValue persistedPermissionValue(UUID subjectId, String node) {
+        return persistedPermissionValue(plugin.getDataFolder().toPath().resolve("database.db"), subjectId, node);
+    }
+
+    private static PermissionValue persistedPermissionValue(Path databaseFile, UUID subjectId, String node) {
+        try (SqliteStore store = SqliteStore.open(databaseFile, SqliteDependencyMode.ANY_VISIBLE)) {
+            return PermissionServices.sqlite(store).getPermission(subjectId, node);
+        }
+    }
+
+    private PermissionValue persistedGroupPermissionValue(String groupName, String node) {
+        try (SqliteStore store = openStore()) {
+            return GroupServices.sqlite(store).getGroupPermission(groupName, node);
+        }
+    }
+
+    private java.util.Set<String> persistedGroupParents(String groupName) {
+        try (SqliteStore store = openStore()) {
+            return GroupServices.sqlite(store).getGroupParents(groupName);
+        }
+    }
+
+    private boolean persistedKnownNode(String node) {
+        try (SqliteStore store = openStore()) {
+            return PermissionNodeRegistries.sqlite(store).getKnownNode(node).isPresent();
+        }
+    }
+
+    private void insertInvalidPermissionRow() {
+        try (SqliteStore store = openStore()) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO subject_permissions (subject_id, node, value) VALUES ('00000000-0000-0000-0000-000000000001', 'example.*.bad', 'TRUE')");
+                }
+            });
+        }
     }
 
     private CommandDispatcher<CommandSourceStack> dispatcherWithAllCommandRoots() {

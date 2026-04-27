@@ -15,7 +15,7 @@
 ClutchPerms is an early cross-platform Minecraft permissions prototype for Paper, Fabric, NeoForge, and Forge. It is not a mature permissions suite yet, but it does have a real core loop:
 
 - shared permission, group, subject metadata, storage, and command code in `common`
-- JSON-backed persisted state
+- SQLite-backed persisted state with `config.json` for runtime config
 - shared Brigadier `/clutchperms` commands
 - shared user/group display values for prefixes, suffixes, and chat rendering
 - Paper runtime attachments and known-node wildcard expansion
@@ -36,13 +36,13 @@ Keep the project moving toward a useful permissions system without adding mature
   - embeds compiled `common` classes in the plugin jar
 - `fabric`
   - Fabric mod adapter built with Loom
-  - packages `common` and fabric-permissions-api as nested included jars
+  - packages `common`, fabric-permissions-api, HikariCP, and SQLite JDBC as nested/bundled jars
 - `neoforge`
   - NeoForge mod adapter built with ModDevGradle
-  - packages `common` as a nested jar through jar-in-jar metadata
+  - packages `common`, HikariCP, and SQLite JDBC through loader-appropriate jar-in-jar/shadow packaging
 - `forge`
   - Forge mod adapter built with ForgeGradle
-  - embeds compiled `common` classes in the mod jar
+  - embeds compiled `common` classes plus bundled HikariCP and SQLite JDBC in the mod jar
 
 Shared package ownership:
 
@@ -80,7 +80,7 @@ Shared package ownership:
 - Direct permission and membership mutations invalidate one subject; group definition, group permission, and parent mutations clear the full resolver cache.
 - Reload and restore replace the active resolver, so cache state is runtime-only and starts empty after reload/startup.
 - Known permission nodes are advisory exact-node descriptors used for discovery, suggestions, diagnostics, and Paper wildcard expansion.
-- `nodes.json` stores only manually registered exact nodes. Platform-discovered nodes are runtime-only and must not be written back to `nodes.json`.
+- The database stores only manually registered exact nodes. Platform-discovered nodes are runtime-only and must not be written back to storage.
 - Unknown permission nodes remain assignable; do not make assignment mutation depend on the known-node registry.
 - Subject metadata stores UUID, last-known name, and last-seen timestamp.
 - Subject metadata may also store direct user prefix/suffix display values.
@@ -98,10 +98,7 @@ Do not add contexts, priorities, imports, migrations, or LuckPerms bridges unles
 Current persisted files:
 
 - `config.json` for runtime settings such as backup retention, command page sizes, and chat formatting
-- `permissions.json` for direct user permission assignments
-- `groups.json` for group definitions, group permissions, prefix/suffix display values, parent links, and memberships
-- `subjects.json` for subject metadata and direct user prefix/suffix display values
-- `nodes.json` for manually registered exact known permission nodes
+- `database.db` for direct user permission assignments, group definitions, group permissions, prefix/suffix display values, parent links, memberships, subject metadata, and manually registered known permission nodes
 
 Locations:
 
@@ -112,36 +109,33 @@ Locations:
 
 Storage expectations:
 
-- Treat missing storage files as empty state, except group storage starts with the built-in `default` group. Treat missing `config.json` as default config.
-- After successful startup or reload, materialize missing storage/config files with versioned JSON so fresh installs have visible files, including `default` in `groups.json`.
-- Save mutations immediately.
+- Treat missing database storage as empty state and ensure the built-in `default` group exists. Treat missing `config.json` as default config.
+- After successful startup or reload, materialize missing `database.db` and `config.json` so fresh installs have visible files.
+- Save mutations immediately with transactional SQLite writes.
+- Validate mutation input before writing; commit the transaction, then update active in-memory state and fire observers.
+- If a mutation transaction fails, keep the previous in-memory state, resolver cache notifications, runtime bridge notifications, and live database unchanged.
 - Create parent directories as needed.
-- Use deterministic output.
-- Write through temporary files and replace the target file.
-- Before replacing an existing live JSON file, create a rolling backup through `common.storage.StorageBackupService`.
-- Do not replace the live file if backup creation fails.
-- JSON-backed mutations must commit in-memory runtime state only after the replacement file is successfully written.
-- If a mutation save fails, keep the previous in-memory state, resolver cache notifications, runtime bridge notifications, and live JSON file unchanged.
-- The first save of a missing live file must not create a backup.
-- Keep backup retention controlled by `config.json` `backups.retentionLimit`, defaulting to 10 newest files per storage kind.
+- Keep backup retention controlled by `config.json` `backups.retentionLimit`, defaulting to 10 newest database backups.
 - In-game config management covers `backups.retentionLimit`, `commands.helpPageSize`, `commands.resultPageSize`, and `chat.enabled`.
-- Backup layout is `backups/<kind>/<kind>-YYYYMMDD-HHMMSSSSS.json`, where kind is `permissions`, `subjects`, `groups`, or `nodes`.
+- Backup layout is `backups/database/database-YYYYMMDD-HHMMSSSSS.db`.
 - Backup roots are Paper plugin data folder `backups/` and Fabric/NeoForge/Forge config dir `clutchperms/backups/`.
-- Fail startup, validate, or reload on malformed JSON, unsupported versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
+- Fail startup, validate, or reload on malformed config, unsupported schema versions, unknown config keys, invalid config values, invalid UUIDs, blank names/nodes, duplicate normalized permission keys, invalid wildcard placement, wildcard known-node registry entries, unknown permission values, unknown membership groups, explicit `default` memberships, unknown parent groups, and parent cycles.
 - Fail startup, validate, or reload on invalid stored display text, including raw section signs, invalid ampersand codes, blank display values, and over-length display values.
-- `/clutchperms validate` should parse config and all persisted files without replacing active services/config, refreshing runtime bridges, or mutating storage.
-- Reload should be atomic from the command perspective: if any file fails, keep active runtime state unchanged.
+- `/clutchperms validate` should parse config and database storage without replacing active services/config, refreshing runtime bridges, or mutating storage.
+- Reload should be atomic from the command perspective: if config or database storage fails, keep active runtime state unchanged.
 - Successful reload should replace active services, active config, and the active resolver cache; failed reload should leave the old config, resolver, and resolver cache in place.
 - Shared storage lifecycle wiring belongs in `common.runtime.ClutchPermsRuntime`; platform modules should provide storage roots, platform known-node suppliers, runtime refresh hooks, service registration, logging, and lifecycle events.
-- `/clutchperms backup restore` validates the selected backup file before replacing live storage, then restores one file, reloads config plus all four persisted storage files, and refreshes runtime bridges. If pre-restore validation fails, disk and active runtime state must remain unchanged. If reload fails after replacement, it must roll disk back to the previous live file and keep active services/runtime state unchanged.
+- `/clutchperms backup create` should create a SQLite-consistent whole-database snapshot, not a raw hot copy.
+- `/clutchperms backup restore` validates the selected backup file before replacing live storage, closes the active SQLite pool, replaces `database.db`, removes stale WAL/SHM files, reloads config plus database storage, and refreshes runtime bridges. If pre-restore validation fails, disk and active runtime state must remain unchanged. If reload fails after replacement, it must roll disk back to the previous live database and keep active services/runtime state unchanged.
 - `config.json` is not included in backup list or restore commands in this version.
 - If restore rollback fails, command feedback should report that rollback failure explicitly.
+- There is no JSON compatibility or migration path for removed data files.
 
 ## Runtime Bridges
 
 - Paper applies effective permissions to online players with plugin-owned `PermissionAttachment`s.
 - Paper attempts Paper's experimental `PermissionManager` override for registry tracking. If Paper rejects it, the plugin falls back to registry snapshots and continues enabling.
-- Paper expands ClutchPerms wildcard assignments onto exact known permission nodes from built-ins, manual `nodes.json`, and Paper's permission registry.
+- Paper expands ClutchPerms wildcard assignments onto exact known permission nodes from built-ins, manually registered database nodes, and Paper's permission registry.
 - Paper attachments include stored wildcard nodes, but Bukkit/Paper does not expand arbitrary unregistered wildcard checks for ClutchPerms; avoid claiming true arbitrary Paper wildcard interception without `Permissible` injection or another deeper Paper-specific bridge.
 - Paper bridge refreshes on join, service mutation, reload, and disable/quit cleanup.
 - Paper formats chat through `AsyncChatEvent` renderers as `prefix name suffix: message` using native Adventure components when `chat.enabled` is true.
@@ -183,10 +177,10 @@ Current command surface:
 - `/clutchperms config get <key>`
 - `/clutchperms config set <key> <value>`
 - `/clutchperms config reset <key|all>`
+- `/clutchperms backup create`
 - `/clutchperms backup list`
 - `/clutchperms backup list page <page>`
-- `/clutchperms backup list <permissions|subjects|groups|nodes> [page]`
-- `/clutchperms backup restore <permissions|subjects|groups|nodes> <backup-file>`
+- `/clutchperms backup restore <backup-file>`
 - `/clutchperms user <target> info`
 - `/clutchperms user <target> list [page]`
 - `/clutchperms user <target> get|set|clear|check|explain`
@@ -228,7 +222,7 @@ Authorization:
 - `status` should include storage paths, subject/group/node counts, resolver cache counts, and platform bridge status.
 - Config command changes should save `config.json`, reload runtime immediately, refresh runtime bridges, and roll `config.json` back if reload fails. Same-value config changes should not write or reload.
 - `check` is short effective-value feedback. `explain` should show matching assignments in resolver order and identify the winning assignment.
-- Bad user, group, parent group, backup kind/file, and manual known-node targets should return styled shared feedback with deterministic closest matches: case-insensitive prefix matches first, then substring matches, then small edit-distance matches, capped at 5 suggestions.
+- Bad user, group, parent group, backup file, and manual known-node targets should return styled shared feedback with deterministic closest matches: case-insensitive prefix matches first, then substring matches, then small edit-distance matches, capped at 5 suggestions.
 - Node registry commands mutate only the manual registry. Built-in and platform-discovered known nodes are visible but not removable.
 
 ## Build And Versions
@@ -294,17 +288,20 @@ For cross-platform behavior changes, prefer:
 - Update Javadocs on public types and methods when behavior changes.
 - Add comments only for non-obvious lifecycle, packaging, normalization, or test setup behavior.
 - Keep command feedback text centralized in `common.command.CommandLang`.
-- Keep JSON schemas strict and deterministic.
+- Keep the `config.json` schema strict and deterministic.
 - Do not silently start with empty state after a bad persisted file.
 
 ## Packaging Rules
 
 - Paper must continue to ship `common` classes inside the final plugin jar.
+- Paper must use the server/Paper-provided SQLite JDBC driver and must not package SQLite JDBC.
+- Paper should load HikariCP through `plugin.yml` `libraries`.
 - Paper commands are registered through Paper lifecycle Brigadier registration, not a `plugin.yml` command block.
 - `plugin.yml` should keep permission metadata accurate.
-- Fabric must continue to include `common` and fabric-permissions-api as nested jars while the bridge depends on fabric-permissions-api.
-- NeoForge must continue to package `common` through jar-in-jar metadata.
-- Forge must continue to embed `common` classes directly.
+- Fabric must continue to include `common`, fabric-permissions-api, HikariCP, and SQLite JDBC as bundled jars while the bridge depends on fabric-permissions-api.
+- NeoForge must continue to package `common`, HikariCP, and SQLite JDBC through loader-appropriate jar-in-jar/shadow packaging.
+- Forge must continue to embed `common`, HikariCP, and SQLite JDBC classes directly.
+- Preserve SQLite JDBC's canonical `org.sqlite.*` packages and service metadata; do not relocate SQLite JDBC.
 - Distributable runtime jars should continue to be copied into the root `build/` directory unless there is a deliberate packaging change.
 
 ## Formatting

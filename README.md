@@ -1,6 +1,6 @@
 # ClutchPerms
 
-ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It provides shared `/clutchperms` commands, JSON storage, users, groups, terminal wildcard permissions, prefixes/suffixes, backup/restore support, and runtime permission bridges for each platform.
+ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It provides shared `/clutchperms` commands, SQLite storage, users, groups, terminal wildcard permissions, prefixes/suffixes, backup/restore support, and runtime permission bridges for each platform.
 
 This is a usable prototype, not a mature permissions suite. The model is intentionally small: direct user permissions, inherited groups, a built-in implicit `default` group, terminal wildcards, and shared effective permission resolution.
 
@@ -10,7 +10,7 @@ For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 
 - Shared command tree on Paper, Fabric, NeoForge, and Forge
 - Command aliases: `/clutchperms`, `/cperms`, and `/perms`
-- JSON-backed config and storage for permissions, groups, subjects, and known nodes
+- `config.json` for runtime config and `database.db` for permissions, groups, subjects, and known nodes
 - Direct user permissions with `TRUE`, `FALSE`, and `UNSET`
 - Named groups with recursive parent inheritance
 - Built-in implicit `default` group
@@ -18,7 +18,7 @@ For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 - Offline targeting by stored last-known name or UUID
 - User and group prefixes/suffixes with ampersand formatting
 - Cross-platform chat display as `prefix name suffix: message`
-- Validation, reload, rolling backups, and one-file restore with rollback
+- Validation, reload, manual database snapshots, and restore with rollback
 - Paper wildcard expansion for exact known permission nodes
 - Fabric, Forge, and NeoForge runtime permission integration
 
@@ -49,7 +49,7 @@ Useful grants:
 | `clutchperms.admin.user.*` | Direct user permissions, user group membership, and user display values |
 | `clutchperms.admin.group.*` | Group definitions, group permissions, group members, group parents, and group display values |
 | `clutchperms.admin.config.*` | Runtime config view, set, and reset |
-| `clutchperms.admin.backup.*` | Backup list and restore |
+| `clutchperms.admin.backup.*` | Backup create, list, and restore |
 | `clutchperms.admin.users.*` | Stored user list and search |
 | `clutchperms.admin.nodes.*` | Known permission node registry |
 
@@ -62,8 +62,8 @@ Useful grants:
 | `/clutchperms` | `clutchperms.admin.help` | Shows command help page 1. |
 | `/clutchperms help [page]` | `clutchperms.admin.help` | Shows paged command help. |
 | `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, config values, counts, resolver cache counts, and runtime bridge status. |
-| `/clutchperms reload` | `clutchperms.admin.reload` | Reloads config and all JSON storage files, then refreshes runtime permissions. |
-| `/clutchperms validate` | `clutchperms.admin.validate` | Parses config and all JSON storage files without applying them. |
+| `/clutchperms reload` | `clutchperms.admin.reload` | Reloads config and database storage, then refreshes runtime permissions. |
+| `/clutchperms validate` | `clutchperms.admin.validate` | Parses config and database storage without applying them. |
 
 ### Config
 
@@ -78,10 +78,10 @@ Useful grants:
 
 | Command | Permission | Description |
 | --- | --- | --- |
-| `/clutchperms backup list` | `clutchperms.admin.backup.list` | Lists backups for all files on page 1. |
-| `/clutchperms backup list page <page>` | `clutchperms.admin.backup.list` | Lists all backups on a specific page. |
-| `/clutchperms backup list <kind> [page]` | `clutchperms.admin.backup.list` | Lists backups for one kind: `permissions`, `subjects`, `groups`, or `nodes`. |
-| `/clutchperms backup restore <kind> <backup-file>` | `clutchperms.admin.backup.restore` | Restores one backup file, validates all storage, and reloads if valid. |
+| `/clutchperms backup create` | `clutchperms.admin.backup.create` | Creates a consistent database snapshot. |
+| `/clutchperms backup list [page]` | `clutchperms.admin.backup.list` | Lists database backups. |
+| `/clutchperms backup list page <page>` | `clutchperms.admin.backup.list` | Lists database backups on a specific page. |
+| `/clutchperms backup restore <backup-file>` | `clutchperms.admin.backup.restore` | Restores one validated database backup and reloads if valid. |
 
 ### User Commands
 
@@ -167,15 +167,12 @@ Notes:
 
 ## Storage
 
-ClutchPerms writes one config file and four versioned storage files:
+ClutchPerms writes one config file and one SQLite database:
 
 | File | Purpose |
 | --- | --- |
 | `config.json` | Runtime settings for backup retention, command page sizes, and chat formatting |
-| `permissions.json` | Direct user permission assignments |
-| `groups.json` | Group definitions, permissions, display values, parent links, and memberships |
-| `subjects.json` | Last-known subject names, last-seen timestamps, and direct user display values |
-| `nodes.json` | Manually registered exact known permission nodes |
+| `database.db` | Direct permissions, group definitions, memberships, subject metadata, display values, and manually registered known nodes |
 
 Default `config.json`:
 
@@ -195,31 +192,28 @@ Default `config.json`:
 }
 ```
 
-Missing files load as empty state, except `groups.json` starts with the built-in `default` group and missing `config.json` loads defaults. Missing files are materialized after successful startup or reload.
+Missing database storage loads as empty state with the built-in `default` group. Missing `config.json` loads defaults. Missing files are materialized after successful startup or reload.
 
-Validation is strict. Malformed JSON, unsupported versions, invalid config keys or values, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
+Validation is strict. Malformed config, unsupported schema versions, invalid config keys or values, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, unknown parent groups, and parent cycles fail startup, validate, or reload.
 
-Display values are stored as ampersand-formatted strings. Direct user display values live in the optional `subjects.json` root `display` map keyed by UUID. Group display values live as optional `prefix` and `suffix` fields on each group object in `groups.json`.
+Display values are stored in the database as ampersand-formatted strings. Direct user display values are keyed by UUID, and group display values are keyed by normalized group name.
 
 Effective prefix and suffix are resolved independently: direct user value first, then the nearest explicit group hierarchy, then the nearest `default` group hierarchy. If multiple groups at the same depth provide a value, the alphabetically first group name wins.
 
 Chat display is active by default on all supported platforms, can be toggled with `chat.enabled`, and renders as `prefix name suffix: message`. When no prefix or suffix is set, the output stays close to vanilla chat. Because ClutchPerms formats the full chat line, some loaders or clients may treat the line as modified or unsigned.
 
-Backups are created before replacing an existing live JSON file. The first save of a missing file does not create a backup.
+Backups are manual whole-database snapshots created with `/clutchperms backup create`.
 
-Backup restore validates the selected backup file before replacing live storage. After replacement, ClutchPerms reloads config and all storage; if reload fails, it rolls the restored file back. `config.json` is not included in backup restore in this version.
+Backup restore validates the selected backup file before replacing live storage. ClutchPerms closes the active SQLite pool, replaces `database.db`, removes stale WAL/SHM sidecar files, reloads config and database storage, and rolls the restored database back if reload fails. `config.json` is not included in backup restore.
 
-If a JSON-backed mutation cannot save, ClutchPerms leaves both the live file and the in-memory runtime state unchanged.
+If a database mutation cannot commit, ClutchPerms leaves both the live database and the in-memory runtime state unchanged.
 
 ```text
 backups/
-  permissions/permissions-YYYYMMDD-HHMMSSSSS.json
-  subjects/subjects-YYYYMMDD-HHMMSSSSS.json
-  groups/groups-YYYYMMDD-HHMMSSSSS.json
-  nodes/nodes-YYYYMMDD-HHMMSSSSS.json
+  database/database-YYYYMMDD-HHMMSSSSS.db
 ```
 
-By default, ClutchPerms keeps the newest 10 backups per file kind. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups per kind. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally.
+By default, ClutchPerms keeps the newest 10 database backups. Use `/clutchperms config set backups.retentionLimit <value>` or edit `config.json` to keep between 1 and 1000 backups. Use `/clutchperms config set chat.enabled off` to let the platform handle chat normally.
 
 ## Forge And NeoForge
 
@@ -238,7 +232,7 @@ Forge:
 permissionHandler = "clutchperms:direct"
 ```
 
-Without this setting, `/clutchperms` commands and JSON storage still work, but platform permission checks continue using the default handler.
+Without this setting, `/clutchperms` commands and SQLite storage still work, but platform permission checks continue using the default handler.
 
 ## Build
 

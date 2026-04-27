@@ -1,6 +1,5 @@
 package me.clutchy.clutchperms.common.node;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -9,32 +8,15 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 import me.clutchy.clutchperms.common.permission.PermissionNodes;
-import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
 
 /**
  * Factory methods for known permission node registries.
  */
 public final class PermissionNodeRegistries {
 
-    /**
-     * Creates a JSON-backed manual node registry.
-     *
-     * @param nodesFile JSON storage path
-     * @return mutable registry backed by {@code nodesFile}
-     */
-    public static MutablePermissionNodeRegistry jsonFile(Path nodesFile) {
-        return jsonFile(nodesFile, StorageWriteOptions.defaults());
-    }
-
-    /**
-     * Creates a JSON-backed manual node registry.
-     *
-     * @param nodesFile JSON storage path
-     * @param writeOptions storage write options used for future mutations
-     * @return mutable registry backed by {@code nodesFile}
-     */
-    public static MutablePermissionNodeRegistry jsonFile(Path nodesFile, StorageWriteOptions writeOptions) {
-        return new JsonFilePermissionNodeRegistry(Objects.requireNonNull(nodesFile, "nodesFile"), StorageWriteOptions.defaultIfNull(writeOptions));
+    public static MutablePermissionNodeRegistry sqlite(SqliteStore store) {
+        return new SqlitePermissionNodeRegistry(Objects.requireNonNull(store, "store"));
     }
 
     /**

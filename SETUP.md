@@ -2,7 +2,7 @@
 
 This guide covers first install, first admin access, basic verification, and the most common platform-specific setup steps. For the full command reference and storage schema notes, see [README.md](README.md).
 
-ClutchPerms is currently a usable prototype. Treat setup as a direct JSON-backed permissions service with shared `/clutchperms` commands, groups, inheritance, wildcards, prefixes/suffixes, reload, validation, backups, and platform runtime bridges.
+ClutchPerms is currently a usable prototype. Treat setup as a direct SQLite-backed permissions service with shared `/clutchperms` commands, groups, inheritance, wildcards, prefixes/suffixes, reload, validation, backups, and platform runtime bridges.
 
 ## 1. Pick The Correct Jar
 
@@ -38,7 +38,7 @@ The built jars are copied into `build/` with the same platform-specific names.
 
 ## 2. Start The Server Once
 
-Start the server once with ClutchPerms installed. Missing storage files are treated as empty state and are created with versioned JSON after a successful startup. Missing `config.json` uses defaults, and `groups.json` starts with the built-in `default` group.
+Start the server once with ClutchPerms installed. Missing database storage is treated as empty state and is created after a successful startup. Missing `config.json` uses defaults, and the database starts with the built-in `default` group.
 
 Storage locations:
 
@@ -53,17 +53,14 @@ Expected storage files:
 
 ```text
 config.json
-permissions.json
-groups.json
-subjects.json
-nodes.json
+database.db
 ```
 
 `config.json` is created with defaults for backup retention, command page sizes, and chat formatting. You can manage these values in-game with `clutchperms config`, or edit the file manually and run `clutchperms validate` before `clutchperms reload`.
 
-Direct user prefixes/suffixes are stored in `subjects.json`. Group prefixes/suffixes are stored in `groups.json`.
+Direct user and group prefixes/suffixes are stored in `database.db`.
 
-The `backups/` directory is created later when ClutchPerms replaces an existing storage file.
+The `backups/` directory is created later when you create a manual database snapshot.
 
 Run this from the server console to confirm ClutchPerms loaded:
 
@@ -205,23 +202,23 @@ clutchperms user ExamplePlayer check example.fly
 
 `example.*` matches `example.fly` and `example.fly.fast`, but it does not match `example` itself. Mid-node wildcards such as `example.*.fast` are invalid.
 
-Paper note: ClutchPerms expands wildcard assignments onto exact known permission nodes. Arbitrary unregistered Bukkit permission strings are not expanded unless they are known through Paper's registry, ClutchPerms built-ins, or `nodes.json`.
+Paper note: ClutchPerms expands wildcard assignments onto exact known permission nodes. Arbitrary unregistered Bukkit permission strings are not expanded unless they are known through Paper's registry, ClutchPerms built-ins, or the manual known-node registry in `database.db`.
 
 ## 9. Validate, Reload, And Recover
 
-Validate manual JSON/config edits without applying them:
+Validate manual config or database edits without applying them:
 
 ```text
 clutchperms validate
 ```
 
-Reload config and all storage files after manual edits:
+Reload config and database storage after manual edits:
 
 ```text
 clutchperms reload
 ```
 
-Reload is atomic from the command perspective. If any file is invalid, ClutchPerms keeps the active runtime state unchanged.
+Reload is atomic from the command perspective. If config or database storage is invalid, ClutchPerms keeps the active runtime state unchanged.
 
 View or change config from console or in-game:
 
@@ -238,17 +235,17 @@ Config command changes save `config.json`, reload runtime immediately, and roll 
 List backups:
 
 ```text
+clutchperms backup create
 clutchperms backup list
-clutchperms backup list groups
 ```
 
-Restore one file from a backup:
+Restore the database from a backup:
 
 ```text
-clutchperms backup restore groups groups-YYYYMMDD-HHMMSSSSS.json
+clutchperms backup restore database-YYYYMMDD-HHMMSSSSS.db
 ```
 
-Restore validates the selected backup before replacing the live file, then reloads config and all storage immediately. If reload fails after replacement, ClutchPerms rolls the disk file back and keeps the active runtime state unchanged. `config.json` is not restored by backup commands in this version.
+Restore validates the selected backup before replacing `database.db`, closes the active SQLite pool, removes stale WAL/SHM sidecar files, then reloads config and database storage immediately. If reload fails after replacement, ClutchPerms rolls the database back and keeps the active runtime state unchanged. `config.json` is not restored by backup commands.
 
 ## 10. Enable Forge And NeoForge Runtime Checks
 
@@ -300,9 +297,9 @@ Target resolution checks exact online player name first, exact stored last-known
 
 ### Runtime Permissions Do Not Affect Forge Or NeoForge Mods
 
-Check that the server selected `clutchperms:direct` as the active permission handler. Without that setting, commands and JSON storage still work, but Forge or NeoForge permission checks use the platform default handler.
+Check that the server selected `clutchperms:direct` as the active permission handler. Without that setting, commands and SQLite storage still work, but Forge or NeoForge permission checks use the platform default handler.
 
-### A JSON Or Config Edit Broke Reload
+### A Config Or Database Edit Broke Reload
 
 Use:
 
@@ -311,4 +308,4 @@ clutchperms validate
 clutchperms backup list
 ```
 
-Then either fix the JSON/config file and run `clutchperms reload`, or restore a backup for the broken storage file.
+Then either fix `config.json` or `database.db` and run `clutchperms reload`, or restore a database backup.

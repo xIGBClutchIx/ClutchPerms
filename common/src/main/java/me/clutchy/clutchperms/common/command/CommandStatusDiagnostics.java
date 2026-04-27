@@ -5,26 +5,20 @@ import java.util.Objects;
 /**
  * Platform-provided status details shown by the shared ClutchPerms diagnostics command.
  *
- * @param permissionsFile path to the persisted direct permission assignments
- * @param subjectsFile path to the persisted subject metadata
- * @param groupsFile path to the persisted group definitions and memberships
- * @param nodesFile path to the persisted manual known permission node registry
+ * @param databaseFile path to the persisted SQLite database
  * @param runtimeBridgeStatus platform runtime permission bridge status
  * @param configFile path to the runtime config file
  */
-public record CommandStatusDiagnostics(String permissionsFile, String subjectsFile, String groupsFile, String nodesFile, String runtimeBridgeStatus, String configFile) {
+public record CommandStatusDiagnostics(String databaseFile, String runtimeBridgeStatus, String configFile) {
 
     /**
      * Creates command status diagnostics without a known config file path.
      *
-     * @param permissionsFile path to the persisted direct permission assignments
-     * @param subjectsFile path to the persisted subject metadata
-     * @param groupsFile path to the persisted group definitions and memberships
-     * @param nodesFile path to the persisted manual known permission node registry
-     * @param runtimeBridgeStatus platform runtime permission bridge status
+     * @param databaseFile path to the persisted SQLite database
+     * @param runtimeBridgeStatus platform runtime bridge status
      */
-    public CommandStatusDiagnostics(String permissionsFile, String subjectsFile, String groupsFile, String nodesFile, String runtimeBridgeStatus) {
-        this(permissionsFile, subjectsFile, groupsFile, nodesFile, runtimeBridgeStatus, "unknown");
+    public CommandStatusDiagnostics(String databaseFile, String runtimeBridgeStatus) {
+        this(databaseFile, runtimeBridgeStatus, "unknown");
     }
 
     /**
@@ -33,10 +27,7 @@ public record CommandStatusDiagnostics(String permissionsFile, String subjectsFi
      * @throws IllegalArgumentException when a diagnostic value is blank
      */
     public CommandStatusDiagnostics {
-        permissionsFile = requireNonBlank(permissionsFile, "permissionsFile");
-        subjectsFile = requireNonBlank(subjectsFile, "subjectsFile");
-        groupsFile = requireNonBlank(groupsFile, "groupsFile");
-        nodesFile = requireNonBlank(nodesFile, "nodesFile");
+        databaseFile = requireNonBlank(databaseFile, "databaseFile");
         runtimeBridgeStatus = requireNonBlank(runtimeBridgeStatus, "runtimeBridgeStatus");
         configFile = requireNonBlank(configFile, "configFile");
     }

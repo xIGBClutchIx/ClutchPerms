@@ -1,8 +1,8 @@
 package me.clutchy.clutchperms.common.subject;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -12,13 +12,16 @@ import org.junit.jupiter.api.io.TempDir;
 
 import me.clutchy.clutchperms.common.display.DisplayText;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
+import me.clutchy.clutchperms.common.storage.SqliteTestSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Verifies JSON-backed subject metadata loading and persistence.
+ * Verifies SQLite-backed subject metadata loading and persistence.
  */
 class SubjectMetadataServicesTest {
 
@@ -30,207 +33,118 @@ class SubjectMetadataServicesTest {
 
     private static final Instant SECOND_SEEN = Instant.parse("2026-04-24T13:00:00Z");
 
-    /**
-     * Temporary directory used for JSON persistence test files.
-     */
     @TempDir
     private Path temporaryDirectory;
 
-    /**
-     * Confirms a missing JSON file starts with empty state.
-     */
     @Test
-    void missingFileLoadsEmptySubjects() {
-        Path subjectsFile = temporaryDirectory.resolve("subjects.json");
+    void missingDatabaseCreatesEmptySubjectsSchema() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
 
-        SubjectMetadataService subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            SubjectMetadataService subjectMetadataService = SubjectMetadataServices.sqlite(store);
 
-        assertEquals(Map.of(), subjectMetadataService.getSubjects());
-        assertFalse(subjectMetadataService.getSubject(FIRST_SUBJECT).isPresent());
-        assertFalse(Files.exists(subjectsFile));
+            assertEquals(Map.of(), subjectMetadataService.getSubjects());
+            assertFalse(subjectMetadataService.getSubject(FIRST_SUBJECT).isPresent());
+        }
+
+        assertTrue(Files.exists(databaseFile));
     }
 
-    /**
-     * Confirms subject metadata survives a reload.
-     */
     @Test
-    void subjectMetadataRoundTripsThroughJson() {
-        Path subjectsFile = temporaryDirectory.resolve("subjects.json");
-        SubjectMetadataService subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
+    void subjectMetadataRoundTripsThroughSqlite() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            SubjectMetadataService subjectMetadataService = SubjectMetadataServices.sqlite(store);
+            subjectMetadataService.recordSubject(FIRST_SUBJECT, " Target ", FIRST_SEEN);
+            subjectMetadataService.setSubjectPrefix(FIRST_SUBJECT, DisplayText.parse("&7[Admin]"));
+            subjectMetadataService.setSubjectSuffix(FIRST_SUBJECT, DisplayText.parse("&f*"));
+        }
 
-        subjectMetadataService.recordSubject(FIRST_SUBJECT, " Target ", FIRST_SEEN);
-        subjectMetadataService.setSubjectPrefix(FIRST_SUBJECT, DisplayText.parse("&7[Admin]"));
-        subjectMetadataService.setSubjectSuffix(FIRST_SUBJECT, DisplayText.parse("&f*"));
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.sqlite(store);
 
-        SubjectMetadataService reloadedSubjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
-
-        assertEquals(new SubjectMetadata(FIRST_SUBJECT, "Target", FIRST_SEEN), reloadedSubjectMetadataService.getSubject(FIRST_SUBJECT).orElseThrow());
-        assertEquals("&7[Admin]", reloadedSubjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).prefix().orElseThrow().rawText());
-        assertEquals("&f*", reloadedSubjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).suffix().orElseThrow().rawText());
+            assertEquals(new SubjectMetadata(FIRST_SUBJECT, "Target", FIRST_SEEN), reloadedSubjectMetadataService.getSubject(FIRST_SUBJECT).orElseThrow());
+            assertEquals("&7[Admin]", reloadedSubjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).prefix().orElseThrow().rawText());
+            assertEquals("&f*", reloadedSubjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).suffix().orElseThrow().rawText());
+        }
     }
 
-    /**
-     * Confirms saves create parent directories and use deterministic subject ordering.
-     *
-     * @throws IOException if the persisted file cannot be read
-     */
-    @Test
-    void saveCreatesParentDirectoriesAndWritesDeterministicJson() throws IOException {
-        Path subjectsFile = temporaryDirectory.resolve("nested").resolve("data").resolve("subjects.json");
-        SubjectMetadataService subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
-
-        subjectMetadataService.recordSubject(SECOND_SUBJECT, "Second", SECOND_SEEN);
-        subjectMetadataService.recordSubject(FIRST_SUBJECT, "First", FIRST_SEEN);
-
-        String persistedJson = Files.readString(subjectsFile).replace("\r\n", "\n");
-
-        assertEquals("""
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "lastKnownName": "First",
-                      "lastSeen": "2026-04-24T12:00:00Z"
-                    },
-                    "00000000-0000-0000-0000-000000000002": {
-                      "lastKnownName": "Second",
-                      "lastSeen": "2026-04-24T13:00:00Z"
-                    }
-                  },
-                  "display": {}
-                }
-                """, persistedJson);
-    }
-
-    /**
-     * Confirms later observations replace earlier metadata for the same subject.
-     */
     @Test
     void laterRecordReplacesExistingMetadata() {
-        SubjectMetadataService subjectMetadataService = SubjectMetadataServices.jsonFile(temporaryDirectory.resolve("subjects.json"));
+        try (SqliteStore store = SqliteTestSupport.openDirectory(temporaryDirectory)) {
+            SubjectMetadataService subjectMetadataService = SubjectMetadataServices.sqlite(store);
 
-        subjectMetadataService.recordSubject(FIRST_SUBJECT, "FirstName", FIRST_SEEN);
-        subjectMetadataService.recordSubject(FIRST_SUBJECT, "SecondName", SECOND_SEEN);
+            subjectMetadataService.recordSubject(FIRST_SUBJECT, "FirstName", FIRST_SEEN);
+            subjectMetadataService.recordSubject(FIRST_SUBJECT, "SecondName", SECOND_SEEN);
 
-        assertEquals(new SubjectMetadata(FIRST_SUBJECT, "SecondName", SECOND_SEEN), subjectMetadataService.getSubject(FIRST_SUBJECT).orElseThrow());
-        assertEquals(Map.of(FIRST_SUBJECT, new SubjectMetadata(FIRST_SUBJECT, "SecondName", SECOND_SEEN)), subjectMetadataService.getSubjects());
+            assertEquals(new SubjectMetadata(FIRST_SUBJECT, "SecondName", SECOND_SEEN), subjectMetadataService.getSubject(FIRST_SUBJECT).orElseThrow());
+            assertEquals(Map.of(FIRST_SUBJECT, new SubjectMetadata(FIRST_SUBJECT, "SecondName", SECOND_SEEN)), subjectMetadataService.getSubjects());
+        }
     }
 
-    /**
-     * Confirms failed JSON saves leave subject metadata runtime state and persisted state unchanged.
-     *
-     * @throws IOException if test storage setup cannot be written or read
-     */
     @Test
-    void failedSavesDoNotCommitSubjectMetadataMutations() throws IOException {
-        Path subjectsFile = temporaryDirectory.resolve("subjects.json");
-        Files.writeString(subjectsFile, """
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "lastKnownName": "First",
-                      "lastSeen": "2026-04-24T12:00:00Z"
-                    }
-                  },
-                  "display": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "prefix": "&7[Old]"
-                    }
-                  }
-                }
-                """);
-        SubjectMetadataService subjectMetadataService = SubjectMetadataServices.jsonFile(subjectsFile);
-        String persistedJson = Files.readString(subjectsFile);
-        blockBackupRoot();
+    void failedWritesDoNotCommitSubjectMetadataMutations() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        SqliteStore store = SqliteTestSupport.open(databaseFile);
+        SubjectMetadataService subjectMetadataService = SubjectMetadataServices.sqlite(store);
+        subjectMetadataService.recordSubject(FIRST_SUBJECT, "First", FIRST_SEEN);
+        subjectMetadataService.setSubjectPrefix(FIRST_SUBJECT, DisplayText.parse("&7[Old]"));
+        store.close();
 
         assertThrows(PermissionStorageException.class, () -> subjectMetadataService.recordSubject(FIRST_SUBJECT, "Changed", SECOND_SEEN));
-        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+        assertSubjectMetadataStatePreserved(subjectMetadataService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> subjectMetadataService.recordSubject(SECOND_SUBJECT, "Second", SECOND_SEEN));
-        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+        assertSubjectMetadataStatePreserved(subjectMetadataService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> subjectMetadataService.setSubjectPrefix(FIRST_SUBJECT, DisplayText.parse("&c[New]")));
-        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+        assertSubjectMetadataStatePreserved(subjectMetadataService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> subjectMetadataService.clearSubjectPrefix(FIRST_SUBJECT));
-        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+        assertSubjectMetadataStatePreserved(subjectMetadataService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> subjectMetadataService.setSubjectSuffix(FIRST_SUBJECT, DisplayText.parse("&f*")));
-        assertSubjectMetadataStatePreserved(subjectMetadataService, subjectsFile, persistedJson);
+        assertSubjectMetadataStatePreserved(subjectMetadataService, databaseFile);
     }
 
-    /**
-     * Confirms malformed or invalid subject metadata files fail during construction.
-     *
-     * @throws IOException if the test file cannot be written
-     */
     @Test
-    void invalidJsonFilesFailLoad() throws IOException {
-        assertFailsToLoad("{not-json");
-        assertFailsToLoad("""
-                {
-                  "version": 2,
-                  "subjects": {}
+    void invalidSqliteSubjectRowsFailLoad() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate(
+                            "INSERT INTO subjects (subject_id, last_known_name, last_seen) VALUES ('00000000-0000-0000-0000-000000000001', '   ', '2026-04-24T12:00:00Z')");
                 }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "subjects": {
-                    "not-a-uuid": {
-                      "lastKnownName": "Target",
-                      "lastSeen": "2026-04-24T12:00:00Z"
-                    }
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "lastKnownName": "   ",
-                      "lastSeen": "2026-04-24T12:00:00Z"
-                    }
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "subjects": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "lastKnownName": "Target",
-                      "lastSeen": "not-an-instant"
-                    }
-                  }
-                }
-                """);
-        assertFailsToLoad("""
-                {
-                  "version": 1,
-                  "subjects": {},
-                  "display": {
-                    "00000000-0000-0000-0000-000000000001": {
-                      "prefix": "§cBad"
-                    }
-                  }
-                }
-                """);
+            });
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertThrows(PermissionStorageException.class, () -> SubjectMetadataServices.sqlite(store));
+        }
     }
 
-    private void assertFailsToLoad(String json) throws IOException {
-        Path subjectsFile = temporaryDirectory.resolve("invalid-subjects.json");
-        Files.writeString(subjectsFile, json);
+    @Test
+    void invalidSqliteDisplayRowsFailLoad() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            store.write(connection -> {
+                try (Statement statement = connection.createStatement()) {
+                    statement.executeUpdate("INSERT INTO subject_display (subject_id, prefix, suffix) VALUES ('00000000-0000-0000-0000-000000000001', '§cBad', NULL)");
+                }
+            });
+        }
 
-        assertThrows(PermissionStorageException.class, () -> SubjectMetadataServices.jsonFile(subjectsFile));
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertThrows(PermissionStorageException.class, () -> SubjectMetadataServices.sqlite(store));
+        }
     }
 
-    private void assertSubjectMetadataStatePreserved(SubjectMetadataService subjectMetadataService, Path subjectsFile, String persistedJson) throws IOException {
+    private static void assertSubjectMetadataStatePreserved(SubjectMetadataService subjectMetadataService, Path databaseFile) {
         assertSubjectMetadataRuntimeState(subjectMetadataService);
-        assertEquals(persistedJson, Files.readString(subjectsFile));
-        assertSubjectMetadataRuntimeState(SubjectMetadataServices.jsonFile(subjectsFile));
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            assertSubjectMetadataRuntimeState(SubjectMetadataServices.sqlite(store));
+        }
     }
 
     private static void assertSubjectMetadataRuntimeState(SubjectMetadataService subjectMetadataService) {
@@ -240,9 +154,5 @@ class SubjectMetadataServicesTest {
         assertEquals(Map.of(FIRST_SUBJECT, firstSubject), subjectMetadataService.getSubjects());
         assertEquals("&7[Old]", subjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).prefix().orElseThrow().rawText());
         assertFalse(subjectMetadataService.getSubjectDisplay(FIRST_SUBJECT).suffix().isPresent());
-    }
-
-    private void blockBackupRoot() throws IOException {
-        Files.writeString(temporaryDirectory.resolve("backups"), "blocked");
     }
 }

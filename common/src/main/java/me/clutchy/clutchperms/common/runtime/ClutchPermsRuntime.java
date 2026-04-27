@@ -23,14 +23,16 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
 import me.clutchy.clutchperms.common.storage.PermissionStorageException;
+import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
+import me.clutchy.clutchperms.common.storage.SqliteStore;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
+import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.storage.StorageFiles;
-import me.clutchy.clutchperms.common.storage.StorageWriteOptions;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
 
 /**
- * Owns platform-neutral ClutchPerms storage loading, validation, backup wiring, active services, and resolver cache invalidation.
+ * Owns platform-neutral ClutchPerms SQLite storage loading, validation, backup wiring, active services, and resolver cache invalidation.
  */
 public final class ClutchPermsRuntime {
 
@@ -40,44 +42,75 @@ public final class ClutchPermsRuntime {
 
     private final ClutchPermsRuntimeHooks runtimeHooks;
 
+    private final SqliteDependencyMode dependencyMode;
+
     private volatile ClutchPermsRuntimeServices services;
 
     /**
      * Creates a runtime without platform-provided known permission nodes.
      *
-     * @param storagePaths JSON storage paths
+     * @param storagePaths storage paths
      * @param runtimeHooks platform runtime refresh hooks
      */
     public ClutchPermsRuntime(ClutchPermsStoragePaths storagePaths, ClutchPermsRuntimeHooks runtimeHooks) {
-        this(storagePaths, () -> null, runtimeHooks);
+        this(storagePaths, () -> null, runtimeHooks, SqliteDependencyMode.ANY_VISIBLE);
+    }
+
+    /**
+     * Creates a runtime without platform-provided known permission nodes.
+     *
+     * @param storagePaths storage paths
+     * @param runtimeHooks platform runtime refresh hooks
+     * @param dependencyMode expected SQLite dependency provisioning mode
+     */
+    public ClutchPermsRuntime(ClutchPermsStoragePaths storagePaths, ClutchPermsRuntimeHooks runtimeHooks, SqliteDependencyMode dependencyMode) {
+        this(storagePaths, () -> null, runtimeHooks, dependencyMode);
     }
 
     /**
      * Creates a runtime with optional platform-provided known permission nodes.
      *
-     * @param storagePaths JSON storage paths
+     * @param storagePaths storage paths
      * @param platformPermissionNodeRegistry supplier for the platform known-node registry, or {@code null} for no platform registry
      * @param runtimeHooks platform runtime refresh hooks
      */
     public ClutchPermsRuntime(ClutchPermsStoragePaths storagePaths, Supplier<PermissionNodeRegistry> platformPermissionNodeRegistry, ClutchPermsRuntimeHooks runtimeHooks) {
-        this.storagePaths = Objects.requireNonNull(storagePaths, "storagePaths");
-        this.platformPermissionNodeRegistry = Objects.requireNonNull(platformPermissionNodeRegistry, "platformPermissionNodeRegistry");
-        this.runtimeHooks = Objects.requireNonNull(runtimeHooks, "runtimeHooks");
+        this(storagePaths, platformPermissionNodeRegistry, runtimeHooks, SqliteDependencyMode.ANY_VISIBLE);
     }
 
     /**
-     * Reloads all JSON storage and atomically replaces active services after every file parses and missing files are materialized.
+     * Creates a runtime with optional platform-provided known permission nodes.
+     *
+     * @param storagePaths storage paths
+     * @param platformPermissionNodeRegistry supplier for the platform known-node registry, or {@code null} for no platform registry
+     * @param runtimeHooks platform runtime refresh hooks
+     * @param dependencyMode expected SQLite dependency provisioning mode
+     */
+    public ClutchPermsRuntime(ClutchPermsStoragePaths storagePaths, Supplier<PermissionNodeRegistry> platformPermissionNodeRegistry, ClutchPermsRuntimeHooks runtimeHooks,
+            SqliteDependencyMode dependencyMode) {
+        this.storagePaths = Objects.requireNonNull(storagePaths, "storagePaths");
+        this.platformPermissionNodeRegistry = Objects.requireNonNull(platformPermissionNodeRegistry, "platformPermissionNodeRegistry");
+        this.runtimeHooks = Objects.requireNonNull(runtimeHooks, "runtimeHooks");
+        this.dependencyMode = Objects.requireNonNull(dependencyMode, "dependencyMode");
+    }
+
+    /**
+     * Reloads SQLite storage and atomically replaces active services after the database and config parse successfully.
      *
      * @return previously active services, or {@code null} when this is the first successful load
      */
     public synchronized ClutchPermsRuntimeServices reload() {
         ClutchPermsRuntimeServices reloadedServices = loadServices();
-        StorageFiles.materializeMissingJsonFiles(storagePaths.storageFiles());
-        ClutchPermsConfigs.materializeDefault(storagePaths.configFile());
-
-        ClutchPermsRuntimeServices previousServices = services;
-        services = reloadedServices;
-        return previousServices;
+        try {
+            ClutchPermsConfigs.materializeDefault(storagePaths.configFile());
+            ClutchPermsRuntimeServices previousServices = services;
+            services = reloadedServices;
+            closeQuietly(previousServices);
+            return previousServices;
+        } catch (RuntimeException exception) {
+            closeQuietly(reloadedServices);
+            throw exception;
+        }
     }
 
     /**
@@ -129,21 +162,26 @@ public final class ClutchPermsRuntime {
     }
 
     /**
-     * Validates all JSON storage without replacing active services or materializing missing files.
+     * Validates config and SQLite storage without replacing active services or materializing missing files.
      */
     public void validate() {
-        ClutchPermsConfig loadedConfig = ClutchPermsConfigs.jsonFile(storagePaths.configFile());
-        StorageWriteOptions writeOptions = loadedConfig.storageWriteOptions();
-        PermissionServices.jsonFile(storagePaths.permissionsFile(), writeOptions);
-        SubjectMetadataServices.jsonFile(storagePaths.subjectsFile(), writeOptions);
-        GroupServices.jsonFile(storagePaths.groupsFile(), writeOptions);
-        PermissionNodeRegistries.jsonFile(storagePaths.nodesFile(), writeOptions);
+        ClutchPermsConfigs.jsonFile(storagePaths.configFile());
+        if (Files.notExists(storagePaths.databaseFile())) {
+            return;
+        }
+        try (SqliteStore store = SqliteStore.openExisting(storagePaths.databaseFile(), dependencyMode)) {
+            PermissionServices.sqlite(store);
+            SubjectMetadataServices.sqlite(store);
+            GroupServices.sqlite(store);
+            PermissionNodeRegistries.sqlite(store);
+        }
     }
 
     /**
      * Clears active runtime services.
      */
     public synchronized void clear() {
+        closeQuietly(services);
         services = null;
     }
 
@@ -234,7 +272,40 @@ public final class ClutchPermsRuntime {
      * @return storage backup service
      */
     public StorageBackupService storageBackupService() {
-        return StorageBackupService.forFiles(storagePaths.backupRoot(), storagePaths.storageFiles(), config().backups().retentionLimit());
+        return StorageBackupService.forDatabase(storagePaths.backupRoot(), storagePaths.databaseFile(), activeServices().sqliteStore(), config().backups().retentionLimit());
+    }
+
+    /**
+     * Restores a database backup after closing the active SQLite pool, then reloads services from the restored database.
+     *
+     * @param kind storage kind; must be {@link StorageFileKind#DATABASE}
+     * @param backupFileName backup filename
+     * @return previously active services
+     */
+    public synchronized ClutchPermsRuntimeServices restoreBackup(StorageFileKind kind, String backupFileName) {
+        if (Objects.requireNonNull(kind, "kind") != StorageFileKind.DATABASE) {
+            throw new IllegalArgumentException("unsupported backup kind: " + kind.token());
+        }
+        ClutchPermsRuntimeServices previousServices = activeServices();
+        StorageBackupService backupService = StorageBackupService.forDatabase(storagePaths.backupRoot(), storagePaths.databaseFile(), previousServices.sqliteStore(),
+                config().backups().retentionLimit());
+        boolean[] closedActiveStore = {false};
+        try {
+            backupService.restoreBackup(StorageFileKind.DATABASE, backupFileName, () -> {
+                closedActiveStore[0] = true;
+                previousServices.close();
+            }, this::reload);
+            return previousServices;
+        } catch (RuntimeException exception) {
+            if (closedActiveStore[0]) {
+                try {
+                    reload();
+                } catch (RuntimeException rollbackReloadFailure) {
+                    exception.addSuppressed(rollbackReloadFailure);
+                }
+            }
+            throw exception;
+        }
     }
 
     /**
@@ -244,8 +315,7 @@ public final class ClutchPermsRuntime {
      * @return command status diagnostics
      */
     public CommandStatusDiagnostics statusDiagnostics(String runtimeBridgeStatus) {
-        return new CommandStatusDiagnostics(formatPath(storagePaths.permissionsFile()), formatPath(storagePaths.subjectsFile()), formatPath(storagePaths.groupsFile()),
-                formatPath(storagePaths.nodesFile()), runtimeBridgeStatus, formatPath(storagePaths.configFile()));
+        return new CommandStatusDiagnostics(formatPath(storagePaths.databaseFile()), runtimeBridgeStatus, formatPath(storagePaths.configFile()));
     }
 
     /**
@@ -259,11 +329,20 @@ public final class ClutchPermsRuntime {
 
     private ClutchPermsRuntimeServices loadServices() {
         ClutchPermsConfig loadedConfig = ClutchPermsConfigs.jsonFile(storagePaths.configFile());
-        StorageWriteOptions writeOptions = loadedConfig.storageWriteOptions();
-        PermissionService loadedPermissionService = PermissionServices.jsonFile(storagePaths.permissionsFile(), writeOptions);
-        SubjectMetadataService loadedSubjectMetadataService = SubjectMetadataServices.jsonFile(storagePaths.subjectsFile(), writeOptions);
-        GroupService loadedGroupService = GroupServices.jsonFile(storagePaths.groupsFile(), writeOptions);
-        MutablePermissionNodeRegistry loadedManualPermissionNodeRegistry = PermissionNodeRegistries.jsonFile(storagePaths.nodesFile(), writeOptions);
+        SqliteStore sqliteStore = SqliteStore.open(storagePaths.databaseFile(), dependencyMode);
+        PermissionService loadedPermissionService;
+        SubjectMetadataService loadedSubjectMetadataService;
+        GroupService loadedGroupService;
+        MutablePermissionNodeRegistry loadedManualPermissionNodeRegistry;
+        try {
+            loadedPermissionService = PermissionServices.sqlite(sqliteStore);
+            loadedSubjectMetadataService = SubjectMetadataServices.sqlite(sqliteStore);
+            loadedGroupService = GroupServices.sqlite(sqliteStore);
+            loadedManualPermissionNodeRegistry = PermissionNodeRegistries.sqlite(sqliteStore);
+        } catch (RuntimeException exception) {
+            sqliteStore.close();
+            throw exception;
+        }
 
         PermissionService observedPermissionService = PermissionServices.observing(loadedPermissionService, subjectId -> {
             invalidateSubjectCache(subjectId);
@@ -290,7 +369,7 @@ public final class ClutchPermsRuntime {
         PermissionNodeRegistry mergedPermissionNodeRegistry = createPermissionNodeRegistry(observedManualPermissionNodeRegistry);
         PermissionResolver loadedPermissionResolver = new PermissionResolver(observedPermissionService, observedGroupService);
         return new ClutchPermsRuntimeServices(observedPermissionService, loadedSubjectMetadataService, observedGroupService, observedManualPermissionNodeRegistry,
-                mergedPermissionNodeRegistry, loadedPermissionResolver, loadedConfig);
+                mergedPermissionNodeRegistry, loadedPermissionResolver, loadedConfig, sqliteStore);
     }
 
     private PermissionNodeRegistry createPermissionNodeRegistry(MutablePermissionNodeRegistry manualPermissionNodeRegistry) {
@@ -338,5 +417,12 @@ public final class ClutchPermsRuntime {
 
     private static String formatPath(Path path) {
         return path.toAbsolutePath().normalize().toString();
+    }
+
+    private static void closeQuietly(ClutchPermsRuntimeServices services) {
+        if (services == null) {
+            return;
+        }
+        services.close();
     }
 }
