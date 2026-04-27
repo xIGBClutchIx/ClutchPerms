@@ -26,6 +26,9 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestion;
 import com.mojang.brigadier.tree.CommandNode;
 
+import me.clutchy.clutchperms.common.audit.AuditEntry;
+import me.clutchy.clutchperms.common.audit.AuditLogService;
+import me.clutchy.clutchperms.common.audit.AuditLogServices;
 import me.clutchy.clutchperms.common.config.ClutchPermsBackupConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
@@ -221,7 +224,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(List.of("ClutchPerms commands (page 1/15):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/15 | Next >"),
+        assertEquals(List.of("ClutchPerms commands (page 1/16):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/16 | Next >"),
                 console.messages());
         assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
     }
@@ -386,7 +389,7 @@ class ClutchPermsCommandsTest {
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
-        assertEquals(List.of("ClutchPerms commands (page 1/15):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/15 | Next >"), help.messages());
+        assertEquals(List.of("ClutchPerms commands (page 1/16):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/16 | Next >"), help.messages());
 
         permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
         permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
@@ -413,6 +416,96 @@ class ClutchPermsCommandsTest {
         assertEquals(2, environment.configUpdates());
         assertEquals(2, environment.runtimeRefreshes());
         assertEquals(List.of("Reset config backups.retentionLimit: 3 -> 10. Runtime reloaded.", "Reset all config values to defaults. Runtime reloaded."), console.messages());
+    }
+
+    /**
+     * Confirms command mutations write audit history and history lists newest entries first.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void historyListsAuditedCommandMutationsNewestFirst() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target set example.node true", console);
+        dispatcher.execute("clutchperms group staff create", console);
+        dispatcher.execute("clutchperms group staff set group.node false", console);
+        dispatcher.execute("clutchperms user Target group add staff", console);
+        dispatcher.execute("clutchperms user Target prefix set &aTarget", console);
+        dispatcher.execute("clutchperms config set backups.retentionLimit 3", console);
+
+        List<AuditEntry> entries = environment.auditLogService().listNewestFirst();
+        assertEquals(List.of("config.set", "user.display.prefix.set", "user.group.add", "group.permission.set", "group.create", "user.permission.set"),
+                entries.stream().map(AuditEntry::action).toList());
+        assertEquals("user-permissions", entries.getLast().targetType());
+        assertTrue(entries.getLast().beforeJson().contains("\"permissions\":{}"));
+        assertTrue(entries.getLast().afterJson().contains("\"example.node\":\"TRUE\""));
+
+        TestSource history = TestSource.console();
+        dispatcher.execute("clutchperms history", history);
+
+        assertMessageContains(history, "#6");
+        assertMessageContains(history, "config.set backups.retentionLimit");
+        assertSuggests(history.commandMessages().get(1), "/clutchperms undo 6");
+    }
+
+    /**
+     * Confirms undo restores a user permission mutation and marks the original entry as undone.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void undoRestoresUserPermissionMutation() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target set example.node true", console);
+        dispatcher.execute("clutchperms undo 1", console);
+
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(TARGET_ID, "example.node"));
+        AuditEntry original = environment.auditLogService().get(1).orElseThrow();
+        assertTrue(original.undone());
+        assertEquals(Optional.of(2L), original.undoneByEntryId());
+        assertEquals("undo", environment.auditLogService().get(2).orElseThrow().action());
+        assertEquals(List.of("Set example.node for Target (00000000-0000-0000-0000-000000000002) to TRUE.", "Undid audit history entry 1."), console.messages());
+    }
+
+    /**
+     * Confirms undo refuses to overwrite newer changes.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void undoFailsWhenCurrentStateConflicts() throws CommandSyntaxException {
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target set example.node true", console);
+        permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.FALSE);
+
+        assertCommandFails("clutchperms undo 1", console, "Audit history entry 1 cannot be undone because the current target state has changed.");
+        assertEquals(PermissionValue.FALSE, permissionService.getPermission(TARGET_ID, "example.node"));
+    }
+
+    /**
+     * Confirms undo can restore deleted group state.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void undoRestoresDeletedGroupState() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "group.node", PermissionValue.TRUE);
+        groupService.setGroupPrefix("staff", DisplayText.parse("&7[Staff]"));
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff delete", console);
+        dispatcher.execute("clutchperms group staff delete", console);
+        dispatcher.execute("clutchperms undo 1", console);
+
+        assertTrue(groupService.hasGroup("staff"));
+        assertEquals(PermissionValue.TRUE, groupService.getGroupPermission("staff", "group.node"));
+        assertEquals("&7[Staff]", groupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
+        assertTrue(groupService.getSubjectGroups(TARGET_ID).contains("staff"));
     }
 
     /**
@@ -2444,8 +2537,7 @@ class ClutchPermsCommandsTest {
 
     private static List<String> commandListPageOneMessages(String rootLiteral) {
         return List.of("ClutchPerms commands (page 1/7):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
-                "/" + rootLiteral + " validate", "/" + rootLiteral + " config list", "/" + rootLiteral + " config get <key>", "/" + rootLiteral + " config set <key> <value>",
-                "Page 1/7 | Next >");
+                "/" + rootLiteral + " validate", "/" + rootLiteral + " history [page]", "/" + rootLiteral + " undo <id>", "/" + rootLiteral + " config list", "Page 1/7 | Next >");
     }
 
     private static List<String> commandListPageTwoMessages() {
@@ -2453,9 +2545,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageTwoMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 2/7):", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup create",
-                "/" + rootLiteral + " backup list [page]", "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup restore <backup-file>",
-                "/" + rootLiteral + " user <target> info", "/" + rootLiteral + " user <target> list [page]", "< Prev | Page 2/7 | Next >");
+        return List.of("ClutchPerms commands (page 2/7):", "/" + rootLiteral + " config get <key>", "/" + rootLiteral + " config set <key> <value>",
+                "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup create", "/" + rootLiteral + " backup list [page]",
+                "/" + rootLiteral + " backup list page <page>", "/" + rootLiteral + " backup restore <backup-file>", "< Prev | Page 2/7 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {
@@ -2529,6 +2621,8 @@ class ClutchPermsCommandsTest {
         private final MutablePermissionNodeRegistry manualPermissionNodeRegistry;
 
         private final PermissionResolver permissionResolver;
+
+        private final AuditLogService auditLogService = AuditLogServices.inMemory();
 
         private final Map<String, CommandSubject> onlineSubjects = new LinkedHashMap<>();
 
@@ -2644,6 +2738,11 @@ class ClutchPermsCommandsTest {
         @Override
         public ClutchPermsConfig config() {
             return config;
+        }
+
+        @Override
+        public AuditLogService auditLogService() {
+            return auditLogService;
         }
 
         @Override

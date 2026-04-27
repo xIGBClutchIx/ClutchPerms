@@ -295,6 +295,7 @@ final class ForgeClutchPermsPermissionHandlerTest {
         assertEquals(PermissionValue.TRUE, persistedPermissionValueFromDatabase(backup.path(), "example.backup"));
 
         assertEquals(1, dispatcher.execute("clutchperms backup restore " + backup.fileName(), console));
+        assertEquals(1, dispatcher.execute("clutchperms backup restore " + backup.fileName(), console));
 
         assertEquals(PermissionValue.TRUE, persistedPermissionValue(temporaryDirectory, "example.backup"));
         assertEquals(Boolean.TRUE, suppliedHandler.getOfflinePermission(SUBJECT_ID, backupNode));
@@ -607,6 +608,14 @@ final class ForgeClutchPermsPermissionHandlerTest {
         @Override
         public StorageBackupService storageBackupService() {
             return StorageBackupService.forDatabase(storageDirectory.resolve("backups"), databaseFile(storageDirectory), store, 10);
+        }
+
+        @Override
+        public void restoreBackup(StorageFileKind kind, String backupFileName) {
+            storageBackupService().restoreBackup(kind, backupFileName, store::close, () -> {
+                applyStore(openStore(storageDirectory));
+                refreshRuntimePermissions();
+            });
         }
 
         @Override

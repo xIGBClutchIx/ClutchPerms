@@ -7,6 +7,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 
+import me.clutchy.clutchperms.common.audit.AuditLogService;
+import me.clutchy.clutchperms.common.audit.AuditLogServices;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.display.DisplayResolver;
 import me.clutchy.clutchperms.common.group.GroupService;
@@ -102,6 +104,15 @@ public interface ClutchPermsCommandEnvironment<S> {
      */
     default ClutchPermsConfig config() {
         return ClutchPermsConfig.defaults();
+    }
+
+    /**
+     * Returns command audit history storage.
+     *
+     * @return audit log service
+     */
+    default AuditLogService auditLogService() {
+        return AuditLogServices.inMemory();
     }
 
     /**

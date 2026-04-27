@@ -12,6 +12,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 
+import me.clutchy.clutchperms.common.audit.AuditLogService;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
@@ -168,6 +169,15 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
      */
     public PermissionResolver getPermissionResolver() {
         return getRuntime().permissionResolver();
+    }
+
+    /**
+     * Exposes command audit history storage for command adapters and tests.
+     *
+     * @return active audit log service
+     */
+    public AuditLogService getAuditLogService() {
+        return getRuntime().auditLogService();
     }
 
     /**

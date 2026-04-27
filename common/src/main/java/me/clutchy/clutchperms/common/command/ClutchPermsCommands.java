@@ -14,14 +14,21 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.LiteralMessage;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
@@ -33,6 +40,8 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 
+import me.clutchy.clutchperms.common.audit.AuditEntry;
+import me.clutchy.clutchperms.common.audit.AuditLogRecord;
 import me.clutchy.clutchperms.common.command.subcommand.AuthorizedCommand;
 import me.clutchy.clutchperms.common.command.subcommand.BackupSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.ConfigSubcommand;
@@ -45,6 +54,7 @@ import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsPaperConfig;
+import me.clutchy.clutchperms.common.display.DisplayProfile;
 import me.clutchy.clutchperms.common.display.DisplayResolution;
 import me.clutchy.clutchperms.common.display.DisplaySlot;
 import me.clutchy.clutchperms.common.display.DisplayText;
@@ -113,6 +123,8 @@ public final class ClutchPermsCommands {
 
     private static final String PAGE_ARGUMENT = CommandArguments.PAGE;
 
+    private static final String AUDIT_ID_ARGUMENT = "id";
+
     private static final String UNKNOWN_ARGUMENT = CommandArguments.UNKNOWN;
 
     private static final int TARGET_MATCH_LIMIT = 5;
@@ -124,6 +136,8 @@ public final class ClutchPermsCommands {
     private static final Object CONSOLE_CONFIRMATION_SOURCE = new Object();
 
     private static final Map<ConfirmationSource, PendingConfirmation> PENDING_CONFIRMATIONS = new HashMap<>();
+
+    private static final Gson GSON = new Gson();
 
     private static Clock confirmationClock = Clock.systemUTC();
 
@@ -149,6 +163,8 @@ public final class ClutchPermsCommands {
 
     private static final DynamicCommandExceptionType DISPLAY_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
+    private static final DynamicCommandExceptionType AUDIT_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
     private static final List<ConfigEntry> CONFIG_ENTRIES = List.of(
             integerConfig("backups.retentionLimit", "newest database backups kept", ClutchPermsBackupConfig.MIN_RETENTION_LIMIT, ClutchPermsBackupConfig.MAX_RETENTION_LIMIT,
                     ClutchPermsBackupConfig.DEFAULT_RETENTION_LIMIT, config -> config.backups().retentionLimit(),
@@ -173,6 +189,8 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("status", PermissionNodes.ADMIN_STATUS, "Shows storage, counts, resolver cache, and bridge status."),
             new CommandHelpEntry("reload", PermissionNodes.ADMIN_RELOAD, "Reloads config and database storage, then refreshes runtime permissions."),
             new CommandHelpEntry("validate", PermissionNodes.ADMIN_VALIDATE, "Checks config and database storage without applying it."),
+            new CommandHelpEntry("history [page]", PermissionNodes.ADMIN_HISTORY, "Lists command mutation history."),
+            new CommandHelpEntry("undo <id>", PermissionNodes.ADMIN_UNDO, "Reverts one undoable history entry."),
             new CommandHelpEntry("config list", PermissionNodes.ADMIN_CONFIG_VIEW, "Lists active runtime config values."),
             new CommandHelpEntry("config get <key>", PermissionNodes.ADMIN_CONFIG_VIEW, "Shows one config value."),
             new CommandHelpEntry("config set <key> <value>", PermissionNodes.ADMIN_CONFIG_SET, "Updates config and reloads runtime."),
@@ -299,7 +317,7 @@ public final class ClutchPermsCommands {
         return LiteralArgumentBuilder.<S>literal(literal)
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context)))
                 .then(helpCommand(environment)).then(statusCommand(environment)).then(reloadCommand(environment)).then(validateCommand(environment))
-                .then(ConfigSubcommand.builder(authorized, configHandlers(environment), CONFIG_KEYS))
+                .then(historyCommand(environment)).then(undoCommand(environment)).then(ConfigSubcommand.builder(authorized, configHandlers(environment), CONFIG_KEYS))
                 .then(BackupSubcommand.builder(environment, authorized, backupHandlers(environment)))
                 .then(UserSubcommand.builder(environment, authorized, userHandlers(environment), (context, builder) -> suggestPermissionNodes(environment, context, builder),
                         (context, builder) -> suggestPermissionAssignment(environment, context, builder)))
@@ -350,6 +368,20 @@ public final class ClutchPermsCommands {
     private static <S> LiteralArgumentBuilder<S> validateCommand(ClutchPermsCommandEnvironment<S> environment) {
         return LiteralArgumentBuilder.<S>literal("validate").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_VALIDATE))
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_VALIDATE, source -> validateStorage(environment, context)));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> historyCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("history").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_HISTORY))
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HISTORY, source -> listHistory(environment, context)))
+                .then(RequiredArgumentBuilder.<S, String>argument(PAGE_ARGUMENT, StringArgumentType.word())
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HISTORY, source -> listHistory(environment, context))));
+    }
+
+    private static <S> LiteralArgumentBuilder<S> undoCommand(ClutchPermsCommandEnvironment<S> environment) {
+        return LiteralArgumentBuilder.<S>literal("undo").requires(source -> canUse(environment, source, PermissionNodes.ADMIN_UNDO))
+                .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_UNDO, source -> sendUndoUsage(environment, context)))
+                .then(RequiredArgumentBuilder.<S, Long>argument(AUDIT_ID_ARGUMENT, LongArgumentType.longArg(1))
+                        .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_UNDO, source -> undoAuditEntry(environment, context))));
     }
 
     private static <S> ConfigSubcommand.Handlers<S> configHandlers(ClutchPermsCommandEnvironment<S> environment) {
@@ -932,6 +964,27 @@ public final class ClutchPermsCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    private static <S> int listHistory(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        int page = requestedPage(context, "history");
+        int pageSize = environment.config().commands().resultPageSize();
+        List<AuditEntry> entries = environment.auditLogService().listNewestFirst();
+        if (entries.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.historyEmpty());
+            return Command.SINGLE_SUCCESS;
+        }
+
+        int totalPages = totalPages(entries.size(), pageSize);
+        requirePageInRange(context, page, totalPages, "history");
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = pageItems(entries, page, pageSize).stream().map(entry -> historyRow(rootLiteral, entry)).toList();
+        sendPagedRows(environment, context, "History", rows, "history");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int sendUndoUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing history id.", "Choose an undoable history entry id.", List.of("undo <id>"));
+    }
+
     private static <S> int sendBackupUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         return sendUsage(environment, context, "Missing backup command.", "Database backups can be created, listed, or restored by file name.", backupUsages());
     }
@@ -1325,6 +1378,7 @@ public final class ClutchPermsCommands {
             environment.sendMessage(context.getSource(), CommandLang.configAlreadySet(entry.key(), oldValue));
             return Command.SINGLE_SUCCESS;
         }
+        String beforeJson = configSnapshot(environment.config());
 
         try {
             environment.updateConfig(config -> entry.withValue(config, newValue));
@@ -1332,6 +1386,7 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw CONFIG_OPERATION_FAILED.create(CommandLang.configOperationFailed(exception));
         }
+        recordAudit(environment, context, "config.set", "config", entry.key(), entry.key(), beforeJson, configSnapshot(environment.config()), true);
 
         environment.sendMessage(context.getSource(), CommandLang.configUpdated(entry.key(), oldValue, newValue));
         return Command.SINGLE_SUCCESS;
@@ -1350,6 +1405,7 @@ public final class ClutchPermsCommands {
             environment.sendMessage(context.getSource(), CommandLang.configAlreadySet(entry.key(), oldValue));
             return Command.SINGLE_SUCCESS;
         }
+        String beforeJson = configSnapshot(environment.config());
 
         try {
             environment.updateConfig(config -> entry.withValue(config, defaultValue));
@@ -1357,16 +1413,19 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw CONFIG_OPERATION_FAILED.create(CommandLang.configOperationFailed(exception));
         }
+        recordAudit(environment, context, "config.reset", "config", entry.key(), entry.key(), beforeJson, configSnapshot(environment.config()), true);
 
         environment.sendMessage(context.getSource(), CommandLang.configReset(entry.key(), oldValue, defaultValue));
         return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int resetAllConfig(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
-        if (environment.config().equals(ClutchPermsConfig.defaults())) {
+        ClutchPermsConfig beforeConfig = environment.config();
+        if (beforeConfig.equals(ClutchPermsConfig.defaults())) {
             environment.sendMessage(context.getSource(), CommandLang.configAlreadyDefaults());
             return Command.SINGLE_SUCCESS;
         }
+        String beforeJson = configSnapshot(beforeConfig);
 
         try {
             environment.updateConfig(config -> ClutchPermsConfig.defaults());
@@ -1374,6 +1433,7 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw CONFIG_OPERATION_FAILED.create(CommandLang.configOperationFailed(exception));
         }
+        recordAudit(environment, context, "config.reset-all", "config", "all", "all config", beforeJson, configSnapshot(environment.config()), true);
 
         environment.sendMessage(context.getSource(), CommandLang.configResetAll());
         return Command.SINGLE_SUCCESS;
@@ -1497,12 +1557,15 @@ public final class ClutchPermsCommands {
     private static <S> int setPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         PermissionAssignment assignment = getPermissionAssignment(context);
+        String beforeJson = subjectPermissionsSnapshot(environment, subject.id());
 
         try {
             environment.permissionService().setPermission(subject.id(), assignment.node(), assignment.value());
         } catch (RuntimeException exception) {
             throw PERMISSION_OPERATION_FAILED.create(CommandLang.permissionOperationFailed(exception));
         }
+        recordAudit(environment, context, "user.permission.set", "user-permissions", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectPermissionsSnapshot(environment, subject.id()), true);
         environment.sendMessage(context.getSource(), CommandLang.permissionSet(assignment.node(), formatSubject(subject), assignment.value()));
         return Command.SINGLE_SUCCESS;
     }
@@ -1510,12 +1573,15 @@ public final class ClutchPermsCommands {
     private static <S> int clearPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         String node = getNode(context);
+        String beforeJson = subjectPermissionsSnapshot(environment, subject.id());
 
         try {
             environment.permissionService().clearPermission(subject.id(), node);
         } catch (RuntimeException exception) {
             throw PERMISSION_OPERATION_FAILED.create(CommandLang.permissionOperationFailed(exception));
         }
+        recordAudit(environment, context, "user.permission.clear", "user-permissions", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectPermissionsSnapshot(environment, subject.id()), true);
         environment.sendMessage(context.getSource(), CommandLang.permissionClear(node, formatSubject(subject)));
         return Command.SINGLE_SUCCESS;
     }
@@ -1529,6 +1595,7 @@ public final class ClutchPermsCommands {
         if (!confirmDestructiveCommand(environment, context, confirmationOperation("user-clear-all", subject.id().toString()))) {
             return Command.SINGLE_SUCCESS;
         }
+        String beforeJson = subjectPermissionsSnapshot(environment, subject.id());
         int removedPermissions;
         try {
             removedPermissions = environment.permissionService().clearPermissions(subject.id());
@@ -1539,6 +1606,8 @@ public final class ClutchPermsCommands {
         if (removedPermissions == 0) {
             environment.sendMessage(context.getSource(), CommandLang.permissionsEmpty(formatSubject(subject)));
         } else {
+            recordAudit(environment, context, "user.permission.clear-all", "user-permissions", subject.id().toString(), formatSubject(subject), beforeJson,
+                    subjectPermissionsSnapshot(environment, subject.id()), true);
             environment.sendMessage(context.getSource(), CommandLang.permissionsClearAll(formatSubject(subject), removedPermissions));
         }
         return Command.SINGLE_SUCCESS;
@@ -1566,6 +1635,7 @@ public final class ClutchPermsCommands {
     private static <S> int setUserDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         DisplayText displayText = getDisplayText(context);
+        String beforeJson = subjectDisplaySnapshot(environment, subject.id());
         try {
             if (slot == DisplaySlot.PREFIX) {
                 environment.subjectMetadataService().setSubjectPrefix(subject.id(), displayText);
@@ -1575,12 +1645,15 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
         }
+        recordAudit(environment, context, "user.display." + slot.label() + ".set", "user-display", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectDisplaySnapshot(environment, subject.id()), true);
         environment.sendMessage(context.getSource(), CommandLang.userDisplaySet(slot.label(), formatSubject(subject), displayText.rawText()));
         return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int clearUserDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
+        String beforeJson = subjectDisplaySnapshot(environment, subject.id());
         try {
             if (slot == DisplaySlot.PREFIX) {
                 environment.subjectMetadataService().clearSubjectPrefix(subject.id());
@@ -1590,6 +1663,8 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
         }
+        recordAudit(environment, context, "user.display." + slot.label() + ".clear", "user-display", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectDisplaySnapshot(environment, subject.id()), true);
         environment.sendMessage(context.getSource(), CommandLang.userDisplayClear(slot.label(), formatSubject(subject)));
         return Command.SINGLE_SUCCESS;
     }
@@ -1618,12 +1693,15 @@ public final class ClutchPermsCommands {
     private static <S> int addSubjectGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        String beforeJson = subjectMembershipSnapshot(environment, subject.id());
         try {
             environment.groupService().addSubjectGroup(subject.id(), groupName);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
+        recordAudit(environment, context, "user.group.add", "user-groups", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectMembershipSnapshot(environment, subject.id()), true);
         environment.sendMessage(context.getSource(), CommandLang.userGroupAdded(formatSubject(subject), normalizeGroupName(groupName)));
         return Command.SINGLE_SUCCESS;
     }
@@ -1631,18 +1709,22 @@ public final class ClutchPermsCommands {
     private static <S> int removeSubjectGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        String beforeJson = subjectMembershipSnapshot(environment, subject.id());
         try {
             environment.groupService().removeSubjectGroup(subject.id(), groupName);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
+        recordAudit(environment, context, "user.group.remove", "user-groups", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectMembershipSnapshot(environment, subject.id()), true);
         environment.sendMessage(context.getSource(), CommandLang.userGroupRemoved(formatSubject(subject), normalizeGroupName(groupName)));
         return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int mutateOpGroupMembership(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, boolean addMembership) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
+        String beforeJson = subjectMembershipSnapshot(environment, subject.id());
         try {
             if (addMembership) {
                 environment.groupService().addSubjectGroup(subject.id(), GroupService.OP_GROUP);
@@ -1654,6 +1736,8 @@ public final class ClutchPermsCommands {
         }
 
         environment.refreshRuntimePermissions();
+        recordAudit(environment, context, addMembership ? "user.group.add" : "user.group.remove", "user-groups", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectMembershipSnapshot(environment, subject.id()), true);
         if (addMembership) {
             environment.sendMessage(context.getSource(), CommandLang.userGroupAdded(formatSubject(subject), GroupService.OP_GROUP));
         } else {
@@ -1720,13 +1804,16 @@ public final class ClutchPermsCommands {
 
     private static <S> int createGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = getGroupName(context);
+        String normalizedGroupName = normalizeGroupName(groupName);
+        String beforeJson = groupSnapshot(environment, normalizedGroupName);
         try {
             environment.groupService().createGroup(groupName);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
-        environment.sendMessage(context.getSource(), CommandLang.groupCreated(normalizeGroupName(groupName)));
+        recordAudit(environment, context, "group.create", "group", normalizedGroupName, normalizedGroupName, beforeJson, groupSnapshot(environment, normalizedGroupName), true);
+        environment.sendMessage(context.getSource(), CommandLang.groupCreated(normalizedGroupName));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -1741,12 +1828,14 @@ public final class ClutchPermsCommands {
         if (!confirmDestructiveCommand(environment, context, confirmationOperation("group-delete", groupName))) {
             return Command.SINGLE_SUCCESS;
         }
+        String beforeJson = groupSnapshot(environment, groupName);
         try {
             environment.groupService().deleteGroup(groupName);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
+        recordAudit(environment, context, "group.delete", "group", groupName, groupName, beforeJson, groupSnapshot(environment, groupName), true);
         environment.sendMessage(context.getSource(), CommandLang.groupDeleted(normalizeGroupName(groupName)));
         return Command.SINGLE_SUCCESS;
     }
@@ -1754,12 +1843,16 @@ public final class ClutchPermsCommands {
     private static <S> int renameGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String newGroupName = getNewGroupName(context);
+        String normalizedNewGroupName = normalizeGroupName(newGroupName);
+        String beforeJson = renameGroupSnapshot(environment, groupName, normalizedNewGroupName);
         try {
             environment.groupService().renameGroup(groupName, newGroupName);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
+        recordAudit(environment, context, "group.rename", "group-rename", groupName + "->" + normalizedNewGroupName, groupName + " -> " + normalizedNewGroupName, beforeJson,
+                renameGroupSnapshot(environment, groupName, normalizedNewGroupName), true);
         environment.sendMessage(context.getSource(), CommandLang.groupRenamed(normalizeGroupName(groupName), normalizeGroupName(newGroupName)));
         return Command.SINGLE_SUCCESS;
     }
@@ -1893,12 +1986,14 @@ public final class ClutchPermsCommands {
     private static <S> int addGroupParent(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String parentGroupName = requireExistingParentGroup(environment, context, getParentGroupName(context));
+        String beforeJson = groupSnapshot(environment, groupName);
         try {
             environment.groupService().addGroupParent(groupName, parentGroupName);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
+        recordAudit(environment, context, "group.parent.add", "group", groupName, groupName, beforeJson, groupSnapshot(environment, groupName), true);
         environment.sendMessage(context.getSource(), CommandLang.groupParentAdded(normalizeGroupName(groupName), normalizeGroupName(parentGroupName)));
         return Command.SINGLE_SUCCESS;
     }
@@ -1906,12 +2001,14 @@ public final class ClutchPermsCommands {
     private static <S> int removeGroupParent(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String parentGroupName = requireExistingParentGroup(environment, context, getParentGroupName(context));
+        String beforeJson = groupSnapshot(environment, groupName);
         try {
             environment.groupService().removeGroupParent(groupName, parentGroupName);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
+        recordAudit(environment, context, "group.parent.remove", "group", groupName, groupName, beforeJson, groupSnapshot(environment, groupName), true);
         environment.sendMessage(context.getSource(), CommandLang.groupParentRemoved(normalizeGroupName(groupName), normalizeGroupName(parentGroupName)));
         return Command.SINGLE_SUCCESS;
     }
@@ -1933,12 +2030,14 @@ public final class ClutchPermsCommands {
     private static <S> int setGroupPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         PermissionAssignment assignment = getPermissionAssignment(context);
+        String beforeJson = groupPermissionsSnapshot(environment, groupName);
         try {
             environment.groupService().setGroupPermission(groupName, assignment.node(), assignment.value());
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
+        recordAudit(environment, context, "group.permission.set", "group-permissions", groupName, groupName, beforeJson, groupPermissionsSnapshot(environment, groupName), true);
         environment.sendMessage(context.getSource(), CommandLang.groupPermissionSet(assignment.node(), normalizeGroupName(groupName), assignment.value()));
         return Command.SINGLE_SUCCESS;
     }
@@ -1946,12 +2045,14 @@ public final class ClutchPermsCommands {
     private static <S> int clearGroupPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String node = getNode(context);
+        String beforeJson = groupPermissionsSnapshot(environment, groupName);
         try {
             environment.groupService().clearGroupPermission(groupName, node);
         } catch (RuntimeException exception) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(exception));
         }
 
+        recordAudit(environment, context, "group.permission.clear", "group-permissions", groupName, groupName, beforeJson, groupPermissionsSnapshot(environment, groupName), true);
         environment.sendMessage(context.getSource(), CommandLang.groupPermissionClear(node, normalizeGroupName(groupName)));
         return Command.SINGLE_SUCCESS;
     }
@@ -1968,6 +2069,7 @@ public final class ClutchPermsCommands {
         if (!confirmDestructiveCommand(environment, context, confirmationOperation("group-clear-all", groupName))) {
             return Command.SINGLE_SUCCESS;
         }
+        String beforeJson = groupPermissionsSnapshot(environment, groupName);
         int removedPermissions;
         try {
             removedPermissions = environment.groupService().clearGroupPermissions(groupName);
@@ -1979,6 +2081,8 @@ public final class ClutchPermsCommands {
         if (removedPermissions == 0) {
             environment.sendMessage(context.getSource(), CommandLang.groupPermissionsEmpty(normalizedGroupName));
         } else {
+            recordAudit(environment, context, "group.permission.clear-all", "group-permissions", normalizedGroupName, normalizedGroupName, beforeJson,
+                    groupPermissionsSnapshot(environment, normalizedGroupName), true);
             environment.sendMessage(context.getSource(), CommandLang.groupPermissionsClearAll(normalizedGroupName, removedPermissions));
         }
         return Command.SINGLE_SUCCESS;
@@ -1998,6 +2102,7 @@ public final class ClutchPermsCommands {
     private static <S> int setGroupDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         DisplayText displayText = getDisplayText(context);
+        String beforeJson = groupDisplaySnapshot(environment, groupName);
         try {
             if (slot == DisplaySlot.PREFIX) {
                 environment.groupService().setGroupPrefix(groupName, displayText);
@@ -2007,12 +2112,15 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
         }
+        recordAudit(environment, context, "group.display." + slot.label() + ".set", "group-display", groupName, groupName, beforeJson, groupDisplaySnapshot(environment, groupName),
+                true);
         environment.sendMessage(context.getSource(), CommandLang.groupDisplaySet(slot.label(), groupName, displayText.rawText()));
         return Command.SINGLE_SUCCESS;
     }
 
     private static <S> int clearGroupDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        String beforeJson = groupDisplaySnapshot(environment, groupName);
         try {
             if (slot == DisplaySlot.PREFIX) {
                 environment.groupService().clearGroupPrefix(groupName);
@@ -2022,6 +2130,8 @@ public final class ClutchPermsCommands {
         } catch (RuntimeException exception) {
             throw DISPLAY_OPERATION_FAILED.create(CommandLang.displayOperationFailed(exception));
         }
+        recordAudit(environment, context, "group.display." + slot.label() + ".clear", "group-display", groupName, groupName, beforeJson,
+                groupDisplaySnapshot(environment, groupName), true);
         environment.sendMessage(context.getSource(), CommandLang.groupDisplayClear(slot.label(), groupName));
         return Command.SINGLE_SUCCESS;
     }
@@ -2354,6 +2464,330 @@ public final class ClutchPermsCommands {
 
     private static String confirmationOperation(String action, String target) {
         return action + ":" + target;
+    }
+
+    private static <S> void recordAudit(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String action, String targetType, String targetKey,
+            String targetDisplay, String beforeJson, String afterJson, boolean undoable) {
+        try {
+            environment.auditLogService()
+                    .append(new AuditLogRecord(Instant.now(), environment.sourceKind(context.getSource()), environment.sourceSubjectId(context.getSource()),
+                            actorName(environment, context.getSource()), action, targetType, targetKey, targetDisplay, canonicalJson(beforeJson), canonicalJson(afterJson),
+                            confirmationCommand(context), undoable));
+        } catch (RuntimeException exception) {
+            environment.sendMessage(context.getSource(), CommandLang.auditFailed(exception));
+        }
+    }
+
+    private static <S> Optional<String> actorName(ClutchPermsCommandEnvironment<S> environment, S source) {
+        if (environment.sourceKind(source) == CommandSourceKind.PLAYER) {
+            return environment.sourceSubjectId(source).flatMap(subjectId -> environment.subjectMetadataService().getSubject(subjectId).map(SubjectMetadata::lastKnownName));
+        }
+        if (environment.sourceKind(source) == CommandSourceKind.CONSOLE) {
+            return Optional.of("console");
+        }
+        return Optional.empty();
+    }
+
+    private static <S> PagedRow historyRow(String rootLiteral, AuditEntry entry) {
+        String status = entry.undone() ? " undone" : "";
+        String text = "#" + entry.id() + " " + entry.timestamp() + " " + entry.action() + " " + entry.targetDisplay() + " by " + formatAuditActor(entry) + status;
+        return new PagedRow(text, fullCommand(rootLiteral, "undo " + entry.id()));
+    }
+
+    private static String formatAuditActor(AuditEntry entry) {
+        return entry.actorName().or(() -> entry.actorId().map(UUID::toString)).orElse(entry.actorKind().name().toLowerCase(Locale.ROOT));
+    }
+
+    private static <S> int undoAuditEntry(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        long id = LongArgumentType.getLong(context, AUDIT_ID_ARGUMENT);
+        AuditEntry entry = environment.auditLogService().get(id).orElseThrow(() -> AUDIT_OPERATION_FAILED.create(CommandLang.auditMissing(id)));
+        if (!entry.undoable()) {
+            throw AUDIT_OPERATION_FAILED.create(CommandLang.auditNotUndoable(id));
+        }
+        if (entry.undone()) {
+            throw AUDIT_OPERATION_FAILED.create(CommandLang.auditAlreadyUndone(id));
+        }
+
+        String currentJson = currentUndoSnapshot(environment, entry);
+        if (!canonicalJson(currentJson).equals(canonicalJson(entry.afterJson()))) {
+            throw AUDIT_OPERATION_FAILED.create(CommandLang.auditConflict(id));
+        }
+
+        applyUndoSnapshot(environment, entry);
+        AuditEntry undoEntry;
+        try {
+            undoEntry = environment.auditLogService()
+                    .append(new AuditLogRecord(Instant.now(), environment.sourceKind(context.getSource()), environment.sourceSubjectId(context.getSource()),
+                            actorName(environment, context.getSource()), "undo", entry.targetType(), entry.targetKey(), "undo #" + entry.id() + " " + entry.targetDisplay(),
+                            canonicalJson(entry.afterJson()), canonicalJson(entry.beforeJson()), confirmationCommand(context), false));
+            environment.auditLogService().markUndone(entry.id(), undoEntry.id(), undoEntry.timestamp(), environment.sourceSubjectId(context.getSource()),
+                    actorName(environment, context.getSource()));
+        } catch (RuntimeException exception) {
+            environment.sendMessage(context.getSource(), CommandLang.auditFailed(exception));
+        }
+        environment.refreshRuntimePermissions();
+        environment.sendMessage(context.getSource(), CommandLang.auditUndone(id));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> String currentUndoSnapshot(ClutchPermsCommandEnvironment<S> environment, AuditEntry entry) {
+        return switch (entry.targetType()) {
+            case "user-permissions" -> subjectPermissionsSnapshot(environment, UUID.fromString(entry.targetKey()));
+            case "user-display" -> subjectDisplaySnapshot(environment, UUID.fromString(entry.targetKey()));
+            case "user-groups" -> subjectMembershipSnapshot(environment, UUID.fromString(entry.targetKey()));
+            case "group" -> groupSnapshot(environment, entry.targetKey());
+            case "group-rename" -> renameSnapshotForEntry(environment, entry);
+            case "group-permissions" -> groupPermissionsSnapshot(environment, entry.targetKey());
+            case "group-display" -> groupDisplaySnapshot(environment, entry.targetKey());
+            case "config" -> configSnapshot(environment.config());
+            default -> throw new IllegalArgumentException("unsupported undo target type: " + entry.targetType());
+        };
+    }
+
+    private static <S> void applyUndoSnapshot(ClutchPermsCommandEnvironment<S> environment, AuditEntry entry) {
+        switch (entry.targetType()) {
+            case "user-permissions" -> applySubjectPermissionsSnapshot(environment, UUID.fromString(entry.targetKey()), entry.beforeJson());
+            case "user-display" -> applySubjectDisplaySnapshot(environment, UUID.fromString(entry.targetKey()), entry.beforeJson());
+            case "user-groups" -> applySubjectMembershipSnapshot(environment, UUID.fromString(entry.targetKey()), entry.beforeJson());
+            case "group" -> applyGroupSnapshot(environment, entry.targetKey(), entry.beforeJson());
+            case "group-rename" -> applyRenameSnapshot(environment, entry.beforeJson());
+            case "group-permissions" -> applyGroupPermissionsSnapshot(environment, entry.targetKey(), entry.beforeJson());
+            case "group-display" -> applyGroupDisplaySnapshot(environment, entry.targetKey(), entry.beforeJson());
+            case "config" -> applyConfigSnapshot(environment, entry.beforeJson());
+            default -> throw new IllegalArgumentException("unsupported undo target type: " + entry.targetType());
+        }
+    }
+
+    private static <S> String subjectPermissionsSnapshot(ClutchPermsCommandEnvironment<S> environment, UUID subjectId) {
+        JsonObject root = new JsonObject();
+        JsonObject permissions = new JsonObject();
+        new TreeMap<>(environment.permissionService().getPermissions(subjectId)).forEach((node, value) -> permissions.addProperty(node, value.name()));
+        root.add("permissions", permissions);
+        return GSON.toJson(root);
+    }
+
+    private static <S> void applySubjectPermissionsSnapshot(ClutchPermsCommandEnvironment<S> environment, UUID subjectId, String snapshotJson) {
+        JsonObject permissions = JsonParser.parseString(snapshotJson).getAsJsonObject().getAsJsonObject("permissions");
+        environment.permissionService().clearPermissions(subjectId);
+        permissions.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> environment.permissionService().setPermission(subjectId, entry.getKey(), PermissionValue.valueOf(entry.getValue().getAsString())));
+    }
+
+    private static <S> String subjectDisplaySnapshot(ClutchPermsCommandEnvironment<S> environment, UUID subjectId) {
+        return displaySnapshot(environment.subjectMetadataService().getSubjectDisplay(subjectId));
+    }
+
+    private static <S> void applySubjectDisplaySnapshot(ClutchPermsCommandEnvironment<S> environment, UUID subjectId, String snapshotJson) {
+        JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
+        applySubjectDisplayValue(environment, subjectId, DisplaySlot.PREFIX, root.get("prefix"));
+        applySubjectDisplayValue(environment, subjectId, DisplaySlot.SUFFIX, root.get("suffix"));
+    }
+
+    private static <S> void applySubjectDisplayValue(ClutchPermsCommandEnvironment<S> environment, UUID subjectId, DisplaySlot slot, JsonElement value) {
+        if (value == null || value.isJsonNull()) {
+            if (slot == DisplaySlot.PREFIX) {
+                environment.subjectMetadataService().clearSubjectPrefix(subjectId);
+            } else {
+                environment.subjectMetadataService().clearSubjectSuffix(subjectId);
+            }
+            return;
+        }
+        DisplayText displayText = DisplayText.parse(value.getAsString());
+        if (slot == DisplaySlot.PREFIX) {
+            environment.subjectMetadataService().setSubjectPrefix(subjectId, displayText);
+        } else {
+            environment.subjectMetadataService().setSubjectSuffix(subjectId, displayText);
+        }
+    }
+
+    private static <S> String subjectMembershipSnapshot(ClutchPermsCommandEnvironment<S> environment, UUID subjectId) {
+        JsonObject root = new JsonObject();
+        JsonArray groups = new JsonArray();
+        environment.groupService().getSubjectGroups(subjectId).stream().sorted().forEach(groups::add);
+        root.add("groups", groups);
+        return GSON.toJson(root);
+    }
+
+    private static <S> void applySubjectMembershipSnapshot(ClutchPermsCommandEnvironment<S> environment, UUID subjectId, String snapshotJson) {
+        Set<String> desiredGroups = stringSet(JsonParser.parseString(snapshotJson).getAsJsonObject().getAsJsonArray("groups"));
+        Set<String> currentGroups = environment.groupService().getSubjectGroups(subjectId);
+        currentGroups.stream().filter(group -> !desiredGroups.contains(group)).toList().forEach(group -> environment.groupService().removeSubjectGroup(subjectId, group));
+        desiredGroups.stream().filter(group -> !currentGroups.contains(group)).forEach(group -> environment.groupService().addSubjectGroup(subjectId, group));
+    }
+
+    private static <S> String groupSnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName) {
+        String normalizedGroupName = normalizeGroupName(groupName);
+        JsonObject root = new JsonObject();
+        root.addProperty("name", normalizedGroupName);
+        boolean exists = environment.groupService().hasGroup(normalizedGroupName);
+        root.addProperty("exists", exists);
+        if (!exists) {
+            return GSON.toJson(root);
+        }
+        root.add("permissions", permissionsJson(environment.groupService().getGroupPermissions(normalizedGroupName)));
+        root.add("display", JsonParser.parseString(groupDisplaySnapshot(environment, normalizedGroupName)));
+        root.add("parents", stringArray(environment.groupService().getGroupParents(normalizedGroupName)));
+        root.add("members", uuidArray(environment.groupService().getGroupMembers(normalizedGroupName)));
+        root.add("children", stringArray(findChildGroups(environment, normalizedGroupName)));
+        return GSON.toJson(root);
+    }
+
+    private static <S> void applyGroupSnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName, String snapshotJson) {
+        JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
+        String normalizedGroupName = root.get("name").getAsString();
+        if (!root.get("exists").getAsBoolean()) {
+            if (environment.groupService().hasGroup(normalizedGroupName)) {
+                environment.groupService().deleteGroup(normalizedGroupName);
+            }
+            return;
+        }
+        if (!environment.groupService().hasGroup(normalizedGroupName)) {
+            environment.groupService().createGroup(normalizedGroupName);
+        }
+        applyGroupPermissionsSnapshot(environment, normalizedGroupName, objectWith("permissions", root.getAsJsonObject("permissions")));
+        applyGroupDisplaySnapshot(environment, normalizedGroupName, root.getAsJsonObject("display").toString());
+        applyGroupParents(environment, normalizedGroupName, stringSet(root.getAsJsonArray("parents")));
+        applyGroupMembers(environment, normalizedGroupName, uuidSet(root.getAsJsonArray("members")));
+        for (String child : stringSet(root.getAsJsonArray("children"))) {
+            if (environment.groupService().hasGroup(child) && !environment.groupService().getGroupParents(child).contains(normalizedGroupName)) {
+                environment.groupService().addGroupParent(child, normalizedGroupName);
+            }
+        }
+    }
+
+    private static <S> String groupPermissionsSnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName) {
+        return objectWith("permissions", permissionsJson(environment.groupService().getGroupPermissions(groupName)));
+    }
+
+    private static <S> void applyGroupPermissionsSnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName, String snapshotJson) {
+        JsonObject permissions = JsonParser.parseString(snapshotJson).getAsJsonObject().getAsJsonObject("permissions");
+        environment.groupService().clearGroupPermissions(groupName);
+        permissions.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> environment.groupService().setGroupPermission(groupName, entry.getKey(), PermissionValue.valueOf(entry.getValue().getAsString())));
+    }
+
+    private static <S> String groupDisplaySnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName) {
+        return displaySnapshot(environment.groupService().getGroupDisplay(groupName));
+    }
+
+    private static <S> void applyGroupDisplaySnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName, String snapshotJson) {
+        JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
+        applyGroupDisplayValue(environment, groupName, DisplaySlot.PREFIX, root.get("prefix"));
+        applyGroupDisplayValue(environment, groupName, DisplaySlot.SUFFIX, root.get("suffix"));
+    }
+
+    private static <S> void applyGroupDisplayValue(ClutchPermsCommandEnvironment<S> environment, String groupName, DisplaySlot slot, JsonElement value) {
+        if (value == null || value.isJsonNull()) {
+            if (slot == DisplaySlot.PREFIX) {
+                environment.groupService().clearGroupPrefix(groupName);
+            } else {
+                environment.groupService().clearGroupSuffix(groupName);
+            }
+            return;
+        }
+        DisplayText displayText = DisplayText.parse(value.getAsString());
+        if (slot == DisplaySlot.PREFIX) {
+            environment.groupService().setGroupPrefix(groupName, displayText);
+        } else {
+            environment.groupService().setGroupSuffix(groupName, displayText);
+        }
+    }
+
+    private static <S> void applyGroupParents(ClutchPermsCommandEnvironment<S> environment, String groupName, Set<String> desiredParents) {
+        Set<String> currentParents = environment.groupService().getGroupParents(groupName);
+        currentParents.stream().filter(parent -> !desiredParents.contains(parent)).toList().forEach(parent -> environment.groupService().removeGroupParent(groupName, parent));
+        desiredParents.stream().filter(parent -> !currentParents.contains(parent)).forEach(parent -> environment.groupService().addGroupParent(groupName, parent));
+    }
+
+    private static <S> void applyGroupMembers(ClutchPermsCommandEnvironment<S> environment, String groupName, Set<UUID> desiredMembers) {
+        Set<UUID> currentMembers = environment.groupService().getGroupMembers(groupName);
+        currentMembers.stream().filter(member -> !desiredMembers.contains(member)).toList().forEach(member -> environment.groupService().removeSubjectGroup(member, groupName));
+        desiredMembers.stream().filter(member -> !currentMembers.contains(member)).forEach(member -> environment.groupService().addSubjectGroup(member, groupName));
+    }
+
+    private static <S> String renameGroupSnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName, String newGroupName) {
+        JsonObject root = new JsonObject();
+        root.addProperty("oldName", normalizeGroupName(groupName));
+        root.addProperty("newName", normalizeGroupName(newGroupName));
+        root.add("old", JsonParser.parseString(groupSnapshot(environment, groupName)));
+        root.add("new", JsonParser.parseString(groupSnapshot(environment, newGroupName)));
+        return GSON.toJson(root);
+    }
+
+    private static <S> String renameSnapshotForEntry(ClutchPermsCommandEnvironment<S> environment, AuditEntry entry) {
+        JsonObject before = JsonParser.parseString(entry.beforeJson()).getAsJsonObject();
+        return renameGroupSnapshot(environment, before.get("oldName").getAsString(), before.get("newName").getAsString());
+    }
+
+    private static <S> void applyRenameSnapshot(ClutchPermsCommandEnvironment<S> environment, String snapshotJson) {
+        JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
+        applyGroupSnapshot(environment, root.get("newName").getAsString(), root.getAsJsonObject("new").toString());
+        applyGroupSnapshot(environment, root.get("oldName").getAsString(), root.getAsJsonObject("old").toString());
+    }
+
+    private static String configSnapshot(ClutchPermsConfig config) {
+        JsonObject root = new JsonObject();
+        root.addProperty("backups.retentionLimit", config.backups().retentionLimit());
+        root.addProperty("commands.helpPageSize", config.commands().helpPageSize());
+        root.addProperty("commands.resultPageSize", config.commands().resultPageSize());
+        root.addProperty("chat.enabled", config.chat().enabled());
+        root.addProperty("paper.replaceOpCommands", config.paper().replaceOpCommands());
+        return GSON.toJson(root);
+    }
+
+    private static <S> void applyConfigSnapshot(ClutchPermsCommandEnvironment<S> environment, String snapshotJson) {
+        JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
+        ClutchPermsConfig restoredConfig = new ClutchPermsConfig(new ClutchPermsBackupConfig(root.get("backups.retentionLimit").getAsInt()),
+                new ClutchPermsCommandConfig(root.get("commands.helpPageSize").getAsInt(), root.get("commands.resultPageSize").getAsInt()),
+                new ClutchPermsChatConfig(root.get("chat.enabled").getAsBoolean()), new ClutchPermsPaperConfig(root.get("paper.replaceOpCommands").getAsBoolean()));
+        environment.updateConfig(ignored -> restoredConfig);
+    }
+
+    private static JsonObject permissionsJson(Map<String, PermissionValue> permissions) {
+        JsonObject object = new JsonObject();
+        new TreeMap<>(permissions).forEach((node, value) -> object.addProperty(node, value.name()));
+        return object;
+    }
+
+    private static String displaySnapshot(DisplayProfile display) {
+        JsonObject root = new JsonObject();
+        display.prefix().ifPresentOrElse(value -> root.addProperty("prefix", value.rawText()), () -> root.add("prefix", com.google.gson.JsonNull.INSTANCE));
+        display.suffix().ifPresentOrElse(value -> root.addProperty("suffix", value.rawText()), () -> root.add("suffix", com.google.gson.JsonNull.INSTANCE));
+        return GSON.toJson(root);
+    }
+
+    private static JsonArray stringArray(Collection<String> values) {
+        JsonArray array = new JsonArray();
+        values.stream().sorted().forEach(array::add);
+        return array;
+    }
+
+    private static JsonArray uuidArray(Collection<UUID> values) {
+        JsonArray array = new JsonArray();
+        values.stream().map(UUID::toString).sorted().forEach(array::add);
+        return array;
+    }
+
+    private static Set<String> stringSet(JsonArray array) {
+        Set<String> values = new LinkedHashSet<>();
+        array.forEach(value -> values.add(value.getAsString()));
+        return values;
+    }
+
+    private static Set<UUID> uuidSet(JsonArray array) {
+        Set<UUID> values = new LinkedHashSet<>();
+        array.forEach(value -> values.add(UUID.fromString(value.getAsString())));
+        return values;
+    }
+
+    private static String objectWith(String key, JsonElement value) {
+        JsonObject root = new JsonObject();
+        root.add(key, value);
+        return GSON.toJson(root);
+    }
+
+    private static String canonicalJson(String json) {
+        return GSON.toJson(JsonParser.parseString(json));
     }
 
     private static <S> void requireManuallyRegisteredNode(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String normalizedNode)

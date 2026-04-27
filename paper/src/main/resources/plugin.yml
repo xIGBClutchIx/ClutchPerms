@@ -24,6 +24,12 @@ permissions:
   clutchperms.admin.validate:
     description: Allows validating ClutchPerms storage.
     default: false
+  clutchperms.admin.history:
+    description: Allows listing ClutchPerms audit history.
+    default: false
+  clutchperms.admin.undo:
+    description: Allows undoing ClutchPerms audit history entries.
+    default: false
   clutchperms.admin.config.view:
     description: Allows viewing ClutchPerms runtime config.
     default: false

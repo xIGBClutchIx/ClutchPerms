@@ -28,6 +28,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
+import me.clutchy.clutchperms.common.audit.AuditEntry;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.display.DisplayText;
@@ -461,6 +462,41 @@ class ClutchPermsPaperPluginTest {
         assertFalse(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
         assertEquals(PermissionValue.UNSET, plugin.getPermissionResolver().resolve(target.getUniqueId(), "*").value());
         assertFalse(target.isPermissionSet("*"));
+    }
+
+    /**
+     * Confirms Paper /op and /deop write command audit rows that shared undo can revert.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void paperOpAndDeopCommandsAreAuditedAndUndoable() throws Exception {
+        PlayerMock target = server.addPlayer("Target");
+        CommandDispatcher<CommandSourceStack> dispatcher = dispatcherWithAllCommandRoots();
+        TestCommandSourceStack console = new TestCommandSourceStack(server.getConsoleSender());
+
+        assertEquals(1, dispatcher.execute("op Target", console));
+
+        AuditEntry opEntry = plugin.getAuditLogService().get(1).orElseThrow();
+        assertEquals("user.group.add", opEntry.action());
+        assertEquals("user-groups", opEntry.targetType());
+        assertEquals(target.getUniqueId().toString(), opEntry.targetKey());
+        assertEquals("/op Target", opEntry.sourceCommand());
+        assertTrue(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
+
+        assertEquals(1, dispatcher.execute("deop Target", console));
+
+        AuditEntry deopEntry = plugin.getAuditLogService().get(2).orElseThrow();
+        assertEquals("user.group.remove", deopEntry.action());
+        assertEquals("/deop Target", deopEntry.sourceCommand());
+        assertFalse(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
+
+        assertEquals(1, dispatcher.execute("clutchperms undo 2", console));
+
+        assertTrue(plugin.getGroupService().getSubjectGroups(target.getUniqueId()).contains(GroupService.OP_GROUP));
+        assertEquals(PermissionValue.TRUE, plugin.getPermissionResolver().resolve(target.getUniqueId(), "*").value());
+        assertTrue(plugin.getAuditLogService().get(2).orElseThrow().undone());
+        assertEquals("undo", plugin.getAuditLogService().get(3).orElseThrow().action());
     }
 
     /**

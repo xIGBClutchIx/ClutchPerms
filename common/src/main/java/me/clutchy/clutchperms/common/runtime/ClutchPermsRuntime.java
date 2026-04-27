@@ -9,6 +9,8 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
+import me.clutchy.clutchperms.common.audit.AuditLogService;
+import me.clutchy.clutchperms.common.audit.AuditLogServices;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfigs;
@@ -249,6 +251,15 @@ public final class ClutchPermsRuntime {
     }
 
     /**
+     * Returns active command audit history storage.
+     *
+     * @return audit log service
+     */
+    public AuditLogService auditLogService() {
+        return activeServices().auditLogService();
+    }
+
+    /**
      * Creates an effective display resolver for the active subject and group services.
      *
      * @return display resolver
@@ -334,11 +345,13 @@ public final class ClutchPermsRuntime {
         SubjectMetadataService loadedSubjectMetadataService;
         GroupService loadedGroupService;
         MutablePermissionNodeRegistry loadedManualPermissionNodeRegistry;
+        AuditLogService loadedAuditLogService;
         try {
             loadedPermissionService = PermissionServices.sqlite(sqliteStore);
             loadedSubjectMetadataService = SubjectMetadataServices.sqlite(sqliteStore);
             loadedGroupService = GroupServices.sqlite(sqliteStore);
             loadedManualPermissionNodeRegistry = PermissionNodeRegistries.sqlite(sqliteStore);
+            loadedAuditLogService = AuditLogServices.sqlite(sqliteStore);
         } catch (RuntimeException exception) {
             sqliteStore.close();
             throw exception;
@@ -369,7 +382,7 @@ public final class ClutchPermsRuntime {
         PermissionNodeRegistry mergedPermissionNodeRegistry = createPermissionNodeRegistry(observedManualPermissionNodeRegistry);
         PermissionResolver loadedPermissionResolver = new PermissionResolver(observedPermissionService, observedGroupService);
         return new ClutchPermsRuntimeServices(observedPermissionService, loadedSubjectMetadataService, observedGroupService, observedManualPermissionNodeRegistry,
-                mergedPermissionNodeRegistry, loadedPermissionResolver, loadedConfig, sqliteStore);
+                mergedPermissionNodeRegistry, loadedPermissionResolver, loadedConfig, loadedAuditLogService, sqliteStore);
     }
 
     private PermissionNodeRegistry createPermissionNodeRegistry(MutablePermissionNodeRegistry manualPermissionNodeRegistry) {

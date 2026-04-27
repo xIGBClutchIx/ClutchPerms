@@ -55,6 +55,8 @@ Useful grants:
 | `clutchperms.admin.backup.*` | Backup create, list, and restore |
 | `clutchperms.admin.users.*` | Stored user list and search |
 | `clutchperms.admin.nodes.*` | Known permission node registry |
+| `clutchperms.admin.history` | Audit history listing |
+| `clutchperms.admin.undo` | Undoing undoable audit history entries |
 
 `clutchperms.admin` is only the namespace root. It does not grant command access by itself.
 
@@ -67,6 +69,8 @@ Useful grants:
 | `/clutchperms status` | `clutchperms.admin.status` | Shows storage paths, config values, counts, resolver cache counts, and runtime bridge status. |
 | `/clutchperms reload` | `clutchperms.admin.reload` | Reloads config and database storage, then refreshes runtime permissions. |
 | `/clutchperms validate` | `clutchperms.admin.validate` | Parses config and database storage without applying them. |
+| `/clutchperms history [page]` | `clutchperms.admin.history` | Lists newest command mutation audit entries. |
+| `/clutchperms undo <id>` | `clutchperms.admin.undo` | Reverts one undoable audit entry if current state still matches the logged after snapshot. |
 
 ### Paper Shortcuts
 
@@ -180,6 +184,9 @@ Notes:
 - Permission assignments may use exact nodes, `*`, or terminal wildcards like `example.*`.
 - Mid-node wildcards such as `example.*.edit` are rejected.
 - Known node registry entries must be exact nodes. Wildcards are valid assignments, not known-node entries.
+- Successful command-layer mutations are written to the SQLite audit log with actor, target, action, timestamp, before/after snapshots, source command, and undo state. Audit history is retained indefinitely in this version.
+- `/clutchperms undo <id>` refuses to overwrite newer changes: the current target state must still match the audited after snapshot. Undo writes its own non-undoable audit entry and marks the original entry undone.
+- Backup create/restore, manual known-node changes, player-observation metadata updates, and internal service calls outside commands are not audited in this version.
 
 ## Storage
 
@@ -188,7 +195,7 @@ ClutchPerms writes one config file and one SQLite database:
 | File | Purpose |
 | --- | --- |
 | `config.json` | Runtime settings for backup retention, command page sizes, and chat formatting |
-| `database.db` | Direct permissions, group definitions, memberships, subject metadata, display values, and manually registered known nodes |
+| `database.db` | Direct permissions, group definitions, memberships, subject metadata, display values, manually registered known nodes, and command audit history |
 
 Default `config.json`:
 

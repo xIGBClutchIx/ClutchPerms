@@ -111,6 +111,20 @@ final class CommandLang {
 
     private static final String ERROR_DISPLAY_OPERATION_FAILED = "Display operation failed: %s";
 
+    private static final String ERROR_AUDIT_OPERATION_FAILED = "Audit operation failed: %s";
+
+    private static final String HISTORY_EMPTY = "No audit history entries.";
+
+    private static final String AUDIT_MISSING = "Unknown audit history entry: %s";
+
+    private static final String AUDIT_NOT_UNDOABLE = "Audit history entry %s is not undoable.";
+
+    private static final String AUDIT_ALREADY_UNDONE = "Audit history entry %s has already been undone.";
+
+    private static final String AUDIT_CONFLICT = "Audit history entry %s cannot be undone because the current target state has changed.";
+
+    private static final String AUDIT_UNDONE = "Undid audit history entry %s.";
+
     private static final String CONFIG_HEADER = "ClutchPerms config:";
 
     private static final String CONFIG_ROW = "%s = %s (%s; %s)";
@@ -489,6 +503,34 @@ final class CommandLang {
 
     static CommandMessage displayOperationFailed(Throwable exception) {
         return error(ERROR_DISPLAY_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage auditFailed(Throwable exception) {
+        return error(ERROR_AUDIT_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage auditMissing(long id) {
+        return error(AUDIT_MISSING, id);
+    }
+
+    static CommandMessage auditNotUndoable(long id) {
+        return error(AUDIT_NOT_UNDOABLE, id);
+    }
+
+    static CommandMessage auditAlreadyUndone(long id) {
+        return error(AUDIT_ALREADY_UNDONE, id);
+    }
+
+    static CommandMessage auditConflict(long id) {
+        return error(AUDIT_CONFLICT, id);
+    }
+
+    static CommandMessage auditUndone(long id) {
+        return success(AUDIT_UNDONE, id);
+    }
+
+    static CommandMessage historyEmpty() {
+        return detail(HISTORY_EMPTY);
     }
 
     static CommandMessage configHeader() {

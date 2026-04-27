@@ -176,6 +176,8 @@ public final class SqliteStore implements AutoCloseable {
                 statement.executeUpdate(
                         "CREATE TABLE IF NOT EXISTS memberships (subject_id TEXT NOT NULL, group_name TEXT NOT NULL, PRIMARY KEY (subject_id, group_name), FOREIGN KEY (group_name) REFERENCES groups(name) ON DELETE CASCADE)");
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS known_nodes (node TEXT PRIMARY KEY, description TEXT NOT NULL)");
+                statement.executeUpdate(
+                        "CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, actor_kind TEXT NOT NULL, actor_id TEXT, actor_name TEXT, action TEXT NOT NULL, target_type TEXT NOT NULL, target_key TEXT NOT NULL, target_display TEXT NOT NULL, before_json TEXT NOT NULL, after_json TEXT NOT NULL, source_command TEXT NOT NULL, undoable INTEGER NOT NULL CHECK (undoable IN (0, 1)), undone INTEGER NOT NULL CHECK (undone IN (0, 1)), undone_by_entry_id INTEGER, undone_at TEXT, undone_by_actor_id TEXT, undone_by_actor_name TEXT)");
                 try (ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM schema_version")) {
                     rows.next();
                     if (rows.getInt(1) == 0) {

@@ -12,6 +12,7 @@ import org.bukkit.entity.Player;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
+import me.clutchy.clutchperms.common.audit.AuditLogService;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommandEnvironment;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandMessage;
@@ -99,6 +100,11 @@ final class PaperClutchPermsCommand {
         @Override
         public ClutchPermsConfig config() {
             return plugin.getClutchPermsConfig();
+        }
+
+        @Override
+        public AuditLogService auditLogService() {
+            return plugin.getAuditLogService();
         }
 
         @Override

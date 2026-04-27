@@ -53,6 +53,7 @@ Shared package ownership:
 - `common.subject` - last-known subject metadata
 - `common.config` - runtime config parsing, defaults, validation, and materialization
 - `common.storage` - storage exceptions, atomic file writes, backup listing, and restore rollback helpers
+- `common.audit` - command-layer audit entries, SQLite audit history storage, and in-memory test storage
 - `common.runtime` - platform-neutral storage paths, active service snapshots, reload/validate/backup wiring, resolver cache invalidation, and runtime refresh hooks
 - `common.command` - shared Brigadier root wiring, command behavior, command messages, and platform command environment contract
 - `common.command.subcommand` - shared Brigadier branch builders for `/backup`, `/user`, `/group`, `/users`, and `/nodes`
@@ -100,7 +101,7 @@ Do not add contexts, priorities, imports, migrations, or LuckPerms bridges unles
 Current persisted files:
 
 - `config.json` for runtime settings such as backup retention, command page sizes, and chat formatting
-- `database.db` for direct user permission assignments, group definitions, group permissions, prefix/suffix display values, parent links, memberships, subject metadata, and manually registered known permission nodes
+- `database.db` for direct user permission assignments, group definitions, group permissions, prefix/suffix display values, parent links, memberships, subject metadata, manually registered known permission nodes, and command audit history
 
 Locations:
 
@@ -113,6 +114,7 @@ Storage expectations:
 
 - Treat missing database storage as empty state and ensure the built-in `default` and `op` groups exist. Treat missing `config.json` as default config.
 - After successful startup or reload, materialize missing `database.db` and `config.json` so fresh installs have visible files.
+- Materialize the SQLite `audit_log` table with `CREATE TABLE IF NOT EXISTS` during normal database open without requiring a schema version bump.
 - Save mutations immediately with transactional SQLite writes.
 - Validate mutation input before writing; commit the transaction, then update active in-memory state and fire observers.
 - If a mutation transaction fails, keep the previous in-memory state, resolver cache notifications, runtime bridge notifications, and live database unchanged.
@@ -131,6 +133,9 @@ Storage expectations:
 - `/clutchperms backup restore` validates the selected backup file before replacing live storage, closes the active SQLite pool, replaces `database.db`, removes stale WAL/SHM files, reloads config plus database storage, and refreshes runtime bridges. If pre-restore validation fails, disk and active runtime state must remain unchanged. If reload fails after replacement, it must roll disk back to the previous live database and keep active services/runtime state unchanged.
 - `config.json` is not included in backup list or restore commands in this version.
 - If restore rollback fails, command feedback should report that rollback failure explicitly.
+- Audit history is command-layer only and retained indefinitely in this version. Successful command mutations for permissions, groups, display, membership, parents, Paper `/op`/`/deop`, and config write audit rows after the mutation succeeds. Backup create/restore, manual known-node changes, player-observation metadata updates, and internal service calls outside commands are not audited.
+- Audit rows store actor, target, action, source command, timestamp, deterministic before/after JSON snapshots, undoable state, and undone metadata. If audit append fails after a mutation, command feedback must report that audit failure instead of silently hiding it.
+- `/clutchperms undo <id>` should apply only when the entry exists, is undoable, is not already undone, and the current target snapshot still equals the logged after snapshot. Fail on conflicts rather than overwriting newer changes. Undo writes its own non-undoable audit row and marks the original entry undone.
 - There is no JSON compatibility or migration path for removed data files.
 
 ## Runtime Bridges
@@ -168,6 +173,7 @@ Command system layout:
 - Do not use legacy section-sign formatting. Keep the restrained command palette: aqua headings, gray metadata/navigation, white command text, yellow placeholders/values, green success, and red errors.
 - Command rows and result rows should suggest/paste commands. Page controls are the only shared command output clicks that should run commands.
 - Destructive commands require repeat-command confirmation within 30 seconds before mutation: user clear-all, group clear-all, group delete, and backup restore. The confirmation key is source plus normalized operation, not root alias text.
+- First destructive confirmation runs do not audit; the confirmed mutation run audits after success.
 
 Current command surface:
 
@@ -178,6 +184,8 @@ Current command surface:
 - `/clutchperms status`
 - `/clutchperms reload`
 - `/clutchperms validate`
+- `/clutchperms history [page]`
+- `/clutchperms undo <id>`
 - Paper only: `/op <target>`
 - Paper only: `/deop <target>`
 - `/clutchperms config list`
@@ -223,6 +231,7 @@ Authorization:
 - Use `clutchperms.admin.*` as the full ClutchPerms admin grant.
 - Category wildcards such as `clutchperms.admin.user.*`, `clutchperms.admin.group.*`, `clutchperms.admin.backup.*`, `clutchperms.admin.nodes.*`, and `clutchperms.admin.users.*` should work through the shared resolver.
 - Config command permissions are `clutchperms.admin.config.view`, `clutchperms.admin.config.set`, and `clutchperms.admin.config.reset`; `clutchperms.admin.config.*` should work through wildcard resolution.
+- History and undo command permissions are `clutchperms.admin.history` and `clutchperms.admin.undo`.
 - `paper.replaceOpCommands` controls Paper command registration for ClutchPerms `/op` and `/deop` replacements; disabling it should leave Paper's labels unregistered by ClutchPerms on the next command registration cycle/server restart.
 - User display command permissions are `clutchperms.admin.user.display.view`, `clutchperms.admin.user.display.set`, and `clutchperms.admin.user.display.clear`; `clutchperms.admin.user.*` should cover them.
 - Group member listing uses `clutchperms.admin.group.members`; `clutchperms.admin.group.*` should cover it.

@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 
 import com.mojang.logging.LogUtils;
 
+import me.clutchy.clutchperms.common.audit.AuditLogService;
 import me.clutchy.clutchperms.common.command.ClutchPermsCommands;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
@@ -98,7 +99,8 @@ public final class ClutchPermsNeoForgeMod {
                         ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getPermissionNodeRegistry, ClutchPermsNeoForgeMod::getManualPermissionNodeRegistry,
                         ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage,
                         ClutchPermsNeoForgeMod::validateStorage, ClutchPermsNeoForgeMod::getStorageBackupService, ClutchPermsNeoForgeMod::getClutchPermsConfig,
-                        ClutchPermsNeoForgeMod::updateConfig, ClutchPermsNeoForgeMod::restoreBackup, ClutchPermsNeoForgeMod::refreshRuntimePermissions, rootLiteral)));
+                        ClutchPermsNeoForgeMod::updateConfig, ClutchPermsNeoForgeMod::getAuditLogService, ClutchPermsNeoForgeMod::restoreBackup,
+                        ClutchPermsNeoForgeMod::refreshRuntimePermissions, rootLiteral)));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -211,6 +213,15 @@ public final class ClutchPermsNeoForgeMod {
      */
     public static ClutchPermsConfig getClutchPermsConfig() {
         return getRuntime().config();
+    }
+
+    /**
+     * Returns command audit history storage.
+     *
+     * @return active audit log service
+     */
+    public static AuditLogService getAuditLogService() {
+        return getRuntime().auditLogService();
     }
 
     /**
