@@ -167,6 +167,7 @@ Command system layout:
 - Interactive command output belongs in `common.command`. Platform adapters should only render native components: Paper Adventure components, and Minecraft components for Fabric, NeoForge, and Forge.
 - Do not use legacy section-sign formatting. Keep the restrained command palette: aqua headings, gray metadata/navigation, white command text, yellow placeholders/values, green success, and red errors.
 - Command rows and result rows should suggest/paste commands. Page controls are the only shared command output clicks that should run commands.
+- Destructive commands require repeat-command confirmation within 30 seconds before mutation: user clear-all, group clear-all, group delete, and backup restore. The confirmation key is source plus normalized operation, not root alias text.
 
 Current command surface:
 

@@ -3,6 +3,8 @@ package me.clutchy.clutchperms.common.command;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -101,6 +103,7 @@ class ClutchPermsCommandsTest {
      */
     @BeforeEach
     void setUp() {
+        ClutchPermsCommands.resetDestructiveConfirmationsForTests();
         PermissionService storagePermissionService = new InMemoryPermissionService();
         subjectMetadataService = new InMemorySubjectMetadataService();
         GroupService storageGroupService = new InMemoryGroupService();
@@ -130,6 +133,7 @@ class ClutchPermsCommandsTest {
 
     @AfterEach
     void tearDown() {
+        ClutchPermsCommands.resetDestructiveConfirmationsForTests();
         if (backupStore != null) {
             backupStore.close();
         }
@@ -572,10 +576,18 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms backup restore database-20260424-120000000.db", console);
 
+        assertEquals(PermissionValue.FALSE, permissionFromDatabase("example.restore"));
+        assertEquals(0, environment.reloads());
+        assertEquals(0, environment.runtimeRefreshes());
+
+        dispatcher.execute("clutchperms backup restore database-20260424-120000000.db", console);
+
         assertEquals(PermissionValue.TRUE, permissionFromDatabase("example.restore"));
         assertEquals(1, environment.reloads());
         assertEquals(1, environment.runtimeRefreshes());
-        assertEquals(List.of("Restored database from backup database-20260424-120000000.db."), console.messages());
+        assertEquals(List.of("Destructive command confirmation required.",
+                "Repeat this command within 30 seconds to confirm: /clutchperms backup restore database-20260424-120000000.db",
+                "Restored database from backup database-20260424-120000000.db."), console.messages());
     }
 
     /**
@@ -601,13 +613,17 @@ class ClutchPermsCommandsTest {
      * Confirms backup restore rolls disk back and skips runtime refresh when reload rejects the restored database.
      *
      * @throws IOException when test backup setup fails
+     * @throws CommandSyntaxException when command execution fails unexpectedly
      */
     @Test
-    void backupRestoreFailureRollsBackDatabaseAndDoesNotRefreshRuntimeState() throws IOException {
+    void backupRestoreFailureRollsBackDatabaseAndDoesNotRefreshRuntimeState() throws IOException, CommandSyntaxException {
         PermissionServices.sqlite(backupStore).setPermission(TARGET_ID, "example.restore", PermissionValue.FALSE);
         writeBackup("database-20260424-120000000.db", "example.restore");
         environment.failReload(new PermissionStorageException("bad restored database"));
         TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms backup restore database-20260424-120000000.db", console);
+        console.messages().clear();
 
         assertCommandFails("clutchperms backup restore database-20260424-120000000.db", console,
                 "Backup operation failed: Failed to apply restored database backup database-20260424-120000000.db");
@@ -708,6 +724,8 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms user Target clear-all", console);
+        dispatcher.execute("clutchperms user Target clear-all", console);
+        dispatcher.execute("clutchperms group staff clear-all", console);
         dispatcher.execute("clutchperms group staff clear-all", console);
 
         assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
@@ -715,7 +733,10 @@ class ClutchPermsCommandsTest {
         assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
         assertEquals("&7[Staff]", groupService.getGroupDisplay("staff").prefix().orElseThrow().rawText());
         assertEquals(Set.of("staff"), groupService.getSubjectGroups(TARGET_ID));
-        assertEquals(List.of("Cleared 2 direct permissions for Target (00000000-0000-0000-0000-000000000002).", "Cleared 2 direct permissions for group staff."),
+        assertEquals(
+                List.of("Destructive command confirmation required.", "Repeat this command within 30 seconds to confirm: /clutchperms user Target clear-all",
+                        "Cleared 2 direct permissions for Target (00000000-0000-0000-0000-000000000002).", "Destructive command confirmation required.",
+                        "Repeat this command within 30 seconds to confirm: /clutchperms group staff clear-all", "Cleared 2 direct permissions for group staff."),
                 console.messages());
     }
 
@@ -747,10 +768,120 @@ class ClutchPermsCommandsTest {
         TestSource console = TestSource.console();
 
         dispatcher.execute("clutchperms group default clear-all", console);
+        dispatcher.execute("clutchperms group default clear-all", console);
 
         assertTrue(groupService.hasGroup(GroupService.DEFAULT_GROUP));
         assertEquals(Map.of(), groupService.getGroupPermissions(GroupService.DEFAULT_GROUP));
-        assertEquals(List.of("Cleared 2 direct permissions for group default."), console.messages());
+        assertEquals(List.of("Destructive command confirmation required.", "Repeat this command within 30 seconds to confirm: /clutchperms group default clear-all",
+                "Cleared 2 direct permissions for group default."), console.messages());
+    }
+
+    /**
+     * Confirms destructive command confirmations expire instead of staying armed indefinitely.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void destructiveConfirmationExpiresAfterThirtySeconds() throws CommandSyntaxException {
+        MutableClock clock = new MutableClock(FIRST_SEEN);
+        ClutchPermsCommands.setConfirmationClockForTests(clock);
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff delete", console);
+        clock.advance(Duration.ofSeconds(31));
+        dispatcher.execute("clutchperms group staff delete", console);
+
+        assertTrue(groupService.hasGroup("staff"));
+        assertEquals(List.of("Destructive command confirmation required.", "Repeat this command within 30 seconds to confirm: /clutchperms group staff delete",
+                "Destructive command confirmation required.", "Repeat this command within 30 seconds to confirm: /clutchperms group staff delete"), console.messages());
+
+        dispatcher.execute("clutchperms group staff delete", console);
+
+        assertFalse(groupService.hasGroup("staff"));
+    }
+
+    /**
+     * Confirms another destructive command replaces a pending confirmation for the same source.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void differentDestructiveCommandReplacesPendingConfirmation() throws CommandSyntaxException {
+        permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "group.node", PermissionValue.TRUE);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target clear-all", console);
+        dispatcher.execute("clutchperms group staff clear-all", console);
+        dispatcher.execute("clutchperms group staff clear-all", console);
+        dispatcher.execute("clutchperms user Target clear-all", console);
+
+        assertEquals(Map.of("example.node", PermissionValue.TRUE), permissionService.getPermissions(TARGET_ID));
+        assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
+        assertEquals("Repeat this command within 30 seconds to confirm: /clutchperms user Target clear-all", console.messages().getLast());
+    }
+
+    /**
+     * Confirms player confirmation state is isolated by source UUID.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void destructiveConfirmationIsIsolatedByPlayer() throws CommandSyntaxException {
+        permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
+        permissionService.setPermission(SECOND_TARGET_ID, PermissionNodes.ADMIN_ALL, PermissionValue.TRUE);
+        permissionService.setPermission(TARGET_ID, "example.node", PermissionValue.TRUE);
+        TestSource firstPlayer = TestSource.player(ADMIN_ID);
+        TestSource secondPlayer = TestSource.player(SECOND_TARGET_ID);
+
+        dispatcher.execute("clutchperms user Target clear-all", firstPlayer);
+        dispatcher.execute("clutchperms user Target clear-all", secondPlayer);
+
+        assertEquals(Map.of("example.node", PermissionValue.TRUE), permissionService.getPermissions(TARGET_ID));
+        assertEquals(List.of("Destructive command confirmation required.", "Repeat this command within 30 seconds to confirm: /clutchperms user Target clear-all"),
+                secondPlayer.messages());
+
+        dispatcher.execute("clutchperms user Target clear-all", firstPlayer);
+
+        assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
+    }
+
+    /**
+     * Confirms aliases can confirm the same normalized destructive operation.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void destructiveConfirmationCanUseAnyRootAlias() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff delete", console);
+        dispatcher.execute("cperms group staff delete", console);
+
+        assertFalse(groupService.hasGroup("staff"));
+    }
+
+    /**
+     * Confirms invalid or protected destructive targets do not arm confirmation state.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void invalidAndProtectedDestructiveTargetsDoNotArmConfirmation() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        groupService.setGroupPermission("staff", "group.node", PermissionValue.TRUE);
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms group missing delete", console, "Unknown group: missing");
+        dispatcher.execute("clutchperms group staff delete", console);
+        assertTrue(groupService.hasGroup("staff"));
+
+        assertCommandFails("clutchperms group op clear-all", console, "Group operation failed: op group permissions are protected");
+        dispatcher.execute("clutchperms group staff clear-all", console);
+        assertEquals(Map.of("group.node", PermissionValue.TRUE), groupService.getGroupPermissions("staff"));
     }
 
     /**
@@ -1070,12 +1201,14 @@ class ClutchPermsCommandsTest {
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_USER_CLEAR_ALL, PermissionValue.TRUE);
         dispatcher.execute("clutchperms user Target clear-all", player);
+        dispatcher.execute("clutchperms user Target clear-all", player);
 
         assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
         assertCommandUnavailable("clutchperms user Target clear example.node", player);
         assertCommandUnavailable("clutchperms group staff clear-all", player);
 
         permissionService.setPermission(ADMIN_ID, PermissionNodes.ADMIN_GROUP_CLEAR_ALL, PermissionValue.TRUE);
+        dispatcher.execute("clutchperms group staff clear-all", player);
         dispatcher.execute("clutchperms group staff clear-all", player);
 
         assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
@@ -1118,6 +1251,7 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms user Target info", player);
         dispatcher.execute("clutchperms user Target set example.node false", player);
         dispatcher.execute("clutchperms user Target clear-all", player);
+        dispatcher.execute("clutchperms user Target clear-all", player);
 
         assertEquals(Map.of(), permissionService.getPermissions(TARGET_ID));
         assertCommandUnavailable("clutchperms group list", player);
@@ -1126,6 +1260,7 @@ class ClutchPermsCommandsTest {
         groupService.setGroupPermission("staff", "group.bulk", PermissionValue.TRUE);
         permissionService.setPermission(ADMIN_ID, "clutchperms.admin.group.*", PermissionValue.TRUE);
         dispatcher.execute("clutchperms group staff members", player);
+        dispatcher.execute("clutchperms group staff clear-all", player);
         dispatcher.execute("clutchperms group staff clear-all", player);
 
         assertEquals(Map.of(), groupService.getGroupPermissions("staff"));
@@ -1167,6 +1302,7 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms group admin clear example.node", console);
         dispatcher.execute("clutchperms user Target group remove admin", console);
         dispatcher.execute("clutchperms group admin delete", console);
+        dispatcher.execute("clutchperms group admin delete", console);
 
         assertEquals(PermissionValue.UNSET, groupService.getGroups().contains("admin") ? groupService.getGroupPermission("admin", "example.node") : PermissionValue.UNSET);
         assertEquals(
@@ -1174,7 +1310,8 @@ class ClutchPermsCommandsTest {
                         "Groups for Target (00000000-0000-0000-0000-000000000002) (page 1/1):", "  admin", "  default (implicit)",
                         "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group admin.", "Group admin (page 1/1):",
                         "  permission example.node=TRUE", "  member Target (00000000-0000-0000-0000-000000000002)", "Group admin has example.node = TRUE.",
-                        "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.", "Deleted group admin."),
+                        "Cleared example.node for group admin.", "Removed Target (00000000-0000-0000-0000-000000000002) from group admin.",
+                        "Destructive command confirmation required.", "Repeat this command within 30 seconds to confirm: /clutchperms group admin delete", "Deleted group admin."),
                 console.messages());
     }
 
@@ -1888,6 +2025,8 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("Permission operation failed: save blocked"), console.messages());
 
         console.messages().clear();
+        assertEquals(1, dispatcher.execute("clutchperms user Target clear-all", console));
+        console.messages().clear();
         assertEquals(0, dispatcher.execute("clutchperms user Target clear-all", console));
         assertEquals(List.of("Permission operation failed: save blocked"), console.messages());
     }
@@ -2355,12 +2494,12 @@ class ClutchPermsCommandsTest {
 
         @Override
         public PermissionValue getPermission(UUID subjectId, String node) {
-            return PermissionValue.UNSET;
+            return PermissionValue.TRUE;
         }
 
         @Override
         public Map<String, PermissionValue> getPermissions(UUID subjectId) {
-            return Map.of();
+            return Map.of("example.node", PermissionValue.TRUE);
         }
 
         @Override
@@ -2583,6 +2722,34 @@ class ClutchPermsCommandsTest {
 
         private static TestSource player(UUID subjectId) {
             return new TestSource(CommandSourceKind.PLAYER, subjectId, new ArrayList<>(), new ArrayList<>());
+        }
+    }
+
+    private static final class MutableClock extends Clock {
+
+        private Instant instant;
+
+        private MutableClock(Instant instant) {
+            this.instant = instant;
+        }
+
+        private void advance(Duration duration) {
+            instant = instant.plus(duration);
+        }
+
+        @Override
+        public java.time.ZoneId getZone() {
+            return java.time.ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
         }
     }
 }

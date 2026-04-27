@@ -725,6 +725,10 @@ class ClutchPermsPaperPluginTest {
         assertEquals(PermissionValue.TRUE, persistedPermissionValue(backup.path(), target.getUniqueId(), "example.backup"));
 
         assertEquals(1, dispatcher.execute("clutchperms backup restore " + backup.fileName(), adminSource));
+        assertEquals(PermissionValue.FALSE, persistedPermissionValue(target.getUniqueId(), "example.backup"));
+        assertFalse(target.hasPermission("example.backup"));
+
+        assertEquals(1, dispatcher.execute("clutchperms backup restore " + backup.fileName(), adminSource));
 
         assertEquals(PermissionValue.TRUE, persistedPermissionValue(target.getUniqueId(), "example.backup"));
         assertEquals(PermissionValue.TRUE, plugin.getPermissionService().getPermission(target.getUniqueId(), "example.backup"));

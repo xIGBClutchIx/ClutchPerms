@@ -273,6 +273,10 @@ final class CommandLang {
 
     private static final String TARGET_MATCH = "  %s";
 
+    private static final String CONFIRM_REQUIRED = "Destructive command confirmation required.";
+
+    private static final String CONFIRM_REPEAT = "Repeat this command within %s seconds to confirm: %s";
+
     static CommandMessage heading(String message) {
         return CommandMessage.of(CommandMessage.bold(message, Color.AQUA));
     }
@@ -669,6 +673,14 @@ final class CommandLang {
 
     static CommandMessage targetMatch(String match) {
         return detail(TARGET_MATCH, match);
+    }
+
+    static CommandMessage confirmationRequired() {
+        return error(CONFIRM_REQUIRED);
+    }
+
+    static CommandMessage confirmationRepeat(String command, long seconds) {
+        return detail(CONFIRM_REPEAT, seconds, command).withInteraction(CommandMessage.clickSuggest(command), pasteHover(command));
     }
 
     static CommandMessage groupsEmpty() {

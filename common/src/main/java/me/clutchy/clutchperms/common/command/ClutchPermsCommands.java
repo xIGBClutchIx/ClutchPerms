@@ -1,8 +1,12 @@
 package me.clutchy.clutchperms.common.command;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -114,6 +118,14 @@ public final class ClutchPermsCommands {
     private static final int TARGET_MATCH_LIMIT = 5;
 
     private static final int SUMMARY_VALUE_LIMIT = 5;
+
+    private static final Duration DESTRUCTIVE_CONFIRMATION_TTL = Duration.ofSeconds(30);
+
+    private static final Object CONSOLE_CONFIRMATION_SOURCE = new Object();
+
+    private static final Map<ConfirmationSource, PendingConfirmation> PENDING_CONFIRMATIONS = new HashMap<>();
+
+    private static Clock confirmationClock = Clock.systemUTC();
 
     private static final SimpleCommandExceptionType FEEDBACK_MESSAGES = new SimpleCommandExceptionType(new LiteralMessage("command feedback"));
 
@@ -302,6 +314,20 @@ public final class ClutchPermsCommands {
             throw new IllegalArgumentException("root literal must not be blank");
         }
         return literal;
+    }
+
+    static void resetDestructiveConfirmationsForTests() {
+        synchronized (PENDING_CONFIRMATIONS) {
+            PENDING_CONFIRMATIONS.clear();
+            confirmationClock = Clock.systemUTC();
+        }
+    }
+
+    static void setConfirmationClockForTests(Clock clock) {
+        synchronized (PENDING_CONFIRMATIONS) {
+            confirmationClock = Objects.requireNonNull(clock, "clock");
+            PENDING_CONFIRMATIONS.clear();
+        }
     }
 
     private static <S> LiteralArgumentBuilder<S> statusCommand(ClutchPermsCommandEnvironment<S> environment) {
@@ -1390,6 +1416,9 @@ public final class ClutchPermsCommands {
         }
         StorageBackup backup = requireKnownBackupFile(context, backupFileName, backups);
         validateBackup(environment, StorageFileKind.DATABASE, backup);
+        if (!confirmDestructiveCommand(environment, context, confirmationOperation("backup-restore", backup.fileName()))) {
+            return Command.SINGLE_SUCCESS;
+        }
         try {
             environment.restoreBackup(StorageFileKind.DATABASE, backupFileName);
         } catch (RuntimeException exception) {
@@ -1493,6 +1522,13 @@ public final class ClutchPermsCommands {
 
     private static <S> int clearAllPermissions(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
+        if (environment.permissionService().getPermissions(subject.id()).isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.permissionsEmpty(formatSubject(subject)));
+            return Command.SINGLE_SUCCESS;
+        }
+        if (!confirmDestructiveCommand(environment, context, confirmationOperation("user-clear-all", subject.id().toString()))) {
+            return Command.SINGLE_SUCCESS;
+        }
         int removedPermissions;
         try {
             removedPermissions = environment.permissionService().clearPermissions(subject.id());
@@ -1696,6 +1732,15 @@ public final class ClutchPermsCommands {
 
     private static <S> int deleteGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        if (GroupService.DEFAULT_GROUP.equals(groupName)) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(new IllegalArgumentException("default group cannot be deleted")));
+        }
+        if (GroupService.OP_GROUP.equals(groupName)) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(new IllegalArgumentException("op group cannot be deleted")));
+        }
+        if (!confirmDestructiveCommand(environment, context, confirmationOperation("group-delete", groupName))) {
+            return Command.SINGLE_SUCCESS;
+        }
         try {
             environment.groupService().deleteGroup(groupName);
         } catch (RuntimeException exception) {
@@ -1913,6 +1958,16 @@ public final class ClutchPermsCommands {
 
     private static <S> int clearAllGroupPermissions(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        if (GroupService.OP_GROUP.equals(groupName)) {
+            throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(new IllegalArgumentException("op group permissions are protected")));
+        }
+        if (environment.groupService().getGroupPermissions(groupName).isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.groupPermissionsEmpty(groupName));
+            return Command.SINGLE_SUCCESS;
+        }
+        if (!confirmDestructiveCommand(environment, context, confirmationOperation("group-clear-all", groupName))) {
+            return Command.SINGLE_SUCCESS;
+        }
         int removedPermissions;
         try {
             removedPermissions = environment.groupService().clearGroupPermissions(groupName);
@@ -2264,6 +2319,41 @@ public final class ClutchPermsCommands {
             throw BACKUP_OPERATION_FAILED
                     .create(CommandLang.backupOperationFailed(new PermissionStorageException("Failed to validate " + kind.token() + " backup " + backup.fileName(), exception)));
         }
+    }
+
+    private static <S> boolean confirmDestructiveCommand(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String operationKey) {
+        ConfirmationSource source = confirmationSource(environment, context.getSource());
+        Instant now;
+        synchronized (PENDING_CONFIRMATIONS) {
+            now = confirmationClock.instant();
+            PendingConfirmation pending = PENDING_CONFIRMATIONS.get(source);
+            if (pending != null && pending.operationKey().equals(operationKey) && !now.isAfter(pending.expiresAt())) {
+                PENDING_CONFIRMATIONS.remove(source);
+                return true;
+            }
+            PENDING_CONFIRMATIONS.put(source, new PendingConfirmation(operationKey, now.plus(DESTRUCTIVE_CONFIRMATION_TTL)));
+        }
+
+        String command = confirmationCommand(context);
+        environment.sendMessage(context.getSource(), CommandLang.confirmationRequired());
+        environment.sendMessage(context.getSource(), CommandLang.confirmationRepeat(command, DESTRUCTIVE_CONFIRMATION_TTL.toSeconds()));
+        return false;
+    }
+
+    private static <S> ConfirmationSource confirmationSource(ClutchPermsCommandEnvironment<S> environment, S source) {
+        if (environment.sourceKind(source) == CommandSourceKind.PLAYER) {
+            return new ConfirmationSource(environment.sourceSubjectId(source).orElseThrow(() -> new IllegalStateException("player command source has no subject id")));
+        }
+        return new ConfirmationSource(CONSOLE_CONFIRMATION_SOURCE);
+    }
+
+    private static <S> String confirmationCommand(CommandContext<S> context) {
+        String input = context.getInput().trim();
+        return input.startsWith("/") ? input : "/" + input;
+    }
+
+    private static String confirmationOperation(String action, String target) {
+        return action + ":" + target;
     }
 
     private static <S> void requireManuallyRegisteredNode(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String normalizedNode)
@@ -2700,6 +2790,12 @@ public final class ClutchPermsCommands {
     }
 
     private record TargetCandidate(String matchText, String displayText) {
+    }
+
+    private record ConfirmationSource(Object key) {
+    }
+
+    private record PendingConfirmation(String operationKey, Instant expiresAt) {
     }
 
     private record TargetMatch(String displayText, int category, int score, String sortText) {

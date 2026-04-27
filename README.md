@@ -42,6 +42,8 @@ Command help and long list results are paged. In chat, command rows can be click
 
 Console and remote console can run commands for bootstrap. Players need the exact effective command permission for the command they run, and player command trees/completions only expose branches backed by permissions they currently have. After permission-affecting ClutchPerms changes, online player command trees are resent so completions update without relogging.
 
+Destructive commands require repeat-command confirmation. Run the same destructive operation again within 30 seconds to confirm `user clear-all`, `group clear-all`, `group delete`, or `backup restore`.
+
 Useful grants:
 
 | Grant | Covers |
