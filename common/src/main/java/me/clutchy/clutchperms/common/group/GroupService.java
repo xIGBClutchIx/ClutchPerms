@@ -165,6 +165,14 @@ public interface GroupService {
     void removeSubjectGroup(UUID subjectId, String groupName);
 
     /**
+     * Replaces every explicit group membership stored for one subject.
+     *
+     * @param subjectId subject UUID to update
+     * @param groupNames explicit normalized groups to store
+     */
+    void setSubjectGroups(UUID subjectId, Set<String> groupNames);
+
+    /**
      * Lists subjects explicitly assigned to one group.
      *
      * @param groupName group name to inspect

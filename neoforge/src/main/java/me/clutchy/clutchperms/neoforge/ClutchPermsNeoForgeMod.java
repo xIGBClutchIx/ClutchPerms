@@ -32,6 +32,7 @@ import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.track.TrackService;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -104,11 +105,11 @@ public final class ClutchPermsNeoForgeMod {
     private void registerCommands(RegisterCommandsEvent event) {
         ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> event.getDispatcher()
                 .register(NeoForgeClutchPermsCommand.create(ClutchPermsNeoForgeMod::getPermissionService, ClutchPermsNeoForgeMod::getSubjectMetadataService,
-                        ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getPermissionNodeRegistry, ClutchPermsNeoForgeMod::getManualPermissionNodeRegistry,
-                        ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics, ClutchPermsNeoForgeMod::reloadStorage,
-                        ClutchPermsNeoForgeMod::validateStorage, ClutchPermsNeoForgeMod::getStorageBackupService, ClutchPermsNeoForgeMod::getClutchPermsConfig,
-                        ClutchPermsNeoForgeMod::updateConfig, ClutchPermsNeoForgeMod::getAuditLogService, ClutchPermsNeoForgeMod::restoreBackup,
-                        ClutchPermsNeoForgeMod::refreshRuntimePermissions, ClutchPermsNeoForgeMod::getScheduledBackupService, rootLiteral)));
+                        ClutchPermsNeoForgeMod::getGroupService, ClutchPermsNeoForgeMod::getTrackService, ClutchPermsNeoForgeMod::getPermissionNodeRegistry,
+                        ClutchPermsNeoForgeMod::getManualPermissionNodeRegistry, ClutchPermsNeoForgeMod::getPermissionResolver, ClutchPermsNeoForgeMod::getStatusDiagnostics,
+                        ClutchPermsNeoForgeMod::reloadStorage, ClutchPermsNeoForgeMod::validateStorage, ClutchPermsNeoForgeMod::getStorageBackupService,
+                        ClutchPermsNeoForgeMod::getClutchPermsConfig, ClutchPermsNeoForgeMod::updateConfig, ClutchPermsNeoForgeMod::getAuditLogService,
+                        ClutchPermsNeoForgeMod::restoreBackup, ClutchPermsNeoForgeMod::refreshRuntimePermissions, ClutchPermsNeoForgeMod::getScheduledBackupService, rootLiteral)));
     }
 
     private void registerPermissionHandler(PermissionGatherEvent.Handler event) {
@@ -187,6 +188,15 @@ public final class ClutchPermsNeoForgeMod {
      */
     public static GroupService getGroupService() {
         return getRuntime().groupService();
+    }
+
+    /**
+     * Returns the active track service instance.
+     *
+     * @return the service initialized during NeoForge bootstrap
+     */
+    public static TrackService getTrackService() {
+        return getRuntime().trackService();
     }
 
     /**

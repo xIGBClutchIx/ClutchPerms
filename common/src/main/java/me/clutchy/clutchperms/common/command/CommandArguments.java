@@ -24,6 +24,12 @@ public final class CommandArguments {
 
     public static final String PARENT = "parent";
 
+    public static final String TRACK = "track";
+
+    public static final String NEW_TRACK = "newTrack";
+
+    public static final String POSITION = "position";
+
     public static final String BACKUP_KIND = "backupKind";
 
     public static final String BACKUP_FILE = "backupFile";

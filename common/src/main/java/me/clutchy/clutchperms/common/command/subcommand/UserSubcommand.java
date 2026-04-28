@@ -67,6 +67,8 @@ public final class UserSubcommand {
 
         int groups(CommandContext<S> context) throws CommandSyntaxException;
 
+        int tracks(CommandContext<S> context) throws CommandSyntaxException;
+
         int prefixUsage(CommandContext<S> context) throws CommandSyntaxException;
 
         int prefixGet(CommandContext<S> context) throws CommandSyntaxException;
@@ -99,6 +101,18 @@ public final class UserSubcommand {
 
         int unknownGroupUsage(CommandContext<S> context) throws CommandSyntaxException;
 
+        int trackUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int trackPromoteUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int trackPromote(CommandContext<S> context) throws CommandSyntaxException;
+
+        int trackDemoteUsage(CommandContext<S> context) throws CommandSyntaxException;
+
+        int trackDemote(CommandContext<S> context) throws CommandSyntaxException;
+
+        int unknownTrackUsage(CommandContext<S> context) throws CommandSyntaxException;
+
         int checkUsage(CommandContext<S> context) throws CommandSyntaxException;
 
         int check(CommandContext<S> context) throws CommandSyntaxException;
@@ -116,8 +130,9 @@ public final class UserSubcommand {
         return authorized.branch("user", userPermissions()).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::rootUsage))
                 .then(target.then(infoCommand(authorized, handlers)).then(listCommand(authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
                         .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
-                        .then(clearAllCommand(authorized, handlers)).then(groupsCommand(authorized, handlers)).then(displayCommand("prefix", authorized, handlers, true))
-                        .then(displayCommand("suffix", authorized, handlers, false)).then(groupCommand(environment, authorized, handlers))
+                        .then(clearAllCommand(authorized, handlers)).then(groupsCommand(authorized, handlers)).then(tracksCommand(authorized, handlers))
+                        .then(displayCommand("prefix", authorized, handlers, true)).then(displayCommand("suffix", authorized, handlers, false))
+                        .then(groupCommand(environment, authorized, handlers)).then(trackCommand(environment, authorized, handlers))
                         .then(checkCommand(authorized, handlers, permissionNodes)).then(explainCommand(authorized, handlers, permissionNodes))
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::targetUsage))
                         .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_USER_LIST)
@@ -158,6 +173,12 @@ public final class UserSubcommand {
                 .then(UserSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::groups)));
     }
 
+    private static <S> LiteralArgumentBuilder<S> tracksCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
+        return authorized.literal("tracks", PermissionNodes.ADMIN_USER_TRACK_LIST)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_TRACK_LIST, handlers::tracks))
+                .then(UserSubcommand.<S>pageArgument().executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_TRACK_LIST, handlers::tracks)));
+    }
+
     private static <S> LiteralArgumentBuilder<S> displayCommand(String literal, AuthorizedCommand<S> authorized, Handlers<S> handlers, boolean prefix) {
         return authorized.branch(literal, PermissionNodes.ADMIN_USER_DISPLAY_VIEW, PermissionNodes.ADMIN_USER_DISPLAY_SET, PermissionNodes.ADMIN_USER_DISPLAY_CLEAR)
                 .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_DISPLAY_VIEW, prefix ? handlers::prefixUsage : handlers::suffixUsage))
@@ -184,6 +205,19 @@ public final class UserSubcommand {
                         .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_GROUPS, handlers::unknownGroupUsage)));
     }
 
+    private static <S> LiteralArgumentBuilder<S> trackCommand(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers) {
+        return authorized.branch("track", PermissionNodes.ADMIN_USER_TRACK_LIST, PermissionNodes.ADMIN_USER_TRACK_PROMOTE, PermissionNodes.ADMIN_USER_TRACK_DEMOTE)
+                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_TRACK_LIST, handlers::trackUsage))
+                .then(authorized.literal("promote", PermissionNodes.ADMIN_USER_TRACK_PROMOTE)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_TRACK_PROMOTE, handlers::trackPromoteUsage))
+                        .then(trackArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_TRACK_PROMOTE, handlers::trackPromote))))
+                .then(authorized.literal("demote", PermissionNodes.ADMIN_USER_TRACK_DEMOTE)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_TRACK_DEMOTE, handlers::trackDemoteUsage))
+                        .then(trackArgument(environment).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_TRACK_DEMOTE, handlers::trackDemote))))
+                .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_USER_TRACK_LIST)
+                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_TRACK_LIST, handlers::unknownTrackUsage)));
+    }
+
     private static <S> LiteralArgumentBuilder<S> checkCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers, SuggestionProvider<S> permissionNodes) {
         return authorized.literal("check", PermissionNodes.ADMIN_USER_CHECK).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CHECK, handlers::checkUsage))
                 .then(nodeArgument(permissionNodes).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_CHECK, handlers::check)));
@@ -199,7 +233,8 @@ public final class UserSubcommand {
         return new String[]{PermissionNodes.ADMIN_USER_INFO, PermissionNodes.ADMIN_USER_LIST, PermissionNodes.ADMIN_USER_GET, PermissionNodes.ADMIN_USER_SET,
                 PermissionNodes.ADMIN_USER_CLEAR, PermissionNodes.ADMIN_USER_CLEAR_ALL, PermissionNodes.ADMIN_USER_CHECK, PermissionNodes.ADMIN_USER_EXPLAIN,
                 PermissionNodes.ADMIN_USER_GROUPS, PermissionNodes.ADMIN_USER_GROUP_ADD, PermissionNodes.ADMIN_USER_GROUP_REMOVE, PermissionNodes.ADMIN_USER_DISPLAY_VIEW,
-                PermissionNodes.ADMIN_USER_DISPLAY_SET, PermissionNodes.ADMIN_USER_DISPLAY_CLEAR};
+                PermissionNodes.ADMIN_USER_TRACK_LIST, PermissionNodes.ADMIN_USER_TRACK_PROMOTE, PermissionNodes.ADMIN_USER_TRACK_DEMOTE, PermissionNodes.ADMIN_USER_DISPLAY_SET,
+                PermissionNodes.ADMIN_USER_DISPLAY_CLEAR};
     }
 
     private static <S> RequiredArgumentBuilder<S, String> nodeArgument(SuggestionProvider<S> permissionNodes) {
@@ -226,6 +261,10 @@ public final class UserSubcommand {
     private static <S> RequiredArgumentBuilder<S, String> groupRemoveArgument(ClutchPermsCommandEnvironment<S> environment) {
         return RequiredArgumentBuilder.<S, String>argument(CommandArguments.GROUP, StringArgumentType.word())
                 .suggests((context, builder) -> suggestRemoveGroups(environment, context, builder));
+    }
+
+    private static <S> RequiredArgumentBuilder<S, String> trackArgument(ClutchPermsCommandEnvironment<S> environment) {
+        return RequiredArgumentBuilder.<S, String>argument(CommandArguments.TRACK, StringArgumentType.word()).suggests((context, builder) -> suggestTracks(environment, builder));
     }
 
     public static <S> CompletableFuture<Suggestions> suggestUserTargets(ClutchPermsCommandEnvironment<S> environment, S source, SuggestionsBuilder builder) {
@@ -255,6 +294,13 @@ public final class UserSubcommand {
         String remaining = builder.getRemainingLowerCase();
         environment.groupService().getSubjectGroups(subjectId.get()).stream().sorted(Comparator.naturalOrder())
                 .filter(group -> group.toLowerCase(Locale.ROOT).startsWith(remaining)).filter(group -> !GroupService.DEFAULT_GROUP.equals(group)).forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private static <S> CompletableFuture<Suggestions> suggestTracks(ClutchPermsCommandEnvironment<S> environment, SuggestionsBuilder builder) {
+        String remaining = builder.getRemainingLowerCase();
+        environment.trackService().getTracks().stream().sorted(Comparator.naturalOrder()).filter(track -> track.toLowerCase(Locale.ROOT).startsWith(remaining))
+                .forEach(builder::suggest);
         return builder.buildFuture();
     }
 

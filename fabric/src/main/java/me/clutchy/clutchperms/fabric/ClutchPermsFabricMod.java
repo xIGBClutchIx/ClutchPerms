@@ -30,6 +30,7 @@ import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.track.TrackService;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -88,9 +89,9 @@ public final class ClutchPermsFabricMod implements ModInitializer {
         }
         scheduledBackupService = new ScheduledBackupService(ClutchPermsFabricMod::getClutchPermsConfig, ClutchPermsFabricMod::getStorageBackupService, LOGGER::info, LOGGER::error);
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> ClutchPermsCommands.ROOT_LITERALS
-                .forEach(rootLiteral -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService,
-                        ClutchPermsFabricMod::getSubjectMetadataService, ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getPermissionNodeRegistry,
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> ClutchPermsCommands.ROOT_LITERALS.forEach(
+                rootLiteral -> dispatcher.register(FabricClutchPermsCommand.create(ClutchPermsFabricMod::getPermissionService, ClutchPermsFabricMod::getSubjectMetadataService,
+                        ClutchPermsFabricMod::getGroupService, ClutchPermsFabricMod::getTrackService, ClutchPermsFabricMod::getPermissionNodeRegistry,
                         ClutchPermsFabricMod::getManualPermissionNodeRegistry, ClutchPermsFabricMod::getPermissionResolver, ClutchPermsFabricMod::getStatusDiagnostics,
                         ClutchPermsFabricMod::reloadStorage, ClutchPermsFabricMod::validateStorage, ClutchPermsFabricMod::getStorageBackupService,
                         ClutchPermsFabricMod::getClutchPermsConfig, ClutchPermsFabricMod::updateConfig, ClutchPermsFabricMod::getAuditLogService,
@@ -143,6 +144,15 @@ public final class ClutchPermsFabricMod implements ModInitializer {
      */
     public static GroupService getGroupService() {
         return getRuntime().groupService();
+    }
+
+    /**
+     * Returns the active track service instance.
+     *
+     * @return the service initialized during Fabric bootstrap
+     */
+    public static TrackService getTrackService() {
+        return getRuntime().trackService();
     }
 
     /**

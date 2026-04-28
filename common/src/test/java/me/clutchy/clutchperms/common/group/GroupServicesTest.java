@@ -128,6 +128,30 @@ class GroupServicesTest {
     }
 
     @Test
+    void setSubjectGroupsReplacesMembershipsAndPersists() {
+        Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService groupService = GroupServices.sqlite(store);
+            groupService.createGroup("staff");
+            groupService.createGroup("admin");
+            groupService.createGroup("guest");
+            groupService.addSubjectGroup(FIRST_SUBJECT, "staff");
+            groupService.addSubjectGroup(FIRST_SUBJECT, "admin");
+
+            groupService.setSubjectGroups(FIRST_SUBJECT, Set.of("guest"));
+        }
+
+        try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
+            GroupService reloadedGroupService = GroupServices.sqlite(store);
+
+            assertEquals(Set.of("guest"), reloadedGroupService.getSubjectGroups(FIRST_SUBJECT));
+            assertEquals(Set.of(), reloadedGroupService.getGroupMembers("staff"));
+            assertEquals(Set.of(), reloadedGroupService.getGroupMembers("admin"));
+            assertEquals(Set.of(FIRST_SUBJECT), reloadedGroupService.getGroupMembers("guest"));
+        }
+    }
+
+    @Test
     void clearGroupPermissionsRemovesOnlyDirectPermissionsAndPersists() {
         Path databaseFile = SqliteTestSupport.databaseFile(temporaryDirectory);
         try (SqliteStore store = SqliteTestSupport.open(databaseFile)) {
@@ -220,6 +244,9 @@ class GroupServicesTest {
         assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.addSubjectGroup(SECOND_SUBJECT, "base"));
+        assertGroupStatePreserved(groupService, databaseFile);
+
+        assertThrows(PermissionStorageException.class, () -> groupService.setSubjectGroups(FIRST_SUBJECT, Set.of("base", "guest")));
         assertGroupStatePreserved(groupService, databaseFile);
 
         assertThrows(PermissionStorageException.class, () -> groupService.addGroupParent("guest", "base"));

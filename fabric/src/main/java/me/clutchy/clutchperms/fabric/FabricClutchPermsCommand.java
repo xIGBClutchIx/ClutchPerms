@@ -26,6 +26,7 @@ import me.clutchy.clutchperms.common.runtime.ScheduledBackupService;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.track.TrackService;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
@@ -41,58 +42,60 @@ import net.minecraft.server.level.ServerPlayer;
 final class FabricClutchPermsCommand {
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
-            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
-            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
-            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
-            Runnable runtimePermissionRefresher) {
-        return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
-                storageReloader, storageValidator, storageBackupService, ClutchPermsConfig::defaults, updater -> {
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<TrackService> trackService,
+            Supplier<PermissionNodeRegistry> permissionNodeRegistry, Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry,
+            Supplier<PermissionResolver> permissionResolver, Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator,
+            Supplier<StorageBackupService> storageBackupService, Runnable runtimePermissionRefresher) {
+        return create(permissionService, subjectMetadataService, groupService, trackService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver,
+                statusDiagnostics, storageReloader, storageValidator, storageBackupService, ClutchPermsConfig::defaults, updater -> {
                     throw new UnsupportedOperationException("Config updates are not available for this command environment");
                 }, AuditLogServices::inMemory, defaultBackupRestorer(storageBackupService, storageReloader, runtimePermissionRefresher), runtimePermissionRefresher,
                 ClutchPermsCommands.ROOT_LITERAL);
     }
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
-            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
-            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
-            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
-            Runnable runtimePermissionRefresher, String rootLiteral) {
-        return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
-                storageReloader, storageValidator, storageBackupService, ClutchPermsConfig::defaults, updater -> {
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<TrackService> trackService,
+            Supplier<PermissionNodeRegistry> permissionNodeRegistry, Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry,
+            Supplier<PermissionResolver> permissionResolver, Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator,
+            Supplier<StorageBackupService> storageBackupService, Runnable runtimePermissionRefresher, String rootLiteral) {
+        return create(permissionService, subjectMetadataService, groupService, trackService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver,
+                statusDiagnostics, storageReloader, storageValidator, storageBackupService, ClutchPermsConfig::defaults, updater -> {
                     throw new UnsupportedOperationException("Config updates are not available for this command environment");
                 }, AuditLogServices::inMemory, defaultBackupRestorer(storageBackupService, storageReloader, runtimePermissionRefresher), runtimePermissionRefresher, rootLiteral);
     }
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
-            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
-            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
-            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
-            Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater, Supplier<AuditLogService> auditLogService,
-            Runnable runtimePermissionRefresher, String rootLiteral) {
-        return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
-                storageReloader, storageValidator, storageBackupService, config, configUpdater, auditLogService,
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<TrackService> trackService,
+            Supplier<PermissionNodeRegistry> permissionNodeRegistry, Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry,
+            Supplier<PermissionResolver> permissionResolver, Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator,
+            Supplier<StorageBackupService> storageBackupService, Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater,
+            Supplier<AuditLogService> auditLogService, Runnable runtimePermissionRefresher, String rootLiteral) {
+        return create(permissionService, subjectMetadataService, groupService, trackService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver,
+                statusDiagnostics, storageReloader, storageValidator, storageBackupService, config, configUpdater, auditLogService,
                 defaultBackupRestorer(storageBackupService, storageReloader, runtimePermissionRefresher), runtimePermissionRefresher, rootLiteral);
     }
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
-            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
-            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
-            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
-            Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater, Supplier<AuditLogService> auditLogService,
-            BiConsumer<StorageFileKind, String> backupRestorer, Runnable runtimePermissionRefresher, String rootLiteral) {
-        return create(permissionService, subjectMetadataService, groupService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver, statusDiagnostics,
-                storageReloader, storageValidator, storageBackupService, config, configUpdater, auditLogService, backupRestorer, runtimePermissionRefresher, () -> {
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<TrackService> trackService,
+            Supplier<PermissionNodeRegistry> permissionNodeRegistry, Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry,
+            Supplier<PermissionResolver> permissionResolver, Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator,
+            Supplier<StorageBackupService> storageBackupService, Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater,
+            Supplier<AuditLogService> auditLogService, BiConsumer<StorageFileKind, String> backupRestorer, Runnable runtimePermissionRefresher, String rootLiteral) {
+        return create(permissionService, subjectMetadataService, groupService, trackService, permissionNodeRegistry, manualPermissionNodeRegistry, permissionResolver,
+                statusDiagnostics, storageReloader, storageValidator, storageBackupService, config, configUpdater, auditLogService, backupRestorer, runtimePermissionRefresher,
+                () -> {
                     throw new UnsupportedOperationException("Scheduled backups are not available for this command environment");
                 }, rootLiteral);
     }
 
     static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> create(Supplier<PermissionService> permissionService,
-            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<PermissionNodeRegistry> permissionNodeRegistry,
-            Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry, Supplier<PermissionResolver> permissionResolver,
-            Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator, Supplier<StorageBackupService> storageBackupService,
-            Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater, Supplier<AuditLogService> auditLogService,
-            BiConsumer<StorageFileKind, String> backupRestorer, Runnable runtimePermissionRefresher, Supplier<ScheduledBackupService> scheduledBackupService, String rootLiteral) {
-        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, groupService, permissionNodeRegistry,
+            Supplier<SubjectMetadataService> subjectMetadataService, Supplier<GroupService> groupService, Supplier<TrackService> trackService,
+            Supplier<PermissionNodeRegistry> permissionNodeRegistry, Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistry,
+            Supplier<PermissionResolver> permissionResolver, Supplier<CommandStatusDiagnostics> statusDiagnostics, Runnable storageReloader, Runnable storageValidator,
+            Supplier<StorageBackupService> storageBackupService, Supplier<ClutchPermsConfig> config, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater,
+            Supplier<AuditLogService> auditLogService, BiConsumer<StorageFileKind, String> backupRestorer, Runnable runtimePermissionRefresher,
+            Supplier<ScheduledBackupService> scheduledBackupService, String rootLiteral) {
+        return ClutchPermsCommands.builder(new FabricCommandEnvironment(permissionService, subjectMetadataService, groupService, trackService, permissionNodeRegistry,
                 manualPermissionNodeRegistry, permissionResolver, statusDiagnostics, storageReloader, storageValidator, storageBackupService, config, configUpdater,
                 auditLogService, backupRestorer, runtimePermissionRefresher, scheduledBackupService), rootLiteral);
     }
@@ -101,7 +104,7 @@ final class FabricClutchPermsCommand {
     }
 
     private record FabricCommandEnvironment(Supplier<PermissionService> permissionServiceSupplier, Supplier<SubjectMetadataService> subjectMetadataServiceSupplier,
-            Supplier<GroupService> groupServiceSupplier, Supplier<PermissionNodeRegistry> permissionNodeRegistrySupplier,
+            Supplier<GroupService> groupServiceSupplier, Supplier<TrackService> trackServiceSupplier, Supplier<PermissionNodeRegistry> permissionNodeRegistrySupplier,
             Supplier<MutablePermissionNodeRegistry> manualPermissionNodeRegistrySupplier, Supplier<PermissionResolver> permissionResolverSupplier,
             Supplier<CommandStatusDiagnostics> statusDiagnosticsSupplier, Runnable storageReloader, Runnable storageValidator,
             Supplier<StorageBackupService> storageBackupServiceSupplier, Supplier<ClutchPermsConfig> configSupplier, Consumer<UnaryOperator<ClutchPermsConfig>> configUpdater,
@@ -116,6 +119,11 @@ final class FabricClutchPermsCommand {
         @Override
         public GroupService groupService() {
             return groupServiceSupplier.get();
+        }
+
+        @Override
+        public TrackService trackService() {
+            return trackServiceSupplier.get();
         }
 
         @Override

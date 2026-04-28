@@ -169,12 +169,15 @@ public final class SqliteStore implements AutoCloseable {
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS subjects (subject_id TEXT PRIMARY KEY, last_known_name TEXT NOT NULL, last_seen TEXT NOT NULL)");
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS subject_display (subject_id TEXT PRIMARY KEY, prefix TEXT, suffix TEXT)");
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS groups (name TEXT PRIMARY KEY, prefix TEXT, suffix TEXT)");
+                statement.executeUpdate("CREATE TABLE IF NOT EXISTS tracks (name TEXT PRIMARY KEY)");
                 statement.executeUpdate(
                         "CREATE TABLE IF NOT EXISTS group_permissions (group_name TEXT NOT NULL, node TEXT NOT NULL, value TEXT NOT NULL CHECK (value IN ('TRUE', 'FALSE')), PRIMARY KEY (group_name, node), FOREIGN KEY (group_name) REFERENCES groups(name) ON DELETE CASCADE)");
                 statement.executeUpdate(
                         "CREATE TABLE IF NOT EXISTS group_parents (group_name TEXT NOT NULL, parent_name TEXT NOT NULL, PRIMARY KEY (group_name, parent_name), FOREIGN KEY (group_name) REFERENCES groups(name) ON DELETE CASCADE, FOREIGN KEY (parent_name) REFERENCES groups(name) ON DELETE CASCADE)");
                 statement.executeUpdate(
                         "CREATE TABLE IF NOT EXISTS memberships (subject_id TEXT NOT NULL, group_name TEXT NOT NULL, PRIMARY KEY (subject_id, group_name), FOREIGN KEY (group_name) REFERENCES groups(name) ON DELETE CASCADE)");
+                statement.executeUpdate(
+                        "CREATE TABLE IF NOT EXISTS track_groups (track_name TEXT NOT NULL, position INTEGER NOT NULL CHECK (position >= 1), group_name TEXT NOT NULL, PRIMARY KEY (track_name, position), UNIQUE (track_name, group_name), FOREIGN KEY (track_name) REFERENCES tracks(name) ON DELETE CASCADE, FOREIGN KEY (group_name) REFERENCES groups(name) ON DELETE CASCADE)");
                 statement.executeUpdate("CREATE TABLE IF NOT EXISTS known_nodes (node TEXT PRIMARY KEY, description TEXT NOT NULL)");
                 statement.executeUpdate(
                         "CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL, actor_kind TEXT NOT NULL, actor_id TEXT, actor_name TEXT, action TEXT NOT NULL, target_type TEXT NOT NULL, target_key TEXT NOT NULL, target_display TEXT NOT NULL, before_json TEXT NOT NULL, after_json TEXT NOT NULL, source_command TEXT NOT NULL, undoable INTEGER NOT NULL CHECK (undoable IN (0, 1)), undone INTEGER NOT NULL CHECK (undone IN (0, 1)), undone_by_entry_id INTEGER, undone_at TEXT, undone_by_actor_id TEXT, undone_by_actor_name TEXT)");

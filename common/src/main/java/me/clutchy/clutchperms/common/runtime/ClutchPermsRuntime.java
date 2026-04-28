@@ -34,6 +34,8 @@ import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.storage.StorageFiles;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
+import me.clutchy.clutchperms.common.track.TrackService;
+import me.clutchy.clutchperms.common.track.TrackServices;
 
 /**
  * Owns platform-neutral ClutchPerms SQLite storage loading, validation, backup wiring, active services, and resolver cache invalidation.
@@ -176,7 +178,8 @@ public final class ClutchPermsRuntime {
         try (SqliteStore store = SqliteStore.openExisting(storagePaths.databaseFile(), dependencyMode)) {
             PermissionServices.sqlite(store);
             SubjectMetadataServices.sqlite(store);
-            GroupServices.sqlite(store);
+            GroupService groupService = GroupServices.sqlite(store);
+            TrackServices.sqlite(store, groupService);
             PermissionNodeRegistries.sqlite(store);
             AuditLogServices.sqlite(store);
         }
@@ -224,6 +227,15 @@ public final class ClutchPermsRuntime {
      */
     public GroupService groupService() {
         return activeServices().groupService();
+    }
+
+    /**
+     * Returns active track service.
+     *
+     * @return track service
+     */
+    public TrackService trackService() {
+        return activeServices().trackService();
     }
 
     /**
@@ -347,12 +359,14 @@ public final class ClutchPermsRuntime {
         PermissionService loadedPermissionService;
         SubjectMetadataService loadedSubjectMetadataService;
         GroupService loadedGroupService;
+        TrackService loadedTrackService;
         MutablePermissionNodeRegistry loadedManualPermissionNodeRegistry;
         AuditLogService loadedAuditLogService;
         try {
             loadedPermissionService = PermissionServices.sqlite(sqliteStore);
             loadedSubjectMetadataService = SubjectMetadataServices.sqlite(sqliteStore);
             loadedGroupService = GroupServices.sqlite(sqliteStore);
+            loadedTrackService = TrackServices.sqlite(sqliteStore, loadedGroupService);
             loadedManualPermissionNodeRegistry = PermissionNodeRegistries.sqlite(sqliteStore);
             loadedAuditLogService = AuditLogServices.sqlite(sqliteStore);
             AuditLogRetention.apply(loadedConfig, loadedAuditLogService, Clock.systemUTC());
@@ -365,18 +379,40 @@ public final class ClutchPermsRuntime {
             invalidateSubjectCache(subjectId);
             runtimeHooks.refreshSubject(subjectId);
         });
+        GroupChangeListener trackListener = loadedTrackService instanceof GroupChangeListener listener ? listener : new GroupChangeListener() {
+
+            @Override
+            public void subjectGroupsChanged(UUID subjectId) {
+            }
+
+            @Override
+            public void groupsChanged() {
+            }
+        };
         GroupService observedGroupService = GroupServices.observing(loadedGroupService, new GroupChangeListener() {
 
             @Override
             public void subjectGroupsChanged(UUID subjectId) {
+                trackListener.subjectGroupsChanged(subjectId);
                 invalidateSubjectCache(subjectId);
                 runtimeHooks.refreshSubject(subjectId);
             }
 
             @Override
             public void groupsChanged() {
+                trackListener.groupsChanged();
                 invalidateAllResolverCache();
                 runtimeHooks.refreshAll();
+            }
+
+            @Override
+            public void groupDeleted(String groupName) {
+                trackListener.groupDeleted(groupName);
+            }
+
+            @Override
+            public void groupRenamed(String groupName, String newGroupName) {
+                trackListener.groupRenamed(groupName, newGroupName);
             }
         });
         MutablePermissionNodeRegistry observedManualPermissionNodeRegistry = PermissionNodeRegistries.observing(loadedManualPermissionNodeRegistry, () -> {
@@ -385,8 +421,8 @@ public final class ClutchPermsRuntime {
         });
         PermissionNodeRegistry mergedPermissionNodeRegistry = createPermissionNodeRegistry(observedManualPermissionNodeRegistry);
         PermissionResolver loadedPermissionResolver = new PermissionResolver(observedPermissionService, observedGroupService);
-        return new ClutchPermsRuntimeServices(observedPermissionService, loadedSubjectMetadataService, observedGroupService, observedManualPermissionNodeRegistry,
-                mergedPermissionNodeRegistry, loadedPermissionResolver, loadedConfig, loadedAuditLogService, sqliteStore);
+        return new ClutchPermsRuntimeServices(observedPermissionService, loadedSubjectMetadataService, observedGroupService, loadedTrackService,
+                observedManualPermissionNodeRegistry, mergedPermissionNodeRegistry, loadedPermissionResolver, loadedConfig, loadedAuditLogService, sqliteStore);
     }
 
     private PermissionNodeRegistry createPermissionNodeRegistry(MutablePermissionNodeRegistry manualPermissionNodeRegistry) {

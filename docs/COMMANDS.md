@@ -6,7 +6,7 @@ Command help and long list results are paged. In chat, command rows can be click
 
 Console and remote console can run commands for bootstrap. Players need the exact effective command permission for the command they run, and player command trees/completions only expose branches backed by permissions they currently have.
 
-Destructive commands require repeat-command confirmation. Run the same destructive operation again within 30 seconds to confirm `user clear-all`, `group clear-all`, `group delete`, `backup restore`, or audit history prune commands.
+Destructive commands require repeat-command confirmation. Run the same destructive operation again within 30 seconds to confirm `user clear-all`, `group clear-all`, `group delete`, `track delete`, `backup restore`, or audit history prune commands.
 
 ## Useful Grants
 
@@ -14,7 +14,9 @@ Destructive commands require repeat-command confirmation. Run the same destructi
 | --- | --- |
 | `clutchperms.admin.*` | Every ClutchPerms admin command |
 | `clutchperms.admin.user.*` | Direct user permissions, user group membership, and user display values |
+| `clutchperms.admin.user.track.*` | User track listing plus promote and demote actions |
 | `clutchperms.admin.group.*` | Group definitions, group permissions, group members, group parents, and group display values |
+| `clutchperms.admin.track.*` | Track definitions and ordered group management |
 | `clutchperms.admin.config.*` | Runtime config view, set, and reset |
 | `clutchperms.admin.backup.*` | Backup create, list, schedule status, run-now, and restore |
 | `clutchperms.admin.users.*` | Stored user list and search |
@@ -92,6 +94,9 @@ Config keys are documented in [STORAGE.md](STORAGE.md).
 | `/clutchperms user <target> groups [page]` | `clutchperms.admin.user.groups` | Lists explicit group memberships, including `op` when assigned, and the implicit `default` group. |
 | `/clutchperms user <target> group add <group>` | `clutchperms.admin.user.group.add` | Adds an explicit group membership. |
 | `/clutchperms user <target> group remove <group>` | `clutchperms.admin.user.group.remove` | Removes an explicit group membership. |
+| `/clutchperms user <target> tracks [page]` | `clutchperms.admin.user.track.list` | Lists the user's matching positions across defined tracks. |
+| `/clutchperms user <target> track promote <track>` | `clutchperms.admin.user.track.promote` | Moves the user to the next group on a track. |
+| `/clutchperms user <target> track demote <track>` | `clutchperms.admin.user.track.demote` | Moves the user to the previous group on a track. |
 | `/clutchperms user <target> prefix get` | `clutchperms.admin.user.display.view` | Shows direct and effective user prefix values. |
 | `/clutchperms user <target> prefix set <text>` | `clutchperms.admin.user.display.set` | Sets a direct user prefix. |
 | `/clutchperms user <target> prefix clear` | `clutchperms.admin.user.display.clear` | Clears the direct user prefix. |
@@ -126,6 +131,27 @@ The built-in `default` group always exists, applies implicitly to every subject,
 | `/clutchperms group <group> parent add <parent>` | `clutchperms.admin.group.parent.add` | Adds an inheritance parent. |
 | `/clutchperms group <group> parent remove <parent>` | `clutchperms.admin.group.parent.remove` | Removes an inheritance parent. |
 
+## Track Commands
+
+Tracks are ordered group ladders used by the shared promote and demote helpers. They do not affect permission or display resolution by themselves.
+
+`default` may appear only as the first track entry. `op` cannot appear on a track. Manual `user group add` and `user group remove` commands remain free-form; only the track commands enforce ordered-track rules.
+
+| Command | Permission | Description |
+| --- | --- | --- |
+| `/clutchperms track list [page]` | `clutchperms.admin.track.list` | Lists tracks. |
+| `/clutchperms track <track> create` | `clutchperms.admin.track.create` | Creates an empty track. |
+| `/clutchperms track <track> delete` | `clutchperms.admin.track.delete` | Deletes a track after repeat confirmation. |
+| `/clutchperms track <track> info` | `clutchperms.admin.track.info` | Shows a quick track summary. |
+| `/clutchperms track <track> list [page]` | `clutchperms.admin.track.view` | Lists the ordered groups on one track. |
+| `/clutchperms track <track> rename <new-track>` | `clutchperms.admin.track.rename` | Renames a track. |
+| `/clutchperms track <track> append <group>` | `clutchperms.admin.track.append` | Adds a group at the end of a track. |
+| `/clutchperms track <track> insert <position> <group>` | `clutchperms.admin.track.insert` | Inserts a group at a one-based position. |
+| `/clutchperms track <track> move <group> <position>` | `clutchperms.admin.track.move` | Moves one track group to a one-based position. |
+| `/clutchperms track <track> remove <group>` | `clutchperms.admin.track.remove` | Removes one group from a track and compacts the remaining positions. |
+
+Track promote and demote only count explicit memberships for non-`default` entries. If a user matches multiple explicit groups on the same track, promote and demote fail instead of guessing. When no explicit match exists, promote starts from implicit `default` when the track begins there; otherwise it assigns the first track group. Demote from implicit `default` and promote or demote past either end of a track fail clearly.
+
 ## Stored Users
 
 | Command | Permission | Description |
@@ -148,6 +174,7 @@ The built-in `default` group always exists, applies implicitly to every subject,
 - Invalid or out-of-range pages return styled ClutchPerms feedback and a command to try.
 - Bad user, group, backup, and manual-node targets show styled closest matches or a next command to try.
 - Ambiguous stored names fail with matching UUIDs instead of choosing one.
+- Track names and group names are normalized before storage and lookup.
 - On Paper, `/op <target>` and `/deop <target>` are ClutchPerms shortcuts for adding or removing explicit `op` group membership when `paper.replaceOpCommands` is enabled.
 - Successful command-layer mutations are written to the SQLite audit log with actor, target, action, timestamp, before/after snapshots, source command, and undo state.
 - `/clutchperms undo <id>` refuses to overwrite newer changes: the current target state must still match the audited after snapshot.

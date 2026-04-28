@@ -43,6 +43,8 @@ import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
+import me.clutchy.clutchperms.common.track.TrackService;
+import me.clutchy.clutchperms.common.track.TrackServices;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -68,9 +70,10 @@ final class ForgeClutchPermsPermissionHandlerTest {
     void setUp() {
         PermissionService storagePermissionService = new InMemoryPermissionService();
         GroupService storageGroupService = new InMemoryGroupService();
+        TrackService storageTrackService = TrackServices.inMemory(storageGroupService);
         permissionResolver = new PermissionResolver(storagePermissionService, storageGroupService);
         permissionService = PermissionServices.observing(storagePermissionService, permissionResolver::invalidateSubject);
-        groupService = observingGroupService(storageGroupService, permissionResolver);
+        groupService = observingGroupService(storageGroupService, trackListener(storageTrackService), permissionResolver);
         booleanNode = new PermissionNode<>("example", "node", PermissionTypes.BOOLEAN, (player, subjectId, context) -> Boolean.TRUE);
         handler = new ForgeClutchPermsPermissionHandler(permissionResolver, List.of(booleanNode));
     }
@@ -512,6 +515,8 @@ final class ForgeClutchPermsPermissionHandlerTest {
 
         private PermissionResolver permissionResolver;
 
+        private TrackService trackService;
+
         private MutablePermissionNodeRegistry manualPermissionNodeRegistry;
 
         private PermissionNodeRegistry permissionNodeRegistry;
@@ -539,6 +544,7 @@ final class ForgeClutchPermsPermissionHandlerTest {
             this.store = newStore;
             PermissionService storagePermissionService = PermissionServices.sqlite(newStore);
             GroupService storageGroupService = GroupServices.sqlite(newStore);
+            TrackService storageTrackService = TrackServices.sqlite(newStore, storageGroupService);
             SubjectMetadataService storageSubjectMetadataService = SubjectMetadataServices.sqlite(newStore);
             MutablePermissionNodeRegistry storageManualPermissionNodeRegistry = PermissionNodeRegistries.observing(PermissionNodeRegistries.sqlite(newStore),
                     this::refreshRuntimePermissions);
@@ -547,7 +553,9 @@ final class ForgeClutchPermsPermissionHandlerTest {
                 this.permissionResolver.invalidateSubject(subjectId);
                 refreshRuntimeSubject(subjectId);
             });
-            this.groupService = observingGroupService(storageGroupService, this.permissionResolver, this::refreshRuntimeSubject, this::refreshRuntimePermissions);
+            this.groupService = observingGroupService(storageGroupService, trackListener(storageTrackService), this.permissionResolver, this::refreshRuntimeSubject,
+                    this::refreshRuntimePermissions);
+            this.trackService = storageTrackService;
             this.subjectMetadataService = storageSubjectMetadataService;
             this.manualPermissionNodeRegistry = storageManualPermissionNodeRegistry;
             this.permissionNodeRegistry = PermissionNodeRegistries.composite(PermissionNodeRegistries.builtIn(), manualPermissionNodeRegistry);
@@ -561,6 +569,11 @@ final class ForgeClutchPermsPermissionHandlerTest {
         @Override
         public GroupService groupService() {
             return groupService;
+        }
+
+        @Override
+        public TrackService trackService() {
+            return trackService;
         }
 
         @Override
@@ -600,7 +613,8 @@ final class ForgeClutchPermsPermissionHandlerTest {
             try (SqliteStore validationStore = SqliteStore.openExisting(databaseFile(storageDirectory), SqliteDependencyMode.ANY_VISIBLE)) {
                 PermissionServices.sqlite(validationStore);
                 SubjectMetadataServices.sqlite(validationStore);
-                GroupServices.sqlite(validationStore);
+                GroupService validationGroupService = GroupServices.sqlite(validationStore);
+                TrackServices.sqlite(validationStore, validationGroupService);
                 PermissionNodeRegistries.sqlite(validationStore);
             }
         }
@@ -668,14 +682,14 @@ final class ForgeClutchPermsPermissionHandlerTest {
         }
     }
 
-    private static GroupService observingGroupService(GroupService groupService, PermissionResolver permissionResolver) {
-        return observingGroupService(groupService, permissionResolver, subjectId -> {
+    private static GroupService observingGroupService(GroupService groupService, GroupChangeListener trackListener, PermissionResolver permissionResolver) {
+        return observingGroupService(groupService, trackListener, permissionResolver, subjectId -> {
         }, () -> {
         });
     }
 
-    private static GroupService observingGroupService(GroupService groupService, PermissionResolver permissionResolver, java.util.function.Consumer<UUID> subjectRefresher,
-            Runnable fullRefresher) {
+    private static GroupService observingGroupService(GroupService groupService, GroupChangeListener trackListener, PermissionResolver permissionResolver,
+            java.util.function.Consumer<UUID> subjectRefresher, Runnable fullRefresher) {
         return GroupServices.observing(groupService, new GroupChangeListener() {
 
             @Override
@@ -689,6 +703,20 @@ final class ForgeClutchPermsPermissionHandlerTest {
                 permissionResolver.invalidateAll();
                 fullRefresher.run();
             }
+
+            @Override
+            public void groupDeleted(String groupName) {
+                trackListener.groupDeleted(groupName);
+            }
+
+            @Override
+            public void groupRenamed(String oldGroupName, String newGroupName) {
+                trackListener.groupRenamed(oldGroupName, newGroupName);
+            }
         });
+    }
+
+    private static GroupChangeListener trackListener(TrackService trackService) {
+        return (GroupChangeListener) trackService;
     }
 }

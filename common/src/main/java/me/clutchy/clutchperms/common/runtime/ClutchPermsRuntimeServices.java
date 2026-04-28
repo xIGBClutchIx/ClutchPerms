@@ -11,6 +11,7 @@ import me.clutchy.clutchperms.common.permission.PermissionResolver;
 import me.clutchy.clutchperms.common.permission.PermissionService;
 import me.clutchy.clutchperms.common.storage.SqliteStore;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.track.TrackService;
 
 /**
  * Immutable snapshot of active ClutchPerms services.
@@ -18,6 +19,7 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
  * @param permissionService direct permission service
  * @param subjectMetadataService subject metadata service
  * @param groupService group service
+ * @param trackService track service
  * @param manualPermissionNodeRegistry manual known-node registry
  * @param permissionNodeRegistry merged known-node registry
  * @param permissionResolver effective permission resolver
@@ -25,7 +27,7 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
  * @param auditLogService command audit history service
  * @param sqliteStore active SQLite store
  */
-public record ClutchPermsRuntimeServices(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService,
+public record ClutchPermsRuntimeServices(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService, TrackService trackService,
         MutablePermissionNodeRegistry manualPermissionNodeRegistry, PermissionNodeRegistry permissionNodeRegistry, PermissionResolver permissionResolver, ClutchPermsConfig config,
         AuditLogService auditLogService, SqliteStore sqliteStore) implements AutoCloseable {
 
@@ -36,6 +38,7 @@ public record ClutchPermsRuntimeServices(PermissionService permissionService, Su
         permissionService = Objects.requireNonNull(permissionService, "permissionService");
         subjectMetadataService = Objects.requireNonNull(subjectMetadataService, "subjectMetadataService");
         groupService = Objects.requireNonNull(groupService, "groupService");
+        trackService = Objects.requireNonNull(trackService, "trackService");
         manualPermissionNodeRegistry = Objects.requireNonNull(manualPermissionNodeRegistry, "manualPermissionNodeRegistry");
         permissionNodeRegistry = Objects.requireNonNull(permissionNodeRegistry, "permissionNodeRegistry");
         permissionResolver = Objects.requireNonNull(permissionResolver, "permissionResolver");

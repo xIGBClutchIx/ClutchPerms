@@ -50,6 +50,7 @@ import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadata;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
+import me.clutchy.clutchperms.common.track.TrackService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -152,8 +153,10 @@ class ClutchPermsPaperPluginTest {
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_CONFIG_RESET));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_SET));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_DISPLAY_SET));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_USER_TRACK_PROMOTE));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_GROUP_MEMBERS));
         assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_GROUP_DISPLAY_SET));
+        assertNotNull(server.getPluginManager().getPermission(PermissionNodes.ADMIN_TRACK_APPEND));
     }
 
     /**
@@ -174,15 +177,18 @@ class ClutchPermsPaperPluginTest {
     @Test
     void groupServicesAreRegistered() {
         RegisteredServiceProvider<GroupService> groupRegistration = server.getServicesManager().getRegistration(GroupService.class);
+        RegisteredServiceProvider<TrackService> trackRegistration = server.getServicesManager().getRegistration(TrackService.class);
         RegisteredServiceProvider<PermissionResolver> resolverRegistration = server.getServicesManager().getRegistration(PermissionResolver.class);
         RegisteredServiceProvider<PermissionNodeRegistry> nodeRegistryRegistration = server.getServicesManager().getRegistration(PermissionNodeRegistry.class);
         RegisteredServiceProvider<MutablePermissionNodeRegistry> manualNodeRegistryRegistration = server.getServicesManager().getRegistration(MutablePermissionNodeRegistry.class);
 
         assertNotNull(groupRegistration);
+        assertNotNull(trackRegistration);
         assertNotNull(resolverRegistration);
         assertNotNull(nodeRegistryRegistration);
         assertNotNull(manualNodeRegistryRegistration);
         assertSame(plugin.getGroupService(), groupRegistration.getProvider());
+        assertSame(plugin.getTrackService(), trackRegistration.getProvider());
         assertSame(plugin.getPermissionResolver(), resolverRegistration.getProvider());
         assertSame(plugin.getPermissionNodeRegistry(), nodeRegistryRegistration.getProvider());
         assertSame(plugin.getManualPermissionNodeRegistry(), manualNodeRegistryRegistration.getProvider());
@@ -225,6 +231,7 @@ class ClutchPermsPaperPluginTest {
         assertNextMessage(player, "Chat formatting: enabled.");
         assertNextMessage(player, "Known subjects: 1");
         assertNextMessage(player, "Known groups: 2");
+        assertNextMessage(player, "Known tracks: 0");
         assertNextMessage(player, "Known permission nodes: " + plugin.getPermissionNodeRegistry().getKnownNodes().size());
         PermissionResolverCacheStats cacheStats = plugin.getPermissionResolver().cacheStats();
         assertNextMessage(player, "Resolver cache: " + cacheStats.subjects() + " subjects, " + cacheStats.nodeResults() + " node results, " + cacheStats.effectiveSnapshots()
@@ -265,7 +272,7 @@ class ClutchPermsPaperPluginTest {
 
         assertEquals(1, dispatcher.execute("clutchperms", new TestCommandSourceStack(player)));
 
-        assertNextMessage(player, "ClutchPerms commands (page 1/8):");
+        assertNextMessage(player, "ClutchPerms commands (page 1/10):");
         Component firstCommand = player.nextComponentMessage();
         assertEquals("/clutchperms help [page]", PlainTextComponentSerializer.plainText().serialize(firstCommand));
         assertComponentClick(firstCommand, ClickEvent.Action.SUGGEST_COMMAND, "/clutchperms help [page]");
@@ -275,7 +282,7 @@ class ClutchPermsPaperPluginTest {
             player.nextComponentMessage();
         }
         Component navigation = player.nextComponentMessage();
-        assertEquals("Page 1/8 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
+        assertEquals("Page 1/10 | Next >", PlainTextComponentSerializer.plainText().serialize(navigation));
         assertComponentClick(navigation, ClickEvent.Action.RUN_COMMAND, "/clutchperms help 2");
         assertComponentHover(navigation);
     }

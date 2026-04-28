@@ -32,6 +32,7 @@ import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.track.TrackService;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -102,10 +103,10 @@ public final class ClutchPermsForgeMod {
     private void registerCommands(RegisterCommandsEvent event) {
         ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> event.getDispatcher()
                 .register(ForgeClutchPermsCommand.create(ClutchPermsForgeMod::getPermissionService, ClutchPermsForgeMod::getSubjectMetadataService,
-                        ClutchPermsForgeMod::getGroupService, ClutchPermsForgeMod::getPermissionNodeRegistry, ClutchPermsForgeMod::getManualPermissionNodeRegistry,
-                        ClutchPermsForgeMod::getPermissionResolver, ClutchPermsForgeMod::getStatusDiagnostics, ClutchPermsForgeMod::reloadStorage,
-                        ClutchPermsForgeMod::validateStorage, ClutchPermsForgeMod::getStorageBackupService, ClutchPermsForgeMod::getClutchPermsConfig,
-                        ClutchPermsForgeMod::updateConfig, ClutchPermsForgeMod::getAuditLogService, ClutchPermsForgeMod::restoreBackup,
+                        ClutchPermsForgeMod::getGroupService, ClutchPermsForgeMod::getTrackService, ClutchPermsForgeMod::getPermissionNodeRegistry,
+                        ClutchPermsForgeMod::getManualPermissionNodeRegistry, ClutchPermsForgeMod::getPermissionResolver, ClutchPermsForgeMod::getStatusDiagnostics,
+                        ClutchPermsForgeMod::reloadStorage, ClutchPermsForgeMod::validateStorage, ClutchPermsForgeMod::getStorageBackupService,
+                        ClutchPermsForgeMod::getClutchPermsConfig, ClutchPermsForgeMod::updateConfig, ClutchPermsForgeMod::getAuditLogService, ClutchPermsForgeMod::restoreBackup,
                         ClutchPermsForgeMod::refreshRuntimePermissions, ClutchPermsForgeMod::getScheduledBackupService, rootLiteral)));
     }
 
@@ -185,6 +186,15 @@ public final class ClutchPermsForgeMod {
      */
     public static GroupService getGroupService() {
         return getRuntime().groupService();
+    }
+
+    /**
+     * Returns the active track service instance.
+     *
+     * @return the service initialized during Forge bootstrap
+     */
+    public static TrackService getTrackService() {
+        return getRuntime().trackService();
     }
 
     /**

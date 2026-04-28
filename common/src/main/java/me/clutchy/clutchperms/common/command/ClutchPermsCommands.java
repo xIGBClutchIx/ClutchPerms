@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -49,6 +50,7 @@ import me.clutchy.clutchperms.common.command.subcommand.BackupSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.ConfigSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.GroupSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.NodesSubcommand;
+import me.clutchy.clutchperms.common.command.subcommand.TrackSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UserSubcommand;
 import me.clutchy.clutchperms.common.command.subcommand.UsersSubcommand;
 import me.clutchy.clutchperms.common.config.ClutchPermsAuditRetentionConfig;
@@ -118,6 +120,12 @@ public final class ClutchPermsCommands {
 
     private static final String PARENT_ARGUMENT = CommandArguments.PARENT;
 
+    private static final String TRACK_ARGUMENT = CommandArguments.TRACK;
+
+    private static final String NEW_TRACK_ARGUMENT = CommandArguments.NEW_TRACK;
+
+    private static final String POSITION_ARGUMENT = CommandArguments.POSITION;
+
     private static final String BACKUP_FILE_ARGUMENT = CommandArguments.BACKUP_FILE;
 
     private static final String CONFIG_KEY_ARGUMENT = CommandArguments.CONFIG_KEY;
@@ -165,6 +173,8 @@ public final class ClutchPermsCommands {
     private static final DynamicCommandExceptionType GROUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType NODE_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
+
+    private static final DynamicCommandExceptionType TRACK_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
     private static final DynamicCommandExceptionType BACKUP_OPERATION_FAILED = new DynamicCommandExceptionType(message -> new LiteralMessage(message.toString()));
 
@@ -273,6 +283,18 @@ public final class ClutchPermsCommands {
             new CommandHelpEntry("group <group> <prefix|suffix> get", PermissionNodes.ADMIN_GROUP_DISPLAY_VIEW, "Shows group chat display values."),
             new CommandHelpEntry("group <group> <prefix|suffix> set <text>", PermissionNodes.ADMIN_GROUP_DISPLAY_SET, "Sets group chat display text."),
             new CommandHelpEntry("group <group> <prefix|suffix> clear", PermissionNodes.ADMIN_GROUP_DISPLAY_CLEAR, "Clears group chat display text."),
+            new CommandHelpEntry("track list [page]", PermissionNodes.ADMIN_TRACK_LIST, "Lists tracks."),
+            new CommandHelpEntry("track <track> info", PermissionNodes.ADMIN_TRACK_INFO, "Shows a quick track summary."),
+            new CommandHelpEntry("track <track> <create|delete>", PermissionNodes.ADMIN_TRACK_CREATE, "Creates or deletes a track."),
+            new CommandHelpEntry("track <track> rename <new-track>", PermissionNodes.ADMIN_TRACK_RENAME, "Renames a track."),
+            new CommandHelpEntry("track <track> list [page]", PermissionNodes.ADMIN_TRACK_VIEW, "Lists ordered groups on a track."),
+            new CommandHelpEntry("track <track> append <group>", PermissionNodes.ADMIN_TRACK_APPEND, "Adds one group at the end of a track."),
+            new CommandHelpEntry("track <track> insert <position> <group>", PermissionNodes.ADMIN_TRACK_INSERT, "Inserts one group at a track position."),
+            new CommandHelpEntry("track <track> move <group> <position>", PermissionNodes.ADMIN_TRACK_MOVE, "Moves one track group to a new position."),
+            new CommandHelpEntry("track <track> remove <group>", PermissionNodes.ADMIN_TRACK_REMOVE, "Removes one group from a track."),
+            new CommandHelpEntry("user <target> tracks [page]", PermissionNodes.ADMIN_USER_TRACK_LIST, "Lists the user's current track positions."),
+            new CommandHelpEntry("user <target> track promote <track>", PermissionNodes.ADMIN_USER_TRACK_PROMOTE, "Promotes a user on one track."),
+            new CommandHelpEntry("user <target> track demote <track>", PermissionNodes.ADMIN_USER_TRACK_DEMOTE, "Demotes a user on one track."),
             new CommandHelpEntry("users list [page]", PermissionNodes.ADMIN_USERS_LIST, "Lists stored user metadata."),
             new CommandHelpEntry("users search <name> [page]", PermissionNodes.ADMIN_USERS_SEARCH, "Searches stored last-known names."),
             new CommandHelpEntry("nodes list [page]", PermissionNodes.ADMIN_NODES_LIST, "Lists known permission nodes."),
@@ -370,7 +392,8 @@ public final class ClutchPermsCommands {
                         (context, builder) -> suggestPermissionAssignment(environment, context, builder)))
                 .then(GroupSubcommand.builder(environment, authorized, groupHandlers(environment), (context, builder) -> suggestPermissionNodes(environment, context, builder),
                         (context, builder) -> suggestPermissionAssignment(environment, context, builder)))
-                .then(UsersSubcommand.builder(authorized, usersHandlers(environment))).then(NodesSubcommand.builder(environment, authorized, nodesHandlers(environment)));
+                .then(TrackSubcommand.builder(environment, authorized, trackHandlers(environment))).then(UsersSubcommand.builder(authorized, usersHandlers(environment)))
+                .then(NodesSubcommand.builder(environment, authorized, nodesHandlers(environment)));
     }
 
     private static String normalizeRootLiteral(String rootLiteral) {
@@ -637,6 +660,11 @@ public final class ClutchPermsCommands {
             }
 
             @Override
+            public int tracks(CommandContext<S> context) throws CommandSyntaxException {
+                return listSubjectTracks(environment, context);
+            }
+
+            @Override
             public int prefixUsage(CommandContext<S> context) {
                 return sendUserDisplayUsage(environment, context, DisplaySlot.PREFIX);
             }
@@ -717,6 +745,36 @@ public final class ClutchPermsCommands {
             }
 
             @Override
+            public int trackUsage(CommandContext<S> context) {
+                return sendUserTrackUsage(environment, context);
+            }
+
+            @Override
+            public int trackPromoteUsage(CommandContext<S> context) {
+                return sendUserTrackPromoteUsage(environment, context);
+            }
+
+            @Override
+            public int trackPromote(CommandContext<S> context) throws CommandSyntaxException {
+                return promoteSubjectOnTrack(environment, context);
+            }
+
+            @Override
+            public int trackDemoteUsage(CommandContext<S> context) {
+                return sendUserTrackDemoteUsage(environment, context);
+            }
+
+            @Override
+            public int trackDemote(CommandContext<S> context) throws CommandSyntaxException {
+                return demoteSubjectOnTrack(environment, context);
+            }
+
+            @Override
+            public int unknownTrackUsage(CommandContext<S> context) {
+                return sendUnknownUserTrackUsage(environment, context);
+            }
+
+            @Override
             public int checkUsage(CommandContext<S> context) {
                 return sendUserCheckUsage(environment, context);
             }
@@ -734,6 +792,101 @@ public final class ClutchPermsCommands {
             @Override
             public int explain(CommandContext<S> context) throws CommandSyntaxException {
                 return explainPermission(environment, context);
+            }
+        };
+    }
+
+    private static <S> TrackSubcommand.Handlers<S> trackHandlers(ClutchPermsCommandEnvironment<S> environment) {
+        return new TrackSubcommand.Handlers<>() {
+
+            @Override
+            public int rootUsage(CommandContext<S> context) {
+                return sendTrackRootUsage(environment, context);
+            }
+
+            @Override
+            public int list(CommandContext<S> context) throws CommandSyntaxException {
+                return listTracks(environment, context);
+            }
+
+            @Override
+            public int targetUsage(CommandContext<S> context) {
+                return sendTrackTargetUsage(environment, context);
+            }
+
+            @Override
+            public int unknownTargetUsage(CommandContext<S> context) {
+                return sendUnknownTrackTargetUsage(environment, context);
+            }
+
+            @Override
+            public int create(CommandContext<S> context) throws CommandSyntaxException {
+                return createTrack(environment, context);
+            }
+
+            @Override
+            public int delete(CommandContext<S> context) throws CommandSyntaxException {
+                return deleteTrack(environment, context);
+            }
+
+            @Override
+            public int renameUsage(CommandContext<S> context) {
+                return sendTrackRenameUsage(environment, context);
+            }
+
+            @Override
+            public int rename(CommandContext<S> context) throws CommandSyntaxException {
+                return renameTrack(environment, context);
+            }
+
+            @Override
+            public int info(CommandContext<S> context) throws CommandSyntaxException {
+                return showTrackInfo(environment, context);
+            }
+
+            @Override
+            public int show(CommandContext<S> context) throws CommandSyntaxException {
+                return listTrack(environment, context);
+            }
+
+            @Override
+            public int appendUsage(CommandContext<S> context) {
+                return sendTrackAppendUsage(environment, context);
+            }
+
+            @Override
+            public int append(CommandContext<S> context) throws CommandSyntaxException {
+                return appendTrackGroup(environment, context);
+            }
+
+            @Override
+            public int insertUsage(CommandContext<S> context) {
+                return sendTrackInsertUsage(environment, context);
+            }
+
+            @Override
+            public int insert(CommandContext<S> context) throws CommandSyntaxException {
+                return insertTrackGroup(environment, context);
+            }
+
+            @Override
+            public int moveUsage(CommandContext<S> context) {
+                return sendTrackMoveUsage(environment, context);
+            }
+
+            @Override
+            public int move(CommandContext<S> context) throws CommandSyntaxException {
+                return moveTrackGroup(environment, context);
+            }
+
+            @Override
+            public int removeUsage(CommandContext<S> context) {
+                return sendTrackRemoveUsage(environment, context);
+            }
+
+            @Override
+            public int remove(CommandContext<S> context) throws CommandSyntaxException {
+                return removeTrackGroup(environment, context);
             }
         };
     }
@@ -1050,6 +1203,7 @@ public final class ClutchPermsCommands {
         environment.sendMessage(context.getSource(), CommandLang.statusChatFormatting(environment.config().chat().enabled()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownSubjects(environment.subjectMetadataService().getSubjects().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownGroups(environment.groupService().getGroups().size()));
+        environment.sendMessage(context.getSource(), CommandLang.statusKnownTracks(environment.trackService().getTracks().size()));
         environment.sendMessage(context.getSource(), CommandLang.statusKnownNodes(environment.permissionNodeRegistry().getKnownNodes().size()));
         PermissionResolverCacheStats cacheStats = environment.permissionResolver().cacheStats();
         environment.sendMessage(context.getSource(), CommandLang.statusResolverCache(cacheStats.subjects(), cacheStats.nodeResults(), cacheStats.effectiveSnapshots()));
@@ -1238,6 +1392,12 @@ public final class ClutchPermsCommands {
                 List.of("user " + target + " group add <group>", "user " + target + " group remove <group>"));
     }
 
+    private static <S> int sendUserTrackUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing user track command.", "List, promote, or demote this user's track position.",
+                List.of("user " + target + " track promote <track>", "user " + target + " track demote <track>"));
+    }
+
     private static <S> int sendUserGroupAddUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
         return sendUsage(environment, context, "Missing group name.", "Choose the group to add this user to.", List.of("user " + target + " group add <group>"));
@@ -1252,6 +1412,23 @@ public final class ClutchPermsCommands {
         String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
         return sendUsage(environment, context, "Unknown user group command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
                 "User group commands add or remove explicit memberships.", List.of("user " + target + " group add <group>", "user " + target + " group remove <group>"));
+    }
+
+    private static <S> int sendUserTrackPromoteUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing track name.", "Choose the track to promote this user on.", List.of("user " + target + " track promote <track>"));
+    }
+
+    private static <S> int sendUserTrackDemoteUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Missing track name.", "Choose the track to demote this user on.", List.of("user " + target + " track demote <track>"));
+    }
+
+    private static <S> int sendUnknownUserTrackUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+        return sendUsage(environment, context, "Unknown user track command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "User track commands list, promote, or demote a user's track position.",
+                List.of("user " + target + " tracks", "user " + target + " track promote <track>", "user " + target + " track demote <track>"));
     }
 
     private static <S> int sendGroupRootUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -1326,6 +1503,48 @@ public final class ClutchPermsCommands {
 
     private static <S> int sendUsersUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
         return sendUsage(environment, context, "Missing users command.", "List known users or search by last-known name.", usersUsages());
+    }
+
+    private static <S> int sendTrackRootUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        return sendUsage(environment, context, "Missing track command.", "List tracks or choose one track to inspect or mutate.", trackRootUsages());
+    }
+
+    private static <S> int sendTrackTargetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String track = StringArgumentType.getString(context, TRACK_ARGUMENT);
+        return sendUsage(environment, context, "Missing track command.", "Choose what to do with track " + track + ".", trackTargetUsages(track));
+    }
+
+    private static <S> int sendUnknownTrackTargetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String track = StringArgumentType.getString(context, TRACK_ARGUMENT);
+        return sendUsage(environment, context, "Unknown track command: " + StringArgumentType.getString(context, UNKNOWN_ARGUMENT),
+                "Track commands manage ordered groups for promotion and demotion.", trackTargetUsages(track));
+    }
+
+    private static <S> int sendTrackRenameUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String track = StringArgumentType.getString(context, TRACK_ARGUMENT);
+        return sendUsage(environment, context, "Missing new track name.", "Choose the new track name.", List.of("track " + track + " rename <new-track>"));
+    }
+
+    private static <S> int sendTrackAppendUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String track = StringArgumentType.getString(context, TRACK_ARGUMENT);
+        return sendUsage(environment, context, "Missing group name.", "Choose the group to add at the end of the track.", List.of("track " + track + " append <group>"));
+    }
+
+    private static <S> int sendTrackInsertUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String track = StringArgumentType.getString(context, TRACK_ARGUMENT);
+        return sendUsage(environment, context, "Missing insert position or group.", "Choose the position and group to insert on the track.",
+                List.of("track " + track + " insert <position> <group>"));
+    }
+
+    private static <S> int sendTrackMoveUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String track = StringArgumentType.getString(context, TRACK_ARGUMENT);
+        return sendUsage(environment, context, "Missing group name or position.", "Choose the track group and new position.",
+                List.of("track " + track + " move <group> <position>"));
+    }
+
+    private static <S> int sendTrackRemoveUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
+        String track = StringArgumentType.getString(context, TRACK_ARGUMENT);
+        return sendUsage(environment, context, "Missing group name.", "Choose the group to remove from the track.", List.of("track " + track + " remove <group>"));
     }
 
     private static <S> int sendUsersSearchUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -1466,12 +1685,13 @@ public final class ClutchPermsCommands {
 
     private static List<String> userRootUsages() {
         return List.of("user <target> <info|list|groups>", "user <target> <get|clear|check|explain> <node>", "user <target> set <node> <true|false>", "user <target> clear-all",
-                "user <target> group <add|remove> <group>", "user <target> <prefix|suffix> get|set|clear");
+                "user <target> group <add|remove> <group>", "user <target> tracks", "user <target> track <promote|demote> <track>", "user <target> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> userTargetUsages(String target) {
         return List.of("user " + target + " <info|list|groups>", "user " + target + " <get|clear|check|explain> <node>", "user " + target + " set <node> <true|false>",
-                "user " + target + " clear-all", "user " + target + " group <add|remove> <group>", "user " + target + " <prefix|suffix> get|set|clear");
+                "user " + target + " clear-all", "user " + target + " group <add|remove> <group>", "user " + target + " tracks",
+                "user " + target + " track <promote|demote> <track>", "user " + target + " <prefix|suffix> get|set|clear");
     }
 
     private static List<String> groupRootUsages() {
@@ -1483,6 +1703,16 @@ public final class ClutchPermsCommands {
         return List.of("group " + group + " <create|delete|info|list|members|parents>", "group " + group + " <get|clear> <node>", "group " + group + " set <node> <true|false>",
                 "group " + group + " clear-all", "group " + group + " rename <new-group>", "group " + group + " parent <add|remove> <parent>",
                 "group " + group + " <prefix|suffix> get|set|clear");
+    }
+
+    private static List<String> trackRootUsages() {
+        return List.of("track list", "track <track> <create|delete|info|list>", "track <track> rename <new-track>", "track <track> append <group>",
+                "track <track> insert <position> <group>", "track <track> move <group> <position>", "track <track> remove <group>");
+    }
+
+    private static List<String> trackTargetUsages(String track) {
+        return List.of("track " + track + " <create|delete|info|list>", "track " + track + " rename <new-track>", "track " + track + " append <group>",
+                "track " + track + " insert <position> <group>", "track " + track + " move <group> <position>", "track " + track + " remove <group>");
     }
 
     private static List<String> usersUsages() {
@@ -1723,6 +1953,7 @@ public final class ClutchPermsCommands {
         String rootLiteral = rootLiteral(context);
         String subjectListCommand = fullCommand(rootLiteral, "user " + subject.id() + " list");
         String subjectGroupsCommand = fullCommand(rootLiteral, "user " + subject.id() + " groups");
+        String subjectTracksCommand = fullCommand(rootLiteral, "user " + subject.id() + " tracks");
         String subjectPrefixCommand = fullCommand(rootLiteral, "user " + subject.id() + " prefix get");
         String subjectSuffixCommand = fullCommand(rootLiteral, "user " + subject.id() + " suffix get");
 
@@ -1734,6 +1965,7 @@ public final class ClutchPermsCommands {
         rows.add(new PagedRow("direct permissions " + environment.permissionService().getPermissions(subject.id()).size(), subjectListCommand));
         rows.add(new PagedRow("effective permissions " + environment.permissionResolver().getEffectivePermissions(subject.id()).size(), subjectListCommand));
         rows.add(new PagedRow("groups " + summarizeSubjectGroups(environment, subject.id()), subjectGroupsCommand));
+        rows.add(new PagedRow("tracks " + summarizeSubjectTracks(environment, subject.id()), subjectTracksCommand));
         rows.add(new PagedRow("direct prefix " + formatDisplayValue(subjectDisplayValue(environment, subject.id(), DisplaySlot.PREFIX)), subjectPrefixCommand));
         rows.add(new PagedRow("effective prefix " + formatEffectiveDisplay(environment.displayResolver().resolve(subject.id(), DisplaySlot.PREFIX)), subjectPrefixCommand));
         rows.add(new PagedRow("direct suffix " + formatDisplayValue(subjectDisplayValue(environment, subject.id(), DisplaySlot.SUFFIX)), subjectSuffixCommand));
@@ -1906,6 +2138,24 @@ public final class ClutchPermsCommands {
         return Command.SINGLE_SUCCESS;
     }
 
+    private static <S> int listSubjectTracks(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = environment.trackService().getTracks().stream().sorted(Comparator.naturalOrder()).map(trackName -> {
+            TrackSubjectState state = subjectTrackState(environment, subject.id(), trackName);
+            if (!state.hasPosition() && !state.hasConflict()) {
+                return null;
+            }
+            return new PagedRow(trackName + ": " + formatTrackSubjectState(state), fullCommand(rootLiteral, "track " + trackName + " list"));
+        }).filter(Objects::nonNull).toList();
+        if (rows.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.userTracksEmpty(formatSubject(subject)));
+            return Command.SINGLE_SUCCESS;
+        }
+        sendPagedRows(environment, context, "Tracks for " + formatSubject(subject), rows, "user " + StringArgumentType.getString(context, TARGET_ARGUMENT) + " tracks");
+        return Command.SINGLE_SUCCESS;
+    }
+
     private static <S> int addSubjectGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
@@ -1935,6 +2185,93 @@ public final class ClutchPermsCommands {
         recordAudit(environment, context, "user.group.remove", "user-groups", subject.id().toString(), formatSubject(subject), beforeJson,
                 subjectMembershipSnapshot(environment, subject.id()), true);
         environment.sendMessage(context.getSource(), CommandLang.userGroupRemoved(formatSubject(subject), normalizeGroupName(groupName)));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int promoteSubjectOnTrack(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        TrackSubjectState state = subjectTrackState(environment, subject.id(), trackName);
+        if (state.hasConflict()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(
+                    new IllegalArgumentException("user matches multiple explicit groups on track " + trackName + ": " + String.join(", ", state.explicitMatches()))));
+        }
+        if (state.trackGroups().isEmpty()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("track has no groups: " + trackName)));
+        }
+
+        Set<String> updatedGroups = new LinkedHashSet<>(environment.groupService().getSubjectGroups(subject.id()));
+        String targetGroup;
+        if (state.hasExplicitMatch()) {
+            int currentIndex = state.currentIndex();
+            if (currentIndex >= state.trackGroups().size() - 1) {
+                throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("user is already at the end of track " + trackName)));
+            }
+            updatedGroups.remove(state.currentGroup());
+            targetGroup = state.trackGroups().get(currentIndex + 1);
+            updatedGroups.add(targetGroup);
+        } else if (state.implicitDefault()) {
+            if (state.trackGroups().size() < 2) {
+                throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("user is already at the end of track " + trackName)));
+            }
+            targetGroup = state.trackGroups().get(1);
+            updatedGroups.add(targetGroup);
+        } else {
+            targetGroup = state.trackGroups().getFirst();
+            updatedGroups.add(targetGroup);
+        }
+
+        String beforeJson = subjectMembershipSnapshot(environment, subject.id());
+        try {
+            environment.groupService().setSubjectGroups(subject.id(), updatedGroups);
+        } catch (RuntimeException exception) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(exception));
+        }
+        recordAudit(environment, context, "user.track.promote", "user-groups", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectMembershipSnapshot(environment, subject.id()), true);
+        environment.sendMessage(context.getSource(), CommandLang.userTrackPromoted(formatSubject(subject), trackName, targetGroup));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int demoteSubjectOnTrack(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        CommandSubject subject = resolveSubject(environment, context);
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        TrackSubjectState state = subjectTrackState(environment, subject.id(), trackName);
+        if (state.hasConflict()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(
+                    new IllegalArgumentException("user matches multiple explicit groups on track " + trackName + ": " + String.join(", ", state.explicitMatches()))));
+        }
+        if (state.trackGroups().isEmpty()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("track has no groups: " + trackName)));
+        }
+        if (state.implicitDefault()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("user is already at the start of track " + trackName)));
+        }
+        if (!state.hasExplicitMatch()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("user is not on track " + trackName)));
+        }
+
+        int currentIndex = state.currentIndex();
+        if (currentIndex == 0) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("user is already at the start of track " + trackName)));
+        }
+
+        Set<String> updatedGroups = new LinkedHashSet<>(environment.groupService().getSubjectGroups(subject.id()));
+        updatedGroups.remove(state.currentGroup());
+        String targetGroup = state.trackGroups().get(currentIndex - 1);
+        if (!GroupService.DEFAULT_GROUP.equals(targetGroup)) {
+            updatedGroups.add(targetGroup);
+        }
+
+        String beforeJson = subjectMembershipSnapshot(environment, subject.id());
+        try {
+            environment.groupService().setSubjectGroups(subject.id(), updatedGroups);
+        } catch (RuntimeException exception) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(exception));
+        }
+        recordAudit(environment, context, "user.track.demote", "user-groups", subject.id().toString(), formatSubject(subject), beforeJson,
+                subjectMembershipSnapshot(environment, subject.id()), true);
+        environment.sendMessage(context.getSource(), CommandLang.userTrackDemoted(formatSubject(subject), trackName, targetGroup));
         return Command.SINGLE_SUCCESS;
     }
 
@@ -2106,6 +2443,7 @@ public final class ClutchPermsCommands {
         rows.add(new PagedRow("direct permissions " + permissions.size(), groupListCommand));
         rows.add(new PagedRow("parents " + summarizeValues(parents), groupParentsCommand));
         rows.add(new PagedRow("child groups " + summarizeValues(childGroups), fullCommand(rootLiteral, "group list")));
+        rows.add(new PagedRow("tracks " + summarizeGroupTracks(environment, normalizedGroupName), fullCommand(rootLiteral, "track list")));
         rows.add(new PagedRow("explicit members " + summarizeGroupMembers(environment, members), groupMembersCommand));
         rows.add(new PagedRow("prefix " + formatDisplayValue(groupDisplayValue(environment, normalizedGroupName, DisplaySlot.PREFIX)), groupPrefixCommand));
         rows.add(new PagedRow("suffix " + formatDisplayValue(groupDisplayValue(environment, normalizedGroupName, DisplaySlot.SUFFIX)), groupSuffixCommand));
@@ -2349,6 +2687,168 @@ public final class ClutchPermsCommands {
         recordAudit(environment, context, "group.display." + slot.label() + ".clear", "group-display", groupName, groupName, beforeJson,
                 groupDisplaySnapshot(environment, groupName), true);
         environment.sendMessage(context.getSource(), CommandLang.groupDisplayClear(slot.label(), groupName));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int listTracks(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        Set<String> tracks = environment.trackService().getTracks();
+        if (tracks.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.tracksEmpty());
+            return Command.SINGLE_SUCCESS;
+        }
+
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = tracks.stream().sorted(Comparator.naturalOrder()).map(track -> new PagedRow(track, fullCommand(rootLiteral, "track " + track + " list"))).toList();
+        sendPagedRows(environment, context, "Tracks", rows, "track list");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int createTrack(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = getTrackName(context);
+        String normalizedTrackName = normalizeTrackName(trackName);
+        String beforeJson = trackSnapshot(environment, normalizedTrackName);
+        try {
+            environment.trackService().createTrack(trackName);
+        } catch (RuntimeException exception) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(exception));
+        }
+
+        recordAudit(environment, context, "track.create", "track", normalizedTrackName, normalizedTrackName, beforeJson, trackSnapshot(environment, normalizedTrackName), true);
+        environment.sendMessage(context.getSource(), CommandLang.trackCreated(normalizedTrackName));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int deleteTrack(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        if (!confirmDestructiveCommand(environment, context, confirmationOperation("track-delete", trackName))) {
+            return Command.SINGLE_SUCCESS;
+        }
+        String beforeJson = trackSnapshot(environment, trackName);
+        try {
+            environment.trackService().deleteTrack(trackName);
+        } catch (RuntimeException exception) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(exception));
+        }
+
+        recordAudit(environment, context, "track.delete", "track", trackName, trackName, beforeJson, trackSnapshot(environment, trackName), true);
+        environment.sendMessage(context.getSource(), CommandLang.trackDeleted(trackName));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int renameTrack(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        String newTrackName = getNewTrackName(context);
+        String normalizedNewTrackName = normalizeTrackName(newTrackName);
+        String beforeJson = renameTrackSnapshot(environment, trackName, normalizedNewTrackName);
+        try {
+            environment.trackService().renameTrack(trackName, newTrackName);
+        } catch (RuntimeException exception) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(exception));
+        }
+
+        recordAudit(environment, context, "track.rename", "track-rename", trackName + "->" + normalizedNewTrackName, trackName + " -> " + normalizedNewTrackName, beforeJson,
+                renameTrackSnapshot(environment, trackName, normalizedNewTrackName), true);
+        environment.sendMessage(context.getSource(), CommandLang.trackRenamed(trackName, normalizedNewTrackName));
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int showTrackInfo(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        List<String> groups;
+        try {
+            groups = environment.trackService().getTrackGroups(trackName);
+        } catch (RuntimeException exception) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(exception));
+        }
+
+        String rootLiteral = rootLiteral(context);
+        List<PagedRow> rows = new ArrayList<>();
+        rows.add(new PagedRow("name " + trackName, fullCommand(rootLiteral, "track " + trackName + " list")));
+        rows.add(new PagedRow("groups " + groups.size(), fullCommand(rootLiteral, "track " + trackName + " list")));
+        rows.add(new PagedRow("first " + (groups.isEmpty() ? "none" : groups.getFirst()), fullCommand(rootLiteral, "track " + trackName + " list")));
+        rows.add(new PagedRow("last " + (groups.isEmpty() ? "none" : groups.getLast()), fullCommand(rootLiteral, "track " + trackName + " list")));
+        rows.add(new PagedRow("ordered groups " + summarizeValues(groups), fullCommand(rootLiteral, "track " + trackName + " list")));
+        sendInfoRows(environment, context, "Track " + trackName, rows);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int listTrack(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        List<String> groups;
+        try {
+            groups = environment.trackService().getTrackGroups(trackName);
+        } catch (RuntimeException exception) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(exception));
+        }
+
+        if (groups.isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.trackGroupsEmpty(trackName));
+            return Command.SINGLE_SUCCESS;
+        }
+
+        List<PagedRow> rows = new ArrayList<>();
+        String rootLiteral = rootLiteral(context);
+        for (int index = 0; index < groups.size(); index++) {
+            String groupName = groups.get(index);
+            rows.add(new PagedRow("#" + (index + 1) + " " + groupName, fullCommand(rootLiteral, "group " + groupName + " list")));
+        }
+        sendPagedRows(environment, context, "Track " + trackName, rows, "track " + StringArgumentType.getString(context, TRACK_ARGUMENT) + " list");
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static <S> int appendTrackGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        List<String> updatedGroups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+        updatedGroups.add(groupName);
+        return updateTrackGroups(environment, context, trackName, updatedGroups, "track.group.append", CommandLang.trackGroupAppended(trackName, normalizeGroupName(groupName)));
+    }
+
+    private static <S> int insertTrackGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        List<String> updatedGroups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+        int position = getTrackPosition(context);
+        if (position > updatedGroups.size() + 1) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("track position out of range: " + position)));
+        }
+        updatedGroups.add(position - 1, groupName);
+        return updateTrackGroups(environment, context, trackName, updatedGroups, "track.group.insert",
+                CommandLang.trackGroupInserted(trackName, normalizeGroupName(groupName), position));
+    }
+
+    private static <S> int moveTrackGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        String groupName = requireTrackGroup(environment, context, trackName, getGroupName(context));
+        List<String> updatedGroups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+        int position = getTrackPosition(context);
+        if (position > updatedGroups.size()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("track position out of range: " + position)));
+        }
+        updatedGroups.remove(groupName);
+        updatedGroups.add(position - 1, groupName);
+        return updateTrackGroups(environment, context, trackName, updatedGroups, "track.group.move",
+                CommandLang.trackGroupMoved(trackName, normalizeGroupName(groupName), position));
+    }
+
+    private static <S> int removeTrackGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = requireExistingTrack(environment, context, getTrackName(context));
+        String groupName = requireTrackGroup(environment, context, trackName, getGroupName(context));
+        List<String> updatedGroups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+        updatedGroups.remove(groupName);
+        return updateTrackGroups(environment, context, trackName, updatedGroups, "track.group.remove", CommandLang.trackGroupRemoved(trackName, normalizeGroupName(groupName)));
+    }
+
+    private static <S> int updateTrackGroups(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String trackName, List<String> updatedGroups, String action,
+            CommandMessage successMessage) throws CommandSyntaxException {
+        String beforeJson = trackSnapshot(environment, trackName);
+        try {
+            environment.trackService().setTrackGroups(trackName, updatedGroups);
+        } catch (RuntimeException exception) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(exception));
+        }
+        recordAudit(environment, context, action, "track", trackName, trackName, beforeJson, trackSnapshot(environment, trackName), true);
+        environment.sendMessage(context.getSource(), successMessage);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -2601,12 +3101,32 @@ public final class ClutchPermsCommands {
         return parentGroupName;
     }
 
+    private static <S> String getTrackName(CommandContext<S> context) throws CommandSyntaxException {
+        String trackName = StringArgumentType.getString(context, TRACK_ARGUMENT);
+        if (trackName.trim().isEmpty()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("track name must not be blank")));
+        }
+        return trackName;
+    }
+
     private static <S> String getNewGroupName(CommandContext<S> context) throws CommandSyntaxException {
         String newGroupName = StringArgumentType.getString(context, NEW_GROUP_ARGUMENT);
         if (newGroupName.trim().isEmpty()) {
             throw GROUP_OPERATION_FAILED.create(CommandLang.groupOperationFailed(new IllegalArgumentException("group name must not be blank")));
         }
         return newGroupName;
+    }
+
+    private static <S> String getNewTrackName(CommandContext<S> context) throws CommandSyntaxException {
+        String newTrackName = StringArgumentType.getString(context, NEW_TRACK_ARGUMENT);
+        if (newTrackName.trim().isEmpty()) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("track name must not be blank")));
+        }
+        return newTrackName;
+    }
+
+    private static <S> int getTrackPosition(CommandContext<S> context) {
+        return IntegerArgumentType.getInteger(context, POSITION_ARGUMENT);
     }
 
     private static <S> String requireExistingGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String groupName) throws CommandSyntaxException {
@@ -2621,6 +3141,23 @@ public final class ClutchPermsCommands {
         String normalizedGroupName = normalizeGroupName(groupName);
         if (!environment.groupService().hasGroup(normalizedGroupName)) {
             throw unknownGroupTargetFeedback(environment, context, normalizedGroupName, true);
+        }
+        return normalizedGroupName;
+    }
+
+    private static <S> String requireExistingTrack(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String trackName) throws CommandSyntaxException {
+        String normalizedTrackName = normalizeTrackName(trackName);
+        if (!environment.trackService().hasTrack(normalizedTrackName)) {
+            throw unknownTrackTargetFeedback(environment, context, normalizedTrackName);
+        }
+        return normalizedTrackName;
+    }
+
+    private static <S> String requireTrackGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String trackName, String groupName)
+            throws CommandSyntaxException {
+        String normalizedGroupName = normalizeGroupName(groupName);
+        if (!environment.trackService().getTrackGroups(trackName).contains(normalizedGroupName)) {
+            throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("group is not on track " + trackName + ": " + normalizedGroupName)));
         }
         return normalizedGroupName;
     }
@@ -2773,6 +3310,8 @@ public final class ClutchPermsCommands {
             case "group-rename" -> renameSnapshotForEntry(environment, entry);
             case "group-permissions" -> groupPermissionsSnapshot(environment, entry.targetKey());
             case "group-display" -> groupDisplaySnapshot(environment, entry.targetKey());
+            case "track" -> trackSnapshot(environment, entry.targetKey());
+            case "track-rename" -> renameTrackSnapshotForEntry(environment, entry);
             case "config" -> configSnapshot(environment.config());
             default -> throw new IllegalArgumentException("unsupported undo target type: " + entry.targetType());
         };
@@ -2787,6 +3326,8 @@ public final class ClutchPermsCommands {
             case "group-rename" -> applyRenameSnapshot(environment, entry.beforeJson());
             case "group-permissions" -> applyGroupPermissionsSnapshot(environment, entry.targetKey(), entry.beforeJson());
             case "group-display" -> applyGroupDisplaySnapshot(environment, entry.targetKey(), entry.beforeJson());
+            case "track" -> applyTrackSnapshot(environment, entry.targetKey(), entry.beforeJson());
+            case "track-rename" -> applyRenameTrackSnapshot(environment, entry.beforeJson());
             case "config" -> applyConfigSnapshot(environment, entry.beforeJson());
             default -> throw new IllegalArgumentException("unsupported undo target type: " + entry.targetType());
         }
@@ -2844,9 +3385,7 @@ public final class ClutchPermsCommands {
 
     private static <S> void applySubjectMembershipSnapshot(ClutchPermsCommandEnvironment<S> environment, UUID subjectId, String snapshotJson) {
         Set<String> desiredGroups = stringSet(JsonParser.parseString(snapshotJson).getAsJsonObject().getAsJsonArray("groups"));
-        Set<String> currentGroups = environment.groupService().getSubjectGroups(subjectId);
-        currentGroups.stream().filter(group -> !desiredGroups.contains(group)).toList().forEach(group -> environment.groupService().removeSubjectGroup(subjectId, group));
-        desiredGroups.stream().filter(group -> !currentGroups.contains(group)).forEach(group -> environment.groupService().addSubjectGroup(subjectId, group));
+        environment.groupService().setSubjectGroups(subjectId, desiredGroups);
     }
 
     private static <S> String groupSnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName) {
@@ -2863,6 +3402,7 @@ public final class ClutchPermsCommands {
         root.add("parents", stringArray(environment.groupService().getGroupParents(normalizedGroupName)));
         root.add("members", uuidArray(environment.groupService().getGroupMembers(normalizedGroupName)));
         root.add("children", stringArray(findChildGroups(environment, normalizedGroupName)));
+        root.add("tracks", groupTrackReferencesJson(environment, normalizedGroupName));
         return GSON.toJson(root);
     }
 
@@ -2882,6 +3422,7 @@ public final class ClutchPermsCommands {
         applyGroupDisplaySnapshot(environment, normalizedGroupName, root.getAsJsonObject("display").toString());
         applyGroupParents(environment, normalizedGroupName, stringSet(root.getAsJsonArray("parents")));
         applyGroupMembers(environment, normalizedGroupName, uuidSet(root.getAsJsonArray("members")));
+        applyGroupTracks(environment, normalizedGroupName, trackReferencePositions(root.getAsJsonArray("tracks")));
         for (String child : stringSet(root.getAsJsonArray("children"))) {
             if (environment.groupService().hasGroup(child) && !environment.groupService().getGroupParents(child).contains(normalizedGroupName)) {
                 environment.groupService().addGroupParent(child, normalizedGroupName);
@@ -2937,6 +3478,54 @@ public final class ClutchPermsCommands {
         Set<UUID> currentMembers = environment.groupService().getGroupMembers(groupName);
         currentMembers.stream().filter(member -> !desiredMembers.contains(member)).toList().forEach(member -> environment.groupService().removeSubjectGroup(member, groupName));
         desiredMembers.stream().filter(member -> !currentMembers.contains(member)).forEach(member -> environment.groupService().addSubjectGroup(member, groupName));
+    }
+
+    private static <S> String trackSnapshot(ClutchPermsCommandEnvironment<S> environment, String trackName) {
+        String normalizedTrackName = normalizeTrackName(trackName);
+        JsonObject root = new JsonObject();
+        root.addProperty("name", normalizedTrackName);
+        boolean exists = environment.trackService().hasTrack(normalizedTrackName);
+        root.addProperty("exists", exists);
+        if (!exists) {
+            return GSON.toJson(root);
+        }
+        root.add("groups", orderedStringArray(environment.trackService().getTrackGroups(normalizedTrackName)));
+        return GSON.toJson(root);
+    }
+
+    private static <S> void applyTrackSnapshot(ClutchPermsCommandEnvironment<S> environment, String trackName, String snapshotJson) {
+        JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
+        String normalizedTrackName = root.get("name").getAsString();
+        if (!root.get("exists").getAsBoolean()) {
+            if (environment.trackService().hasTrack(normalizedTrackName)) {
+                environment.trackService().deleteTrack(normalizedTrackName);
+            }
+            return;
+        }
+        if (!environment.trackService().hasTrack(normalizedTrackName)) {
+            environment.trackService().createTrack(normalizedTrackName);
+        }
+        environment.trackService().setTrackGroups(normalizedTrackName, stringList(root.getAsJsonArray("groups")));
+    }
+
+    private static <S> String renameTrackSnapshot(ClutchPermsCommandEnvironment<S> environment, String trackName, String newTrackName) {
+        JsonObject root = new JsonObject();
+        root.addProperty("oldName", normalizeTrackName(trackName));
+        root.addProperty("newName", normalizeTrackName(newTrackName));
+        root.add("old", JsonParser.parseString(trackSnapshot(environment, trackName)));
+        root.add("new", JsonParser.parseString(trackSnapshot(environment, newTrackName)));
+        return GSON.toJson(root);
+    }
+
+    private static <S> String renameTrackSnapshotForEntry(ClutchPermsCommandEnvironment<S> environment, AuditEntry entry) {
+        JsonObject before = JsonParser.parseString(entry.beforeJson()).getAsJsonObject();
+        return renameTrackSnapshot(environment, before.get("oldName").getAsString(), before.get("newName").getAsString());
+    }
+
+    private static <S> void applyRenameTrackSnapshot(ClutchPermsCommandEnvironment<S> environment, String snapshotJson) {
+        JsonObject root = JsonParser.parseString(snapshotJson).getAsJsonObject();
+        applyTrackSnapshot(environment, root.get("newName").getAsString(), root.getAsJsonObject("new").toString());
+        applyTrackSnapshot(environment, root.get("oldName").getAsString(), root.getAsJsonObject("old").toString());
     }
 
     private static <S> String renameGroupSnapshot(ClutchPermsCommandEnvironment<S> environment, String groupName, String newGroupName) {
@@ -3019,6 +3608,12 @@ public final class ClutchPermsCommands {
         return array;
     }
 
+    private static JsonArray orderedStringArray(List<String> values) {
+        JsonArray array = new JsonArray();
+        values.forEach(array::add);
+        return array;
+    }
+
     private static JsonArray uuidArray(Collection<UUID> values) {
         JsonArray array = new JsonArray();
         values.stream().map(UUID::toString).sorted().forEach(array::add);
@@ -3027,6 +3622,12 @@ public final class ClutchPermsCommands {
 
     private static Set<String> stringSet(JsonArray array) {
         Set<String> values = new LinkedHashSet<>();
+        array.forEach(value -> values.add(value.getAsString()));
+        return values;
+    }
+
+    private static List<String> stringList(JsonArray array) {
+        List<String> values = new ArrayList<>();
         array.forEach(value -> values.add(value.getAsString()));
         return values;
     }
@@ -3132,6 +3733,29 @@ public final class ClutchPermsCommands {
             messages.add(CommandLang.noGroupTargetMatches());
             messages.add(CommandLang.tryHeader());
             messages.add(CommandLang.suggestion(rootLiteral(context), "group list"));
+        }
+        return feedback(messages);
+    }
+
+    private static <S> CommandFeedbackException unknownTrackTargetFeedback(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String trackName) {
+        List<CommandMessage> messages = new ArrayList<>();
+        messages.add(CommandLang.unknownTrackTarget(trackName));
+
+        Set<String> tracks = environment.trackService().getTracks();
+        if (tracks.isEmpty()) {
+            messages.add(CommandLang.noTracksDefined());
+            messages.add(CommandLang.tryHeader());
+            messages.add(CommandLang.suggestion(rootLiteral(context), "track " + trackName + " create"));
+            return feedback(messages);
+        }
+
+        List<String> matches = closestMatches(trackName, tracks.stream().map(ClutchPermsCommands::candidate).toList());
+        if (!matches.isEmpty()) {
+            messages.add(CommandLang.closestTracks(String.join(", ", matches)));
+        } else {
+            messages.add(CommandLang.noTrackTargetMatches());
+            messages.add(CommandLang.tryHeader());
+            messages.add(CommandLang.suggestion(rootLiteral(context), "track list"));
         }
         return feedback(messages);
     }
@@ -3328,6 +3952,96 @@ public final class ClutchPermsCommands {
                 .filter(group -> environment.groupService().getGroupParents(group).contains(groupName)).toList();
     }
 
+    private static <S> TrackSubjectState subjectTrackState(ClutchPermsCommandEnvironment<S> environment, UUID subjectId, String trackName) {
+        List<String> trackGroups = environment.trackService().getTrackGroups(trackName);
+        List<String> explicitMatches = trackGroups.stream().filter(environment.groupService().getSubjectGroups(subjectId)::contains).toList();
+        boolean implicitDefault = explicitMatches.isEmpty() && !trackGroups.isEmpty() && GroupService.DEFAULT_GROUP.equals(trackGroups.getFirst());
+        return new TrackSubjectState(trackName, trackGroups, explicitMatches, implicitDefault);
+    }
+
+    private static String formatTrackSubjectState(TrackSubjectState state) {
+        if (state.hasConflict()) {
+            return "conflict (" + summarizeValues(state.explicitMatches()) + ")";
+        }
+        if (state.implicitDefault()) {
+            return GroupService.DEFAULT_GROUP + " (implicit)";
+        }
+        if (state.hasExplicitMatch()) {
+            return state.currentGroup() + " (#" + (state.currentIndex() + 1) + ")";
+        }
+        return "unmatched";
+    }
+
+    private static <S> String summarizeSubjectTracks(ClutchPermsCommandEnvironment<S> environment, UUID subjectId) {
+        List<String> tracks = environment.trackService().getTracks().stream().sorted(Comparator.naturalOrder()).map(trackName -> {
+            TrackSubjectState state = subjectTrackState(environment, subjectId, trackName);
+            if (!state.hasPosition() && !state.hasConflict()) {
+                return null;
+            }
+            return trackName + "=" + formatTrackSubjectState(state);
+        }).filter(Objects::nonNull).toList();
+        return summarizeValues(tracks);
+    }
+
+    private static <S> List<GroupTrackReference> findGroupTrackReferences(ClutchPermsCommandEnvironment<S> environment, String groupName) {
+        return environment.trackService().getTracks().stream().sorted(Comparator.naturalOrder()).map(trackName -> {
+            List<String> groups = environment.trackService().getTrackGroups(trackName);
+            int index = groups.indexOf(groupName);
+            if (index < 0) {
+                return null;
+            }
+            return new GroupTrackReference(trackName, index + 1);
+        }).filter(Objects::nonNull).toList();
+    }
+
+    private static <S> JsonArray groupTrackReferencesJson(ClutchPermsCommandEnvironment<S> environment, String groupName) {
+        JsonArray array = new JsonArray();
+        findGroupTrackReferences(environment, groupName).forEach(reference -> {
+            JsonObject root = new JsonObject();
+            root.addProperty("track", reference.trackName());
+            root.addProperty("position", reference.position());
+            array.add(root);
+        });
+        return array;
+    }
+
+    private static Map<String, Integer> trackReferencePositions(JsonArray array) {
+        Map<String, Integer> references = new LinkedHashMap<>();
+        array.forEach(value -> {
+            JsonObject root = value.getAsJsonObject();
+            references.put(root.get("track").getAsString(), root.get("position").getAsInt());
+        });
+        return references;
+    }
+
+    private static <S> void applyGroupTracks(ClutchPermsCommandEnvironment<S> environment, String groupName, Map<String, Integer> desiredTrackPositions) {
+        Map<String, Integer> currentTrackPositions = new LinkedHashMap<>();
+        findGroupTrackReferences(environment, groupName).forEach(reference -> currentTrackPositions.put(reference.trackName(), reference.position()));
+
+        currentTrackPositions.keySet().stream().filter(trackName -> !desiredTrackPositions.containsKey(trackName)).toList().forEach(trackName -> {
+            List<String> groups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+            groups.remove(groupName);
+            environment.trackService().setTrackGroups(trackName, groups);
+        });
+
+        desiredTrackPositions.forEach((trackName, position) -> {
+            if (!environment.trackService().hasTrack(trackName)) {
+                throw new IllegalArgumentException("missing track for group snapshot: " + trackName);
+            }
+            List<String> groups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+            groups.remove(groupName);
+            if (position < 1 || position > groups.size() + 1) {
+                throw new IllegalArgumentException("track position out of range for group snapshot: " + trackName + "#" + position);
+            }
+            groups.add(position - 1, groupName);
+            environment.trackService().setTrackGroups(trackName, groups);
+        });
+    }
+
+    private static <S> String summarizeGroupTracks(ClutchPermsCommandEnvironment<S> environment, String groupName) {
+        return summarizeValues(findGroupTrackReferences(environment, groupName).stream().map(reference -> reference.trackName() + "#" + reference.position()).toList());
+    }
+
     private static String summarizeValues(Collection<String> values) {
         List<String> sortedValues = values.stream().sorted(Comparator.comparing((String value) -> value.toLowerCase(Locale.ROOT)).thenComparing(Comparator.naturalOrder()))
                 .toList();
@@ -3342,6 +4056,38 @@ public final class ClutchPermsCommands {
             summary += ", +" + remaining + " more";
         }
         return summary;
+    }
+
+    private record TrackSubjectState(String trackName, List<String> trackGroups, List<String> explicitMatches, boolean implicitDefault) {
+
+        private boolean hasConflict() {
+            return explicitMatches.size() > 1;
+        }
+
+        private boolean hasExplicitMatch() {
+            return explicitMatches.size() == 1;
+        }
+
+        private boolean hasPosition() {
+            return hasExplicitMatch() || implicitDefault;
+        }
+
+        private int currentIndex() {
+            if (hasExplicitMatch()) {
+                return trackGroups.indexOf(explicitMatches.getFirst());
+            }
+            return implicitDefault ? 0 : -1;
+        }
+
+        private String currentGroup() {
+            if (hasExplicitMatch()) {
+                return explicitMatches.getFirst();
+            }
+            return implicitDefault ? GroupService.DEFAULT_GROUP : null;
+        }
+    }
+
+    private record GroupTrackReference(String trackName, int position) {
     }
 
     private static String formatDisplayValue(Optional<DisplayText> value) {
@@ -3453,6 +4199,10 @@ public final class ClutchPermsCommands {
 
     private static String normalizeGroupName(String groupName) {
         return groupName.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeTrackName(String trackName) {
+        return trackName.trim().toLowerCase(Locale.ROOT);
     }
 
     private ClutchPermsCommands() {

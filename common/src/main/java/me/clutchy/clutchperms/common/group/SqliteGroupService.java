@@ -3,9 +3,12 @@ package me.clutchy.clutchperms.common.group;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -168,6 +171,15 @@ final class SqliteGroupService implements GroupService {
     }
 
     @Override
+    public synchronized void setSubjectGroups(UUID subjectId, Set<String> groupNames) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        InMemoryGroupService candidate = copyDelegate();
+        candidate.setSubjectGroups(subjectId, groupNames);
+        replaceMemberships(subjectId, candidate.getSubjectGroups(subjectId));
+        delegate = candidate;
+    }
+
+    @Override
     public synchronized Set<UUID> getGroupMembers(String groupName) {
         return delegate.getGroupMembers(groupName);
     }
@@ -282,9 +294,21 @@ final class SqliteGroupService implements GroupService {
 
     private void deleteGroupRow(String groupName) {
         store.write(connection -> {
+            List<String> affectedTracks = new ArrayList<>();
+            try (PreparedStatement selectTracks = connection.prepareStatement("SELECT DISTINCT track_name FROM track_groups WHERE group_name = ? ORDER BY track_name")) {
+                selectTracks.setString(1, groupName);
+                try (ResultSet rows = selectTracks.executeQuery()) {
+                    while (rows.next()) {
+                        affectedTracks.add(rows.getString("track_name"));
+                    }
+                }
+            }
             try (PreparedStatement statement = connection.prepareStatement("DELETE FROM groups WHERE name = ?")) {
                 statement.setString(1, groupName);
                 statement.executeUpdate();
+            }
+            for (String trackName : affectedTracks) {
+                compactTrackGroups(connection, trackName);
             }
         });
     }
@@ -316,6 +340,11 @@ final class SqliteGroupService implements GroupService {
                 updateMemberships.setString(1, newGroupName);
                 updateMemberships.setString(2, groupName);
                 updateMemberships.executeUpdate();
+            }
+            try (PreparedStatement updateTrackGroups = connection.prepareStatement("UPDATE track_groups SET group_name = ? WHERE group_name = ?")) {
+                updateTrackGroups.setString(1, newGroupName);
+                updateTrackGroups.setString(2, groupName);
+                updateTrackGroups.executeUpdate();
             }
             try (PreparedStatement deleteOldGroup = connection.prepareStatement("DELETE FROM groups WHERE name = ?")) {
                 deleteOldGroup.setString(1, groupName);
@@ -370,6 +399,32 @@ final class SqliteGroupService implements GroupService {
         });
     }
 
+    private static void compactTrackGroups(java.sql.Connection connection, String trackName) throws SQLException {
+        List<String> groupNames = new ArrayList<>();
+        try (PreparedStatement selectGroups = connection.prepareStatement("SELECT group_name FROM track_groups WHERE track_name = ? ORDER BY position")) {
+            selectGroups.setString(1, trackName);
+            try (ResultSet rows = selectGroups.executeQuery()) {
+                while (rows.next()) {
+                    groupNames.add(rows.getString("group_name"));
+                }
+            }
+        }
+        try (PreparedStatement deleteGroups = connection.prepareStatement("DELETE FROM track_groups WHERE track_name = ?")) {
+            deleteGroups.setString(1, trackName);
+            deleteGroups.executeUpdate();
+        }
+        try (PreparedStatement insertGroup = connection.prepareStatement("INSERT INTO track_groups (track_name, position, group_name) VALUES (?, ?, ?)")) {
+            int position = 1;
+            for (String groupName : groupNames) {
+                insertGroup.setString(1, trackName);
+                insertGroup.setInt(2, position++);
+                insertGroup.setString(3, groupName);
+                insertGroup.addBatch();
+            }
+            insertGroup.executeBatch();
+        }
+    }
+
     private void insertMembership(UUID subjectId, String groupName) {
         store.write(connection -> {
             try (PreparedStatement statement = connection.prepareStatement("INSERT OR IGNORE INTO memberships (subject_id, group_name) VALUES (?, ?)")) {
@@ -386,6 +441,23 @@ final class SqliteGroupService implements GroupService {
                 statement.setString(1, subjectId.toString());
                 statement.setString(2, groupName);
                 statement.executeUpdate();
+            }
+        });
+    }
+
+    private void replaceMemberships(UUID subjectId, Set<String> groupNames) {
+        store.write(connection -> {
+            try (PreparedStatement deleteMemberships = connection.prepareStatement("DELETE FROM memberships WHERE subject_id = ?")) {
+                deleteMemberships.setString(1, subjectId.toString());
+                deleteMemberships.executeUpdate();
+            }
+            try (PreparedStatement insertMembership = connection.prepareStatement("INSERT INTO memberships (subject_id, group_name) VALUES (?, ?)")) {
+                for (String groupName : groupNames) {
+                    insertMembership.setString(1, subjectId.toString());
+                    insertMembership.setString(2, groupName);
+                    insertMembership.addBatch();
+                }
+                insertMembership.executeBatch();
             }
         });
     }

@@ -41,13 +41,18 @@ final class ObservingGroupService implements GroupService {
 
     @Override
     public void deleteGroup(String groupName) {
+        String normalizedGroupName = InMemoryGroupService.normalizeGroupName(groupName);
         delegate.deleteGroup(groupName);
+        listener.groupDeleted(normalizedGroupName);
         listener.groupsChanged();
     }
 
     @Override
     public void renameGroup(String groupName, String newGroupName) {
+        String normalizedGroupName = InMemoryGroupService.normalizeGroupName(groupName);
+        String normalizedNewGroupName = InMemoryGroupService.normalizeGroupName(newGroupName);
         delegate.renameGroup(groupName, newGroupName);
+        listener.groupRenamed(normalizedGroupName, normalizedNewGroupName);
         listener.groupsChanged();
     }
 
@@ -126,6 +131,15 @@ final class ObservingGroupService implements GroupService {
     public void removeSubjectGroup(UUID subjectId, String groupName) {
         delegate.removeSubjectGroup(subjectId, groupName);
         listener.subjectGroupsChanged(subjectId);
+    }
+
+    @Override
+    public void setSubjectGroups(UUID subjectId, Set<String> groupNames) {
+        Set<String> before = delegate.getSubjectGroups(subjectId);
+        delegate.setSubjectGroups(subjectId, groupNames);
+        if (!before.equals(delegate.getSubjectGroups(subjectId))) {
+            listener.subjectGroupsChanged(subjectId);
+        }
     }
 
     @Override

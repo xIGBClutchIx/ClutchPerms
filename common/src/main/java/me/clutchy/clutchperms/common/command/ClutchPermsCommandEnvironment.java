@@ -28,6 +28,8 @@ import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataServices;
+import me.clutchy.clutchperms.common.track.TrackService;
+import me.clutchy.clutchperms.common.track.TrackServices;
 
 /**
  * Adapts platform-specific Brigadier command sources to the shared ClutchPerms command tree.
@@ -84,6 +86,15 @@ public interface ClutchPermsCommandEnvironment<S> {
      */
     default DisplayResolver displayResolver() {
         return new DisplayResolver(subjectMetadataService(), groupService());
+    }
+
+    /**
+     * Returns the track service mutated by track commands.
+     *
+     * @return active track service
+     */
+    default TrackService trackService() {
+        throw new UnsupportedOperationException("Tracks are not available for this command environment");
     }
 
     /**
@@ -195,7 +206,8 @@ public interface ClutchPermsCommandEnvironment<S> {
         try (SqliteStore store = SqliteStore.openExisting(Objects.requireNonNull(backupFile, "backupFile"), SqliteDependencyMode.ANY_VISIBLE)) {
             PermissionServices.sqlite(store);
             SubjectMetadataServices.sqlite(store);
-            GroupServices.sqlite(store);
+            GroupService groupService = GroupServices.sqlite(store);
+            TrackServices.sqlite(store, groupService);
             PermissionNodeRegistries.sqlite(store);
         }
     }

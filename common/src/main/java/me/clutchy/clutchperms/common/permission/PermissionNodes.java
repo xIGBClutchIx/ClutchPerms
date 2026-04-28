@@ -70,6 +70,12 @@ public final class PermissionNodes {
 
     public static final String ADMIN_USER_GROUP_REMOVE = ADMIN + ".user.group.remove";
 
+    public static final String ADMIN_USER_TRACK_LIST = ADMIN + ".user.track.list";
+
+    public static final String ADMIN_USER_TRACK_PROMOTE = ADMIN + ".user.track.promote";
+
+    public static final String ADMIN_USER_TRACK_DEMOTE = ADMIN + ".user.track.demote";
+
     public static final String ADMIN_USER_DISPLAY_VIEW = ADMIN + ".user.display.view";
 
     public static final String ADMIN_USER_DISPLAY_SET = ADMIN + ".user.display.set";
@@ -110,6 +116,26 @@ public final class PermissionNodes {
 
     public static final String ADMIN_GROUP_DISPLAY_CLEAR = ADMIN + ".group.display.clear";
 
+    public static final String ADMIN_TRACK_LIST = ADMIN + ".track.list";
+
+    public static final String ADMIN_TRACK_INFO = ADMIN + ".track.info";
+
+    public static final String ADMIN_TRACK_CREATE = ADMIN + ".track.create";
+
+    public static final String ADMIN_TRACK_DELETE = ADMIN + ".track.delete";
+
+    public static final String ADMIN_TRACK_RENAME = ADMIN + ".track.rename";
+
+    public static final String ADMIN_TRACK_VIEW = ADMIN + ".track.view";
+
+    public static final String ADMIN_TRACK_APPEND = ADMIN + ".track.append";
+
+    public static final String ADMIN_TRACK_INSERT = ADMIN + ".track.insert";
+
+    public static final String ADMIN_TRACK_MOVE = ADMIN + ".track.move";
+
+    public static final String ADMIN_TRACK_REMOVE = ADMIN + ".track.remove";
+
     public static final String ADMIN_USERS_LIST = ADMIN + ".users.list";
 
     public static final String ADMIN_USERS_SEARCH = ADMIN + ".users.search";
@@ -125,13 +151,16 @@ public final class PermissionNodes {
     private static final List<String> COMMAND_NODES = List.of(ADMIN_HELP, ADMIN_STATUS, ADMIN_RELOAD, ADMIN_VALIDATE, ADMIN_HISTORY, ADMIN_HISTORY_PRUNE, ADMIN_UNDO,
             ADMIN_CONFIG_VIEW, ADMIN_CONFIG_SET, ADMIN_CONFIG_RESET, ADMIN_BACKUP_LIST, ADMIN_BACKUP_CREATE, ADMIN_BACKUP_RESTORE, ADMIN_USER_INFO, ADMIN_USER_LIST, ADMIN_USER_GET,
             ADMIN_USER_SET, ADMIN_USER_CLEAR, ADMIN_USER_CLEAR_ALL, ADMIN_USER_CHECK, ADMIN_USER_EXPLAIN, ADMIN_USER_GROUPS, ADMIN_USER_GROUP_ADD, ADMIN_USER_GROUP_REMOVE,
-            ADMIN_USER_DISPLAY_VIEW, ADMIN_USER_DISPLAY_SET, ADMIN_USER_DISPLAY_CLEAR, ADMIN_GROUP_LIST, ADMIN_GROUP_INFO, ADMIN_GROUP_CREATE, ADMIN_GROUP_DELETE,
-            ADMIN_GROUP_RENAME, ADMIN_GROUP_VIEW, ADMIN_GROUP_GET, ADMIN_GROUP_SET, ADMIN_GROUP_CLEAR, ADMIN_GROUP_CLEAR_ALL, ADMIN_GROUP_MEMBERS, ADMIN_GROUP_PARENTS,
-            ADMIN_GROUP_PARENT_ADD, ADMIN_GROUP_PARENT_REMOVE, ADMIN_GROUP_DISPLAY_VIEW, ADMIN_GROUP_DISPLAY_SET, ADMIN_GROUP_DISPLAY_CLEAR, ADMIN_USERS_LIST, ADMIN_USERS_SEARCH,
-            ADMIN_NODES_LIST, ADMIN_NODES_SEARCH, ADMIN_NODES_ADD, ADMIN_NODES_REMOVE);
+            ADMIN_USER_TRACK_LIST, ADMIN_USER_TRACK_PROMOTE, ADMIN_USER_TRACK_DEMOTE, ADMIN_USER_DISPLAY_VIEW, ADMIN_USER_DISPLAY_SET, ADMIN_USER_DISPLAY_CLEAR, ADMIN_GROUP_LIST,
+            ADMIN_GROUP_INFO, ADMIN_GROUP_CREATE, ADMIN_GROUP_DELETE, ADMIN_GROUP_RENAME, ADMIN_GROUP_VIEW, ADMIN_GROUP_GET, ADMIN_GROUP_SET, ADMIN_GROUP_CLEAR,
+            ADMIN_GROUP_CLEAR_ALL, ADMIN_GROUP_MEMBERS, ADMIN_GROUP_PARENTS, ADMIN_GROUP_PARENT_ADD, ADMIN_GROUP_PARENT_REMOVE, ADMIN_GROUP_DISPLAY_VIEW, ADMIN_GROUP_DISPLAY_SET,
+            ADMIN_GROUP_DISPLAY_CLEAR, ADMIN_TRACK_LIST, ADMIN_TRACK_INFO, ADMIN_TRACK_CREATE, ADMIN_TRACK_DELETE, ADMIN_TRACK_RENAME, ADMIN_TRACK_VIEW, ADMIN_TRACK_APPEND,
+            ADMIN_TRACK_INSERT, ADMIN_TRACK_MOVE, ADMIN_TRACK_REMOVE, ADMIN_USERS_LIST, ADMIN_USERS_SEARCH, ADMIN_NODES_LIST, ADMIN_NODES_SEARCH, ADMIN_NODES_ADD,
+            ADMIN_NODES_REMOVE);
 
     private static final List<String> COMMAND_WILDCARD_ASSIGNMENTS = List.of(ADMIN_ALL, ADMIN + ".history.*", ADMIN + ".backup.*", ADMIN + ".user.*", ADMIN + ".user.group.*",
-            ADMIN + ".group.*", ADMIN + ".user.display.*", ADMIN + ".group.parent.*", ADMIN + ".group.display.*", ADMIN + ".users.*", ADMIN + ".nodes.*", ADMIN_CONFIG_ALL);
+            ADMIN + ".user.track.*", ADMIN + ".group.*", ADMIN + ".track.*", ADMIN + ".user.display.*", ADMIN + ".group.parent.*", ADMIN + ".group.display.*", ADMIN + ".users.*",
+            ADMIN + ".nodes.*", ADMIN_CONFIG_ALL);
 
     /**
      * Lists exact permission nodes required by ClutchPerms admin commands.

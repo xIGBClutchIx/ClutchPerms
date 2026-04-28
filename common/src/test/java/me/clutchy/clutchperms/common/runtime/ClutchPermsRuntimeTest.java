@@ -22,6 +22,7 @@ import me.clutchy.clutchperms.common.config.ClutchPermsChatConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsCommandConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfigs;
+import me.clutchy.clutchperms.common.group.GroupServices;
 import me.clutchy.clutchperms.common.node.PermissionNodeRegistries;
 import me.clutchy.clutchperms.common.node.PermissionNodeSource;
 import me.clutchy.clutchperms.common.permission.PermissionServices;
@@ -32,8 +33,10 @@ import me.clutchy.clutchperms.common.storage.SqliteStore;
 import me.clutchy.clutchperms.common.storage.SqliteTestSupport;
 import me.clutchy.clutchperms.common.storage.StorageBackup;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
+import me.clutchy.clutchperms.common.track.TrackServices;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -62,6 +65,7 @@ class ClutchPermsRuntimeTest {
         assertNotNull(runtime.permissionService());
         assertNotNull(runtime.subjectMetadataService());
         assertNotNull(runtime.groupService());
+        assertNotNull(runtime.trackService());
         assertNotNull(runtime.manualPermissionNodeRegistry());
         assertNotNull(runtime.permissionResolver());
         assertTrue(runtime.groupService().hasGroup("default"));
@@ -81,6 +85,8 @@ class ClutchPermsRuntimeTest {
 
         try (SqliteStore externalStore = SqliteTestSupport.open(storagePaths.databaseFile())) {
             PermissionServices.sqlite(externalStore).setPermission(SUBJECT_ID, "example.validate", PermissionValue.TRUE);
+            GroupServices.sqlite(externalStore).createGroup("staff");
+            TrackServices.sqlite(externalStore, GroupServices.sqlite(externalStore)).createTrack("ranks");
         }
         Files.writeString(storagePaths.configFile(), customConfig(3, 4, 5));
 
@@ -89,6 +95,22 @@ class ClutchPermsRuntimeTest {
         assertSame(activeServices, runtime.services());
         assertEquals(ClutchPermsConfig.defaults(), runtime.config());
         assertEquals(PermissionValue.UNSET, runtime.permissionService().getPermission(SUBJECT_ID, "example.validate"));
+        assertFalse(runtime.trackService().hasTrack("ranks"));
+    }
+
+    @Test
+    void reloadLoadsPersistedTracks() {
+        ClutchPermsStoragePaths storagePaths = ClutchPermsStoragePaths.inDirectory(temporaryDirectory);
+        try (SqliteStore store = SqliteTestSupport.open(storagePaths.databaseFile())) {
+            GroupServices.sqlite(store).createGroup("staff");
+            TrackServices.sqlite(store, GroupServices.sqlite(store)).createTrack("ranks");
+            TrackServices.sqlite(store, GroupServices.sqlite(store)).setTrackGroups("ranks", List.of("default", "staff"));
+        }
+        ClutchPermsRuntime runtime = new ClutchPermsRuntime(storagePaths, ClutchPermsRuntimeHooks.noop());
+
+        runtime.reload();
+
+        assertEquals(List.of("default", "staff"), runtime.trackService().getTrackGroups("ranks"));
     }
 
     @Test

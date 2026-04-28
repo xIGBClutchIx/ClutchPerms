@@ -5,7 +5,7 @@ ClutchPerms writes one config file and one SQLite database:
 | File | Purpose |
 | --- | --- |
 | `config.json` | Runtime settings for backup retention/scheduling, audit retention, command page sizes, chat formatting, and Paper command replacement |
-| `database.db` | Direct permissions, group definitions, memberships, subject metadata, display values, manually registered known nodes, and command audit history |
+| `database.db` | Direct permissions, group definitions, track definitions, memberships, subject metadata, display values, manually registered known nodes, and command audit history |
 
 Locations:
 
@@ -71,11 +71,21 @@ Config changes apply immediately through save-and-reload. If reload fails, `conf
 
 ## Validation
 
-Validation is strict. Startup, validate, or reload fails on malformed config, unsupported schema versions, unknown config keys, invalid config values, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, invalid protected `op` definitions, unknown parent groups, and parent cycles.
+Validation is strict. Startup, validate, or reload fails on malformed config, unsupported schema versions, unknown config keys, invalid config values, invalid UUIDs, blank names or nodes, duplicate normalized permission keys, invalid wildcard placement, unknown permission values, unknown groups, explicit `default` memberships, invalid protected `op` definitions, unknown parent groups, parent cycles, unknown track groups, duplicate track groups, non-contiguous stored track positions, `default` outside track position 1, or any track use of `op`.
 
 Stored display values are also validated. Raw section signs, invalid ampersand codes, blank display values, and over-length display values fail startup, validate, or reload.
 
 `/clutchperms validate` parses config and database storage without replacing active services/config, refreshing runtime bridges, or mutating storage.
+
+## Tracks
+
+Tracks are stored in the same SQLite database through `tracks` and ordered `track_groups` rows. They define ordered group ladders for shared promote and demote commands, but they do not change permission or display resolution.
+
+Track names and track group names are normalized before storage. `default` is allowed only as the first track entry. `op` is rejected for tracks entirely.
+
+When a referenced group is renamed, track rows are updated in the same transaction. When a referenced group is deleted, related track rows are removed and their remaining positions are compacted so stored track ordering stays contiguous.
+
+User track promote and demote operations replace explicit group memberships in one transaction. ClutchPerms never commits the “remove old group” half of a track move without the matching “add new group” half.
 
 ## Display And Chat
 
@@ -116,6 +126,6 @@ Backup create/restore, manual known-node changes, player-observation metadata up
 
 ## Mutation Guarantees
 
-If a database mutation cannot commit, ClutchPerms leaves both the live database and the in-memory runtime state unchanged.
+If a database mutation cannot commit, ClutchPerms leaves both the live database and the in-memory runtime state unchanged. This includes track edits and track-driven membership replacements.
 
 Reload is atomic from the command perspective. If config or database storage fails, active runtime state remains unchanged.

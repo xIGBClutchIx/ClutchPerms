@@ -335,6 +335,28 @@ public final class InMemoryGroupService implements GroupService {
      * {@inheritDoc}
      */
     @Override
+    public void setSubjectGroups(UUID subjectId, Set<String> groupNames) {
+        Objects.requireNonNull(subjectId, "subjectId");
+        Objects.requireNonNull(groupNames, "groupNames");
+        Set<String> normalizedGroups = new TreeSet<>();
+        for (String groupName : groupNames) {
+            String normalizedGroupName = normalizeExistingGroupName(groupName);
+            rejectDefaultMembership(normalizedGroupName);
+            normalizedGroups.add(normalizedGroupName);
+        }
+        if (normalizedGroups.isEmpty()) {
+            memberships.remove(subjectId);
+            return;
+        }
+        Set<String> replacement = ConcurrentHashMap.newKeySet();
+        replacement.addAll(normalizedGroups);
+        memberships.put(subjectId, replacement);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public Set<UUID> getGroupMembers(String groupName) {
         String normalizedGroupName = normalizeExistingGroupName(groupName);
         Set<UUID> members = new TreeSet<>(Comparator.comparing(UUID::toString));

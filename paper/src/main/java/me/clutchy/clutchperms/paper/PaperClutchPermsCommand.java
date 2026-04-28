@@ -30,6 +30,7 @@ import me.clutchy.clutchperms.common.runtime.ScheduledBackupService;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.track.TrackService;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -71,6 +72,11 @@ final class PaperClutchPermsCommand {
         @Override
         public GroupService groupService() {
             return plugin.getGroupService();
+        }
+
+        @Override
+        public TrackService trackService() {
+            return plugin.getTrackService();
         }
 
         @Override

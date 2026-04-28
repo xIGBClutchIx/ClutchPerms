@@ -59,6 +59,8 @@ import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.InMemorySubjectMetadataService;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.track.TrackService;
+import me.clutchy.clutchperms.common.track.TrackServices;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -91,6 +93,8 @@ class ClutchPermsCommandsTest {
 
     private GroupService groupService;
 
+    private TrackService trackService;
+
     private MutablePermissionNodeRegistry manualPermissionNodeRegistry;
 
     private PermissionResolver permissionResolver;
@@ -113,6 +117,7 @@ class ClutchPermsCommandsTest {
         PermissionService storagePermissionService = new InMemoryPermissionService();
         subjectMetadataService = new InMemorySubjectMetadataService();
         GroupService storageGroupService = new InMemoryGroupService();
+        trackService = TrackServices.inMemory(storageGroupService);
         manualPermissionNodeRegistry = PermissionNodeRegistries.inMemory();
         permissionResolver = new PermissionResolver(storagePermissionService, storageGroupService);
         permissionService = PermissionServices.observing(storagePermissionService, permissionResolver::invalidateSubject);
@@ -127,8 +132,22 @@ class ClutchPermsCommandsTest {
             public void groupsChanged() {
                 permissionResolver.invalidateAll();
             }
+
+            @Override
+            public void groupDeleted(String groupName) {
+                if (trackService instanceof GroupChangeListener listener) {
+                    listener.groupDeleted(groupName);
+                }
+            }
+
+            @Override
+            public void groupRenamed(String groupName, String newGroupName) {
+                if (trackService instanceof GroupChangeListener listener) {
+                    listener.groupRenamed(groupName, newGroupName);
+                }
+            }
         });
-        environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, manualPermissionNodeRegistry, permissionResolver);
+        environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, trackService, manualPermissionNodeRegistry, permissionResolver);
         backupStore = SqliteStore.open(temporaryDirectory.resolve("database.db"), SqliteDependencyMode.ANY_VISIBLE);
         environment.setStorageBackupService(StorageBackupService.forDatabase(temporaryDirectory.resolve("backups"), backupStore.databaseFile(), backupStore,
                 ClutchPermsConfig.defaults().backups().retentionLimit()));
@@ -227,7 +246,7 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms", console);
 
-        assertEquals(List.of("ClutchPerms commands (page 1/18):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/18 | Next >"),
+        assertEquals(List.of("ClutchPerms commands (page 1/22):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/22 | Next >"),
                 console.messages());
         assertRuns(console.commandMessages().getLast(), "/clutchperms help 2");
     }
@@ -246,7 +265,7 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("Invalid page: nope", "Pages start at 1.", "Try one:", "  /clutchperms help 1"), invalid.messages());
 
         assertEquals(0, dispatcher.execute("clutchperms help 99", outOfRange));
-        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-8.", "Try one:", "  /clutchperms help 8"), outOfRange.messages());
+        assertEquals(List.of("Page 99 is out of range.", "Available pages: 1-10.", "Try one:", "  /clutchperms help 10"), outOfRange.messages());
     }
 
     /**
@@ -407,7 +426,7 @@ class ClutchPermsCommandsTest {
 
         TestSource help = TestSource.console();
         dispatcher.execute("clutchperms", help);
-        assertEquals(List.of("ClutchPerms commands (page 1/18):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/18 | Next >"), help.messages());
+        assertEquals(List.of("ClutchPerms commands (page 1/22):", "/clutchperms help [page]", "/clutchperms status", "/clutchperms reload", "Page 1/22 | Next >"), help.messages());
 
         permissionService.setPermission(TARGET_ID, "example.01", PermissionValue.TRUE);
         permissionService.setPermission(TARGET_ID, "example.02", PermissionValue.TRUE);
@@ -1188,12 +1207,13 @@ class ClutchPermsCommandsTest {
 
         assertEquals(List.of("User Target (00000000-0000-0000-0000-000000000002):", "  subject Target (00000000-0000-0000-0000-000000000002)",
                 "  stored last-known name StoredTarget, last seen 2026-04-24T12:00:00Z", "  direct permissions 1", "  effective permissions 3",
-                "  groups default (implicit), staff", "  direct prefix &a[Target]", "  effective prefix &a[Target] from direct", "  direct suffix unset",
+                "  groups default (implicit), staff", "  tracks none", "  direct prefix &a[Target]", "  effective prefix &a[Target] from direct", "  direct suffix unset",
                 "  effective suffix &f* from group staff"), console.messages());
         assertSuggests(console.commandMessages().get(3), "/clutchperms user 00000000-0000-0000-0000-000000000002 list");
         assertSuggests(console.commandMessages().get(5), "/clutchperms user 00000000-0000-0000-0000-000000000002 groups");
-        assertSuggests(console.commandMessages().get(6), "/clutchperms user 00000000-0000-0000-0000-000000000002 prefix get");
-        assertSuggests(console.commandMessages().get(8), "/clutchperms user 00000000-0000-0000-0000-000000000002 suffix get");
+        assertSuggests(console.commandMessages().get(6), "/clutchperms user 00000000-0000-0000-0000-000000000002 tracks");
+        assertSuggests(console.commandMessages().get(7), "/clutchperms user 00000000-0000-0000-0000-000000000002 prefix get");
+        assertSuggests(console.commandMessages().get(9), "/clutchperms user 00000000-0000-0000-0000-000000000002 suffix get");
     }
 
     /**
@@ -1209,7 +1229,7 @@ class ClutchPermsCommandsTest {
 
         assertEquals(List.of("User 00000000-0000-0000-0000-000000000004 (00000000-0000-0000-0000-000000000004):",
                 "  subject 00000000-0000-0000-0000-000000000004 (00000000-0000-0000-0000-000000000004)", "  stored metadata none", "  direct permissions 0",
-                "  effective permissions 0", "  groups default (implicit)", "  direct prefix unset", "  effective prefix unset", "  direct suffix unset",
+                "  effective permissions 0", "  groups default (implicit)", "  tracks none", "  direct prefix unset", "  effective prefix unset", "  direct suffix unset",
                 "  effective suffix unset"), console.messages());
     }
 
@@ -1233,13 +1253,14 @@ class ClutchPermsCommandsTest {
 
         dispatcher.execute("clutchperms group staff info", console);
 
-        assertEquals(List.of("Group staff:", "  name staff", "  direct permissions 1", "  parents base", "  child groups child",
+        assertEquals(List.of("Group staff:", "  name staff", "  direct permissions 1", "  parents base", "  child groups child", "  tracks none",
                 "  explicit members Target (00000000-0000-0000-0000-000000000002)", "  prefix &7[Staff]", "  suffix unset"), console.messages());
         assertSuggests(console.commandMessages().get(2), "/clutchperms group staff list");
         assertSuggests(console.commandMessages().get(3), "/clutchperms group staff parents");
-        assertSuggests(console.commandMessages().get(5), "/clutchperms group staff members");
-        assertSuggests(console.commandMessages().get(6), "/clutchperms group staff prefix get");
-        assertSuggests(console.commandMessages().get(7), "/clutchperms group staff suffix get");
+        assertSuggests(console.commandMessages().get(5), "/clutchperms track list");
+        assertSuggests(console.commandMessages().get(6), "/clutchperms group staff members");
+        assertSuggests(console.commandMessages().get(7), "/clutchperms group staff prefix get");
+        assertSuggests(console.commandMessages().get(8), "/clutchperms group staff suffix get");
     }
 
     /**
@@ -1256,7 +1277,153 @@ class ClutchPermsCommandsTest {
         dispatcher.execute("clutchperms group default info", console);
 
         assertEquals(List.of("Group default:", "  name default", "  default group applies implicitly", "  direct permissions 1", "  parents none", "  child groups none",
-                "  explicit members none", "  prefix &8[Default]", "  suffix unset"), console.messages());
+                "  tracks none", "  explicit members none", "  prefix &8[Default]", "  suffix unset"), console.messages());
+    }
+
+    /**
+     * Confirms help output exposes track commands when help pagination is expanded.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void helpCommandIncludesTrackCommands() throws CommandSyntaxException {
+        environment.setConfig(new ClutchPermsConfig(ClutchPermsBackupConfig.defaults(), new ClutchPermsCommandConfig(50, 8)));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms help 1", console);
+        dispatcher.execute("clutchperms help 2", console);
+
+        assertMessageContains(console, "/clutchperms track list [page]");
+        assertMessageContains(console, "/clutchperms track <track> move <group> <position>");
+        assertMessageContains(console, "/clutchperms user <target> tracks [page]");
+        assertMessageContains(console, "/clutchperms user <target> track promote <track>");
+    }
+
+    /**
+     * Confirms track CRUD and reordering commands update stored ordered groups and audit the mutation.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void trackCommandsCreateListAndReorderGroups() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        groupService.createGroup("moderator");
+        groupService.createGroup("admin");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms track ranks create", console);
+        dispatcher.execute("clutchperms track ranks append default", console);
+        dispatcher.execute("clutchperms track ranks append staff", console);
+        dispatcher.execute("clutchperms track ranks insert 2 moderator", console);
+        dispatcher.execute("clutchperms track ranks move staff 2", console);
+        dispatcher.execute("clutchperms track ranks list", console);
+        dispatcher.execute("clutchperms track ranks info", console);
+
+        assertEquals(List.of("default", "staff", "moderator"), trackService.getTrackGroups("ranks"));
+        assertTrue(console.messages().contains("Created track ranks."));
+        assertTrue(console.messages().contains("Added default to the end of track ranks."));
+        assertTrue(console.messages().contains("Inserted moderator into track ranks at position 2."));
+        assertTrue(console.messages().contains("Moved staff on track ranks to position 2."));
+        assertTrue(console.messages().contains("Track ranks (page 1/1):"));
+        assertTrue(console.messages().contains("  #1 default"));
+        assertTrue(console.messages().contains("  #2 staff"));
+        assertTrue(console.messages().contains("  #3 moderator"));
+        assertTrue(console.messages().contains("Track ranks:"));
+        assertEquals("track.group.move", environment.auditLogService().listNewestFirst().getFirst().action());
+    }
+
+    /**
+     * Confirms deleting a track requires confirmation and undo restores the prior ordered definition.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void trackDeleteUsesConfirmationAndUndo() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        trackService.createTrack("ranks");
+        trackService.setTrackGroups("ranks", List.of("default", "staff"));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms track ranks delete", console);
+        assertTrue(trackService.hasTrack("ranks"));
+
+        dispatcher.execute("clutchperms track ranks delete", console);
+
+        assertFalse(trackService.hasTrack("ranks"));
+        assertEquals(
+                List.of("Destructive command confirmation required.", "Repeat this command within 30 seconds to confirm: /clutchperms track ranks delete", "Deleted track ranks."),
+                console.messages());
+
+        long deleteEntryId = environment.auditLogService().listNewestFirst().getFirst().id();
+        console.messages().clear();
+        console.commandMessages().clear();
+
+        dispatcher.execute("clutchperms undo " + deleteEntryId, console);
+
+        assertTrue(trackService.hasTrack("ranks"));
+        assertEquals(List.of("default", "staff"), trackService.getTrackGroups("ranks"));
+        assertTrue(console.messages().contains("Undid audit history entry " + deleteEntryId + "."));
+    }
+
+    /**
+     * Confirms promote and demote commands follow ordered track rules for implicit default and explicit groups.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void userTrackPromoteAndDemoteFollowOrdering() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        groupService.createGroup("admin");
+        trackService.createTrack("ranks");
+        trackService.setTrackGroups("ranks", List.of("default", "staff", "admin"));
+        trackService.createTrack("staffonly");
+        trackService.setTrackGroups("staffonly", List.of("staff", "admin"));
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms user Target track demote ranks", console, "Track operation failed: user is already at the start of track ranks");
+
+        dispatcher.execute("clutchperms user Target track promote ranks", console);
+        assertEquals(Set.of("staff"), groupService.getSubjectGroups(TARGET_ID));
+
+        dispatcher.execute("clutchperms user Target tracks", console);
+        assertTrue(console.messages().contains("Tracks for Target (00000000-0000-0000-0000-000000000002) (page 1/1):"));
+        assertTrue(console.messages().contains("  ranks: staff (#2)"));
+
+        dispatcher.execute("clutchperms user Target track promote ranks", console);
+        assertEquals(Set.of("admin"), groupService.getSubjectGroups(TARGET_ID));
+
+        dispatcher.execute("clutchperms user Target track demote ranks", console);
+        assertEquals(Set.of("staff"), groupService.getSubjectGroups(TARGET_ID));
+
+        dispatcher.execute("clutchperms user Target track demote ranks", console);
+        assertEquals(Set.of(), groupService.getSubjectGroups(TARGET_ID));
+
+        dispatcher.execute("clutchperms user Target track promote staffonly", console);
+
+        assertEquals(Set.of("staff"), groupService.getSubjectGroups(TARGET_ID));
+        assertTrue(console.messages().contains("Promoted Target (00000000-0000-0000-0000-000000000002) on track ranks to staff."));
+        assertTrue(console.messages().contains("Promoted Target (00000000-0000-0000-0000-000000000002) on track ranks to admin."));
+        assertTrue(console.messages().contains("Demoted Target (00000000-0000-0000-0000-000000000002) on track ranks to staff."));
+        assertTrue(console.messages().contains("Demoted Target (00000000-0000-0000-0000-000000000002) on track ranks to default."));
+        assertTrue(console.messages().contains("Promoted Target (00000000-0000-0000-0000-000000000002) on track staffonly to staff."));
+        assertEquals("user.track.promote", environment.auditLogService().listNewestFirst().getFirst().action());
+    }
+
+    /**
+     * Confirms track promotion fails when the user matches multiple explicit groups on one track.
+     */
+    @Test
+    void userTrackPromoteRejectsConflictingGroups() {
+        groupService.createGroup("staff");
+        groupService.createGroup("admin");
+        trackService.createTrack("ranks");
+        trackService.setTrackGroups("ranks", List.of("default", "staff", "admin"));
+        groupService.addSubjectGroup(TARGET_ID, "staff");
+        groupService.addSubjectGroup(TARGET_ID, "admin");
+        TestSource console = TestSource.console();
+
+        assertCommandFails("clutchperms user Target track promote ranks", console, "Track operation failed: user matches multiple explicit groups on track ranks: staff, admin");
+        assertEquals(Set.of("staff", "admin"), groupService.getSubjectGroups(TARGET_ID));
     }
 
     /**
@@ -1834,7 +2001,7 @@ class ClutchPermsCommandsTest {
         assertEquals(List.of("Target (00000000-0000-0000-0000-000000000002) effective example.node = UNSET from unset.",
                 "Added Target (00000000-0000-0000-0000-000000000002) to group op.", "Groups for Target (00000000-0000-0000-0000-000000000002) (page 1/1):", "  op",
                 "  default (implicit)", "Target (00000000-0000-0000-0000-000000000002) effective example.node = TRUE from group op via *.", "Group op:", "  name op",
-                "  op group grants * to explicit members only", "  direct permissions 1", "  parents none", "  child groups none",
+                "  op group grants * to explicit members only", "  direct permissions 1", "  parents none", "  child groups none", "  tracks none",
                 "  explicit members Target (00000000-0000-0000-0000-000000000002)", "  prefix unset", "  suffix unset",
                 "Removed Target (00000000-0000-0000-0000-000000000002) from group op.", "Target (00000000-0000-0000-0000-000000000002) effective example.node = UNSET from unset."),
                 console.messages());
@@ -2256,7 +2423,7 @@ class ClutchPermsCommandsTest {
     void directPermissionMutationFailuresReturnStyledErrors() throws CommandSyntaxException {
         permissionService = new FailingMutationPermissionService(new PermissionStorageException("save blocked"));
         permissionResolver = new PermissionResolver(permissionService, groupService);
-        environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, manualPermissionNodeRegistry, permissionResolver);
+        environment = new TestEnvironment(permissionService, subjectMetadataService, groupService, trackService, manualPermissionNodeRegistry, permissionResolver);
         environment.addOnlineSubject("Target", TARGET_ID);
         dispatcher = new CommandDispatcher<>();
         ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment, rootLiteral)));
@@ -2684,7 +2851,7 @@ class ClutchPermsCommandsTest {
     private static List<String> statusMessages(int knownSubjects) {
         return List.of(ClutchPermsCommands.STATUS_MESSAGE, "Database file: " + STATUS_DIAGNOSTICS.databaseFile(), "Config file: " + STATUS_DIAGNOSTICS.configFile(),
                 "Backup retention: newest 10 database backups.", "Enabled: false; timer running: false.", "Audit retention: enabled, max age 90 days, max entries none.",
-                "Command page sizes: help 7, lists 8.", "Chat formatting: enabled.", "Known subjects: " + knownSubjects, "Known groups: 2",
+                "Command page sizes: help 7, lists 8.", "Chat formatting: enabled.", "Known subjects: " + knownSubjects, "Known groups: 2", "Known tracks: 0",
                 "Known permission nodes: " + PermissionNodes.commandNodes().size(), "Resolver cache: 0 subjects, 0 node results, 0 effective snapshots.",
                 "Runtime bridge: " + STATUS_DIAGNOSTICS.runtimeBridgeStatus());
     }
@@ -2694,9 +2861,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageOneMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 1/8):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
+        return List.of("ClutchPerms commands (page 1/10):", "/" + rootLiteral + " help [page]", "/" + rootLiteral + " status", "/" + rootLiteral + " reload",
                 "/" + rootLiteral + " validate", "/" + rootLiteral + " history [page]", "/" + rootLiteral + " history prune days <days>",
-                "/" + rootLiteral + " history prune count <count>", "Page 1/8 | Next >");
+                "/" + rootLiteral + " history prune count <count>", "Page 1/10 | Next >");
     }
 
     private static List<String> commandListPageTwoMessages() {
@@ -2704,9 +2871,9 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> commandListPageTwoMessages(String rootLiteral) {
-        return List.of("ClutchPerms commands (page 2/8):", "/" + rootLiteral + " undo <id>", "/" + rootLiteral + " config list", "/" + rootLiteral + " config get <key>",
+        return List.of("ClutchPerms commands (page 2/10):", "/" + rootLiteral + " undo <id>", "/" + rootLiteral + " config list", "/" + rootLiteral + " config get <key>",
                 "/" + rootLiteral + " config set <key> <value>", "/" + rootLiteral + " config reset <key|all>", "/" + rootLiteral + " backup create",
-                "/" + rootLiteral + " backup list [page]", "< Prev | Page 2/8 | Next >");
+                "/" + rootLiteral + " backup list [page]", "< Prev | Page 2/10 | Next >");
     }
 
     private static List<String> groupRootUsageMessages() {
@@ -2727,7 +2894,8 @@ class ClutchPermsCommandsTest {
     private static List<String> userRootUsageMessages() {
         return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try one:", "  /clutchperms user <target> <info|list|groups>",
                 "  /clutchperms user <target> <get|clear|check|explain> <node>", "  /clutchperms user <target> set <node> <true|false>", "  /clutchperms user <target> clear-all",
-                "  /clutchperms user <target> group <add|remove> <group>", "  /clutchperms user <target> <prefix|suffix> get|set|clear");
+                "  /clutchperms user <target> group <add|remove> <group>", "  /clutchperms user <target> tracks", "  /clutchperms user <target> track <promote|demote> <track>",
+                "  /clutchperms user <target> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> nodesUsageMessages() {
@@ -2777,6 +2945,8 @@ class ClutchPermsCommandsTest {
 
         private final GroupService groupService;
 
+        private final TrackService trackService;
+
         private final MutablePermissionNodeRegistry manualPermissionNodeRegistry;
 
         private final PermissionResolver permissionResolver;
@@ -2807,11 +2977,12 @@ class ClutchPermsCommandsTest {
 
         private RuntimeException configUpdateFailure;
 
-        private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService,
+        private TestEnvironment(PermissionService permissionService, SubjectMetadataService subjectMetadataService, GroupService groupService, TrackService trackService,
                 MutablePermissionNodeRegistry manualPermissionNodeRegistry, PermissionResolver permissionResolver) {
             this.permissionService = permissionService;
             this.subjectMetadataService = subjectMetadataService;
             this.groupService = groupService;
+            this.trackService = trackService;
             this.manualPermissionNodeRegistry = PermissionNodeRegistries.observing(manualPermissionNodeRegistry, this::refreshRuntimePermissions);
             this.permissionResolver = permissionResolver;
         }
@@ -2872,6 +3043,11 @@ class ClutchPermsCommandsTest {
         @Override
         public GroupService groupService() {
             return groupService;
+        }
+
+        @Override
+        public TrackService trackService() {
+            return trackService;
         }
 
         @Override

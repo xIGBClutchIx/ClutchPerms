@@ -35,6 +35,7 @@ import me.clutchy.clutchperms.common.storage.SqliteDependencyMode;
 import me.clutchy.clutchperms.common.storage.StorageBackupService;
 import me.clutchy.clutchperms.common.storage.StorageFileKind;
 import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
+import me.clutchy.clutchperms.common.track.TrackService;
 
 /**
  * Paper plugin entrypoint that exposes the shared persisted permission service and Brigadier command adapter.
@@ -152,6 +153,15 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
      */
     public GroupService getGroupService() {
         return getRuntime().groupService();
+    }
+
+    /**
+     * Exposes the active track service instance for callers and tests.
+     *
+     * @return the active track service for the current plugin enable
+     */
+    public TrackService getTrackService() {
+        return getRuntime().trackService();
     }
 
     /**
@@ -347,6 +357,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         getServer().getServicesManager().register(PermissionService.class, getPermissionService(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(SubjectMetadataService.class, getSubjectMetadataService(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(GroupService.class, getGroupService(), this, ServicePriority.Normal);
+        getServer().getServicesManager().register(TrackService.class, getTrackService(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(MutablePermissionNodeRegistry.class, getManualPermissionNodeRegistry(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(PermissionNodeRegistry.class, getPermissionNodeRegistry(), this, ServicePriority.Normal);
         getServer().getServicesManager().register(PermissionResolver.class, getPermissionResolver(), this, ServicePriority.Normal);
@@ -360,6 +371,7 @@ public class ClutchPermsPaperPlugin extends JavaPlugin {
         getServer().getServicesManager().unregister(PermissionService.class, services.permissionService());
         getServer().getServicesManager().unregister(SubjectMetadataService.class, services.subjectMetadataService());
         getServer().getServicesManager().unregister(GroupService.class, services.groupService());
+        getServer().getServicesManager().unregister(TrackService.class, services.trackService());
         getServer().getServicesManager().unregister(MutablePermissionNodeRegistry.class, services.manualPermissionNodeRegistry());
         getServer().getServicesManager().unregister(PermissionNodeRegistry.class, services.permissionNodeRegistry());
         getServer().getServicesManager().unregister(PermissionResolver.class, services.permissionResolver());

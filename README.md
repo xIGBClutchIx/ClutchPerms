@@ -1,6 +1,6 @@
 # ClutchPerms
 
-ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It provides shared `/clutchperms` commands, SQLite storage, users, groups, terminal wildcard permissions, prefixes/suffixes, backups, audit history, and runtime permission bridges for each platform.
+ClutchPerms is an early cross-platform Minecraft permissions project for Paper, Fabric, NeoForge, and Forge. It provides shared `/clutchperms` commands, SQLite storage, users, groups, ordered tracks, terminal wildcard permissions, prefixes/suffixes, backups, audit history, and runtime permission bridges for each platform.
 
 This is a usable prototype, not a mature permissions suite. The model is intentionally small: direct user permissions, inherited groups, built-in `default` and `op` groups, terminal wildcards, and shared effective permission resolution.
 
@@ -11,6 +11,7 @@ For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 - Shared `/clutchperms`, `/cperms`, and `/perms` command tree on every supported loader
 - Direct user permissions with `TRUE`, `FALSE`, and `UNSET`
 - Named groups with recursive parent inheritance
+- Ordered tracks for admin promote and demote flows
 - Built-in implicit `default` group and protected explicit-membership `op` group
 - Exact permission nodes, `*`, and terminal wildcards like `example.*`
 - Offline targeting by stored last-known name or UUID
@@ -43,6 +44,8 @@ Useful grants:
 | `clutchperms.admin.*` | Every ClutchPerms admin command |
 | `clutchperms.admin.user.*` | Direct user permissions, user group membership, and user display values |
 | `clutchperms.admin.group.*` | Group definitions, group permissions, group members, group parents, and group display values |
+| `clutchperms.admin.user.track.*` | User track listing plus promote and demote actions |
+| `clutchperms.admin.track.*` | Track definitions and ordered group management |
 | `clutchperms.admin.config.*` | Runtime config view, set, and reset |
 | `clutchperms.admin.backup.*` | Backup create, list, schedule status, run-now, and restore |
 | `clutchperms.admin.history` | Audit history listing |
@@ -51,7 +54,7 @@ Useful grants:
 
 `clutchperms.admin` is only the namespace root. It does not grant command access by itself.
 
-Destructive commands require repeat-command confirmation within 30 seconds. This covers user/group clear-all, group delete, backup restore, and audit history prune commands.
+Destructive commands require repeat-command confirmation within 30 seconds. This covers user/group clear-all, group delete, track delete, backup restore, and audit history prune commands.
 
 Full command reference: [docs/COMMANDS.md](docs/COMMANDS.md)
 
@@ -62,6 +65,8 @@ The `default` group always exists, applies implicitly to every subject, and cann
 The protected `op` group always exists, grants `* = TRUE`, has no members by default, and only affects users explicitly added to it. It cannot be deleted, renamed, edited for permissions/display, or used in parent links.
 
 Effective resolution order is direct user assignment, explicit user group hierarchy, then implicit `default` hierarchy. Closer child group permissions beat parent permissions; within the same inheritance depth, `FALSE` wins over `TRUE`.
+
+Tracks define ordered group ladders for admin promote and demote helpers. They do not affect effective permission or display resolution on their own. `default` may appear only as the first entry on a track, `op` cannot appear on a track, and manual user-group adds or removes remain available for exceptional cases outside a track flow.
 
 ## Paper `/op` And `/deop`
 
@@ -76,7 +81,7 @@ ClutchPerms writes one config file and one SQLite database:
 | File | Purpose |
 | --- | --- |
 | `config.json` | Runtime settings for backup retention/scheduling, audit retention, command page sizes, chat formatting, and Paper command replacement |
-| `database.db` | Direct permissions, group definitions, memberships, subject metadata, display values, manually registered known nodes, and command audit history |
+| `database.db` | Direct permissions, group definitions, track definitions, memberships, subject metadata, display values, manually registered known nodes, and command audit history |
 
 Missing database storage loads as empty state with the built-in `default` and `op` groups. Missing `config.json` loads defaults. Missing files are materialized after successful startup or reload.
 

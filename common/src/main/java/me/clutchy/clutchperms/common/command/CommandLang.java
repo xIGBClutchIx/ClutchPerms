@@ -59,6 +59,8 @@ final class CommandLang {
 
     private static final String STATUS_KNOWN_GROUPS = "Known groups: %s";
 
+    private static final String STATUS_KNOWN_TRACKS = "Known tracks: %s";
+
     private static final String STATUS_KNOWN_NODES = "Known permission nodes: %s";
 
     private static final String STATUS_RESOLVER_CACHE = "Resolver cache: %s subjects, %s node results, %s effective snapshots.";
@@ -87,11 +89,19 @@ final class CommandLang {
 
     private static final String ERROR_UNKNOWN_PARENT_GROUP_TARGET = "Unknown parent group: %s";
 
+    private static final String ERROR_UNKNOWN_TRACK_TARGET = "Unknown track: %s";
+
     private static final String CLOSEST_GROUPS = "Closest groups: %s";
 
     private static final String NO_GROUPS_DEFINED = "No groups are defined.";
 
     private static final String NO_GROUP_TARGET_MATCHES = "No close group matches.";
+
+    private static final String CLOSEST_TRACKS = "Closest tracks: %s";
+
+    private static final String NO_TRACKS_DEFINED = "No tracks are defined.";
+
+    private static final String NO_TRACK_TARGET_MATCHES = "No close track matches.";
 
     private static final String ERROR_INVALID_NODE = "Invalid permission node: %s";
 
@@ -106,6 +116,8 @@ final class CommandLang {
     private static final String ERROR_GROUP_OPERATION_FAILED = "Group operation failed: %s";
 
     private static final String ERROR_NODE_OPERATION_FAILED = "Known permission node operation failed: %s";
+
+    private static final String ERROR_TRACK_OPERATION_FAILED = "Track operation failed: %s";
 
     private static final String ERROR_BACKUP_OPERATION_FAILED = "Backup operation failed: %s";
 
@@ -241,6 +253,24 @@ final class CommandLang {
 
     private static final String GROUPS_LIST = "Groups: %s";
 
+    private static final String TRACKS_EMPTY = "No tracks defined.";
+
+    private static final String TRACK_CREATED = "Created track %s.";
+
+    private static final String TRACK_DELETED = "Deleted track %s.";
+
+    private static final String TRACK_RENAMED = "Renamed track %s to %s.";
+
+    private static final String TRACK_GROUPS_EMPTY = "Track %s has no groups.";
+
+    private static final String TRACK_GROUP_APPENDED = "Added %s to the end of track %s.";
+
+    private static final String TRACK_GROUP_INSERTED = "Inserted %s into track %s at position %s.";
+
+    private static final String TRACK_GROUP_MOVED = "Moved %s on track %s to position %s.";
+
+    private static final String TRACK_GROUP_REMOVED = "Removed %s from track %s.";
+
     private static final String GROUP_CREATED = "Created group %s.";
 
     private static final String GROUP_DELETED = "Deleted group %s.";
@@ -288,6 +318,12 @@ final class CommandLang {
     private static final String USER_GROUP_ADDED = "Added %s to group %s.";
 
     private static final String USER_GROUP_REMOVED = "Removed %s from group %s.";
+
+    private static final String USER_TRACKS_EMPTY = "No track positions found for %s.";
+
+    private static final String USER_TRACK_PROMOTED = "Promoted %s on track %s to %s.";
+
+    private static final String USER_TRACK_DEMOTED = "Demoted %s on track %s to %s.";
 
     private static final String PERMISSION_CHECK = "%s effective %s = %s from %s.";
 
@@ -423,6 +459,10 @@ final class CommandLang {
         return detail(STATUS_KNOWN_GROUPS, knownGroups);
     }
 
+    static CommandMessage statusKnownTracks(int knownTracks) {
+        return detail(STATUS_KNOWN_TRACKS, knownTracks);
+    }
+
     static CommandMessage statusKnownNodes(int knownNodes) {
         return detail(STATUS_KNOWN_NODES, knownNodes);
     }
@@ -479,6 +519,10 @@ final class CommandLang {
         return error(ERROR_UNKNOWN_PARENT_GROUP_TARGET, group);
     }
 
+    static CommandMessage unknownTrackTarget(String track) {
+        return error(ERROR_UNKNOWN_TRACK_TARGET, track);
+    }
+
     static CommandMessage closestGroups(String matches) {
         return detail(CLOSEST_GROUPS, matches);
     }
@@ -489,6 +533,18 @@ final class CommandLang {
 
     static CommandMessage noGroupTargetMatches() {
         return detail(NO_GROUP_TARGET_MATCHES);
+    }
+
+    static CommandMessage closestTracks(String matches) {
+        return detail(CLOSEST_TRACKS, matches);
+    }
+
+    static CommandMessage noTracksDefined() {
+        return detail(NO_TRACKS_DEFINED);
+    }
+
+    static CommandMessage noTrackTargetMatches() {
+        return detail(NO_TRACK_TARGET_MATCHES);
     }
 
     static CommandMessage invalidNode(Object node) {
@@ -517,6 +573,10 @@ final class CommandLang {
 
     static CommandMessage nodeOperationFailed(Throwable exception) {
         return error(ERROR_NODE_OPERATION_FAILED, exceptionMessage(exception));
+    }
+
+    static CommandMessage trackOperationFailed(Throwable exception) {
+        return error(ERROR_TRACK_OPERATION_FAILED, exceptionMessage(exception));
     }
 
     static CommandMessage backupOperationFailed(Throwable exception) {
@@ -799,6 +859,42 @@ final class CommandLang {
         return detail(GROUPS_LIST, groups);
     }
 
+    static CommandMessage tracksEmpty() {
+        return detail(TRACKS_EMPTY);
+    }
+
+    static CommandMessage trackCreated(String track) {
+        return success(TRACK_CREATED, track);
+    }
+
+    static CommandMessage trackDeleted(String track) {
+        return success(TRACK_DELETED, track);
+    }
+
+    static CommandMessage trackRenamed(String track, String newTrack) {
+        return success(TRACK_RENAMED, track, newTrack);
+    }
+
+    static CommandMessage trackGroupsEmpty(String track) {
+        return detail(TRACK_GROUPS_EMPTY, track);
+    }
+
+    static CommandMessage trackGroupAppended(String track, String group) {
+        return success(TRACK_GROUP_APPENDED, group, track);
+    }
+
+    static CommandMessage trackGroupInserted(String track, String group, int position) {
+        return success(TRACK_GROUP_INSERTED, group, track, position);
+    }
+
+    static CommandMessage trackGroupMoved(String track, String group, int position) {
+        return success(TRACK_GROUP_MOVED, group, track, position);
+    }
+
+    static CommandMessage trackGroupRemoved(String track, String group) {
+        return success(TRACK_GROUP_REMOVED, group, track);
+    }
+
     static CommandMessage groupCreated(String group) {
         return success(GROUP_CREATED, group);
     }
@@ -893,6 +989,18 @@ final class CommandLang {
 
     static CommandMessage userGroupRemoved(String subject, String group) {
         return success(USER_GROUP_REMOVED, subject, group);
+    }
+
+    static CommandMessage userTracksEmpty(String subject) {
+        return detail(USER_TRACKS_EMPTY, subject);
+    }
+
+    static CommandMessage userTrackPromoted(String subject, String track, String group) {
+        return success(USER_TRACK_PROMOTED, subject, track, group);
+    }
+
+    static CommandMessage userTrackDemoted(String subject, String track, String group) {
+        return success(USER_TRACK_DEMOTED, subject, track, group);
     }
 
     static CommandMessage permissionCheck(String subject, String node, PermissionValue value, String source) {

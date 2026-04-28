@@ -51,6 +51,9 @@ permissions:
   clutchperms.admin.backup.restore:
     description: Allows restoring ClutchPerms backups.
     default: false
+  clutchperms.admin.user.track.*:
+    description: Allows all user track commands.
+    default: false
   clutchperms.admin.user.info:
     description: Allows viewing user summaries.
     default: false
@@ -83,6 +86,15 @@ permissions:
     default: false
   clutchperms.admin.user.group.remove:
     description: Allows removing users from groups.
+    default: false
+  clutchperms.admin.user.track.list:
+    description: Allows listing a user's track positions.
+    default: false
+  clutchperms.admin.user.track.promote:
+    description: Allows promoting a user on a track.
+    default: false
+  clutchperms.admin.user.track.demote:
+    description: Allows demoting a user on a track.
     default: false
   clutchperms.admin.user.display.view:
     description: Allows viewing user prefixes and suffixes.
@@ -143,6 +155,39 @@ permissions:
     default: false
   clutchperms.admin.group.display.clear:
     description: Allows clearing group prefixes and suffixes.
+    default: false
+  clutchperms.admin.track.*:
+    description: Allows all track commands.
+    default: false
+  clutchperms.admin.track.list:
+    description: Allows listing tracks.
+    default: false
+  clutchperms.admin.track.info:
+    description: Allows viewing track summaries.
+    default: false
+  clutchperms.admin.track.create:
+    description: Allows creating tracks.
+    default: false
+  clutchperms.admin.track.delete:
+    description: Allows deleting tracks.
+    default: false
+  clutchperms.admin.track.rename:
+    description: Allows renaming tracks.
+    default: false
+  clutchperms.admin.track.view:
+    description: Allows viewing track details.
+    default: false
+  clutchperms.admin.track.append:
+    description: Allows appending groups to tracks.
+    default: false
+  clutchperms.admin.track.insert:
+    description: Allows inserting groups into tracks.
+    default: false
+  clutchperms.admin.track.move:
+    description: Allows moving groups within tracks.
+    default: false
+  clutchperms.admin.track.remove:
+    description: Allows removing groups from tracks.
     default: false
   clutchperms.admin.users.list:
     description: Allows listing known users.
