@@ -79,7 +79,7 @@ Config keys are documented in [STORAGE.md](STORAGE.md).
 
 ## User Commands
 
-`<target>` is an exact online name, exact stored last-known name, or UUID.
+`<target>` resolves in this order: exact online name, exact resolvable offline name, exact stored last-known name, then UUID.
 
 | Command | Permission | Description |
 | --- | --- | --- |

@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.UnaryOperator;
 
 import org.junit.jupiter.api.AfterEach;
@@ -62,6 +63,7 @@ import me.clutchy.clutchperms.common.subject.SubjectMetadataService;
 import me.clutchy.clutchperms.common.track.TrackService;
 import me.clutchy.clutchperms.common.track.TrackServices;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -1333,6 +1335,36 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms idempotent track mutations warn instead of mutating or auditing again.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void trackMutationNoOpsWarnWithoutAudit() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        groupService.createGroup("admin");
+        trackService.createTrack("ranks");
+        trackService.setTrackGroups("ranks", List.of("default", "staff"));
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms track ranks create", console);
+        dispatcher.execute("clutchperms track ranks rename Ranks", console);
+        dispatcher.execute("clutchperms track ranks append admin", console);
+        dispatcher.execute("clutchperms track ranks append admin", console);
+        dispatcher.execute("clutchperms track ranks move admin 3", console);
+        dispatcher.execute("clutchperms track ranks remove admin", console);
+        dispatcher.execute("clutchperms track ranks remove admin", console);
+
+        assertEquals(List.of("default", "staff"), trackService.getTrackGroups("ranks"));
+        assertEquals(2, environment.auditLogService().listNewestFirst().size());
+        assertMessageContains(console, "Track ranks already exists.");
+        assertMessageContains(console, "Track ranks is already named ranks.");
+        assertMessageContains(console, "Group admin is already on track ranks.");
+        assertMessageContains(console, "Group admin is already at position 3 on track ranks.");
+        assertMessageContains(console, "Group admin is already absent from track ranks.");
+    }
+
+    /**
      * Confirms deleting a track requires confirmation and undo restores the prior ordered definition.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -1921,6 +1953,40 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms idempotent user mutation commands warn and skip audit writes.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void userMutationNoOpsWarnWithoutAudit() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user Target set example.node true", console);
+        dispatcher.execute("clutchperms user Target set example.node true", console);
+        dispatcher.execute("clutchperms user Target clear example.node", console);
+        dispatcher.execute("clutchperms user Target clear example.node", console);
+        dispatcher.execute("clutchperms user Target prefix set &aTarget", console);
+        dispatcher.execute("clutchperms user Target prefix set &aTarget", console);
+        dispatcher.execute("clutchperms user Target prefix clear", console);
+        dispatcher.execute("clutchperms user Target prefix clear", console);
+        dispatcher.execute("clutchperms user Target group add staff", console);
+        dispatcher.execute("clutchperms user Target group add staff", console);
+        dispatcher.execute("clutchperms user Target group remove staff", console);
+        dispatcher.execute("clutchperms user Target group remove staff", console);
+
+        assertEquals(Set.of(), groupService.getSubjectGroups(TARGET_ID));
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(TARGET_ID, "example.node"));
+        assertEquals(6, environment.auditLogService().listNewestFirst().size());
+        assertMessageContains(console, "Target (00000000-0000-0000-0000-000000000002) already has example.node = TRUE.");
+        assertMessageContains(console, "Target (00000000-0000-0000-0000-000000000002) already has example.node unset.");
+        assertMessageContains(console, "Target (00000000-0000-0000-0000-000000000002) direct prefix is already &aTarget.");
+        assertMessageContains(console, "Target (00000000-0000-0000-0000-000000000002) direct prefix is already unset.");
+        assertMessageContains(console, "Target (00000000-0000-0000-0000-000000000002) is already in group staff.");
+        assertMessageContains(console, "Target (00000000-0000-0000-0000-000000000002) is already not in group staff.");
+    }
+
+    /**
      * Confirms parent command failures report invalid inheritance operations.
      *
      * @throws CommandSyntaxException when command setup fails unexpectedly
@@ -1935,6 +2001,45 @@ class ClutchPermsCommandsTest {
         assertCommandFails("clutchperms group admin parent add missing", console, "Unknown parent group: missing");
         assertCommandFails("clutchperms group admin parent add admin", console, "Group operation failed: group cannot inherit itself: admin");
         assertCommandFails("clutchperms group staff parent add admin", console, "Group operation failed: group inheritance cycle detected");
+    }
+
+    /**
+     * Confirms idempotent group mutations warn and skip audit writes.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void groupMutationNoOpsWarnWithoutAudit() throws CommandSyntaxException {
+        groupService.createGroup("staff");
+        groupService.createGroup("base");
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms group staff create", console);
+        dispatcher.execute("clutchperms group staff rename Staff", console);
+        dispatcher.execute("clutchperms group staff set example.node true", console);
+        dispatcher.execute("clutchperms group staff set example.node true", console);
+        dispatcher.execute("clutchperms group staff clear example.node", console);
+        dispatcher.execute("clutchperms group staff clear example.node", console);
+        dispatcher.execute("clutchperms group staff parent add base", console);
+        dispatcher.execute("clutchperms group staff parent add base", console);
+        dispatcher.execute("clutchperms group staff parent remove base", console);
+        dispatcher.execute("clutchperms group staff parent remove base", console);
+        dispatcher.execute("clutchperms group staff prefix set &7[Staff]", console);
+        dispatcher.execute("clutchperms group staff prefix set &7[Staff]", console);
+        dispatcher.execute("clutchperms group staff prefix clear", console);
+        dispatcher.execute("clutchperms group staff prefix clear", console);
+
+        assertEquals(Set.of(), groupService.getGroupParents("staff"));
+        assertEquals(PermissionValue.UNSET, groupService.getGroupPermission("staff", "example.node"));
+        assertEquals(6, environment.auditLogService().listNewestFirst().size());
+        assertMessageContains(console, "Group staff already exists.");
+        assertMessageContains(console, "Group staff is already named staff.");
+        assertMessageContains(console, "Group staff already has example.node = TRUE.");
+        assertMessageContains(console, "Group staff already has example.node unset.");
+        assertMessageContains(console, "Parent group base is already linked to group staff.");
+        assertMessageContains(console, "Parent group base is already absent from group staff.");
+        assertMessageContains(console, "Group staff prefix is already &7[Staff].");
+        assertMessageContains(console, "Group staff prefix is already unset.");
     }
 
     /**
@@ -2046,7 +2151,6 @@ class ClutchPermsCommandsTest {
         assertCommandFails("clutchperms group staff rename default", console, "Group operation failed: group cannot be renamed to default");
         assertCommandFails("clutchperms group staff rename op", console, "Group operation failed: group cannot be renamed to op");
         assertCommandFails("clutchperms group staff rename admin", console, "Group operation failed: group already exists: admin");
-        assertCommandFails("clutchperms group staff rename Staff", console, "Group operation failed: group already exists: staff");
 
         assertTrue(groupService.hasGroup("staff"));
     }
@@ -2101,6 +2205,100 @@ class ClutchPermsCommandsTest {
     }
 
     /**
+     * Confirms exact cached offline names resolve synchronously and are recorded into subject metadata.
+     *
+     * @throws CommandSyntaxException when command execution fails unexpectedly
+     */
+    @Test
+    void cachedOfflineNameTargetResolvesAndRecordsMetadata() throws CommandSyntaxException {
+        environment.addCachedSubject("CachedTarget", SECOND_TARGET_ID);
+        TestSource console = TestSource.console();
+
+        dispatcher.execute("clutchperms user CachedTarget set example.cached true", console);
+
+        assertEquals(PermissionValue.TRUE, permissionService.getPermission(SECOND_TARGET_ID, "example.cached"));
+        assertEquals("CachedTarget", subjectMetadataService.getSubject(SECOND_TARGET_ID).orElseThrow().lastKnownName());
+        assertEquals(List.of("Set example.cached for CachedTarget (00000000-0000-0000-0000-000000000004) to TRUE."), console.messages());
+    }
+
+    /**
+     * Confirms unresolved exact offline names queue async lookup, then resume the original command after resolution.
+     */
+    @Test
+    void asyncOfflineNameTargetQueuesAndResumesCommand() {
+        CompletableFuture<Optional<CommandSubject>> lookup = environment.addAsyncSubjectLookup("RemoteTarget");
+        TestSource console = TestSource.console();
+
+        assertDoesNotThrow(() -> assertEquals(1, dispatcher.execute("clutchperms user RemoteTarget set example.remote true", console)));
+        assertEquals(List.of("Resolving offline user target RemoteTarget..."), console.messages());
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(SECOND_TARGET_ID, "example.remote"));
+
+        lookup.complete(Optional.of(new CommandSubject(SECOND_TARGET_ID, "RemoteResolved")));
+
+        assertEquals(PermissionValue.TRUE, permissionService.getPermission(SECOND_TARGET_ID, "example.remote"));
+        assertEquals("RemoteResolved", subjectMetadataService.getSubject(SECOND_TARGET_ID).orElseThrow().lastKnownName());
+        assertEquals(List.of("Resolving offline user target RemoteTarget...", "Resolved offline user target RemoteTarget as RemoteResolved (00000000-0000-0000-0000-000000000004).",
+                "Set example.remote for RemoteResolved (00000000-0000-0000-0000-000000000004) to TRUE."), console.messages());
+    }
+
+    /**
+     * Confirms async offline lookups report the existing unknown-target feedback when the platform cannot resolve the name.
+     */
+    @Test
+    void asyncOfflineNameTargetReportsUnknownWhenLookupMisses() {
+        CompletableFuture<Optional<CommandSubject>> lookup = environment.addAsyncSubjectLookup("MissingTarget");
+        TestSource console = TestSource.console();
+
+        assertDoesNotThrow(() -> assertEquals(1, dispatcher.execute("clutchperms user MissingTarget list", console)));
+        assertEquals(List.of("Resolving offline user target MissingTarget..."), console.messages());
+
+        lookup.complete(Optional.empty());
+
+        assertMessageContains(console, "Unknown user target: MissingTarget");
+        assertMessageContains(console, "Use an exact online name, resolvable offline name, stored last-known name, or UUID.");
+        assertMessageContains(console, "Closest online players: Target");
+    }
+
+    /**
+     * Confirms async offline lookup failures report a styled resolution error without mutating permissions.
+     */
+    @Test
+    void asyncOfflineNameTargetReportsLookupFailure() {
+        CompletableFuture<Optional<CommandSubject>> lookup = environment.addAsyncSubjectLookup("BrokenTarget");
+        TestSource console = TestSource.console();
+
+        assertDoesNotThrow(() -> assertEquals(1, dispatcher.execute("clutchperms user BrokenTarget set example.broken true", console)));
+        lookup.completeExceptionally(new IllegalStateException("lookup blocked"));
+
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(SECOND_TARGET_ID, "example.broken"));
+        assertMessageContains(console, "Failed to resolve offline user target BrokenTarget: lookup blocked");
+    }
+
+    /**
+     * Confirms destructive confirmations are armed only after async target resolution completes.
+     */
+    @Test
+    void destructiveConfirmationStartsAfterAsyncTargetResolution() {
+        permissionService.setPermission(SECOND_TARGET_ID, "example.clear", PermissionValue.TRUE);
+        CompletableFuture<Optional<CommandSubject>> lookup = environment.addAsyncSubjectLookup("RemoteClear");
+        TestSource console = TestSource.console();
+
+        assertDoesNotThrow(() -> assertEquals(1, dispatcher.execute("clutchperms user RemoteClear clear-all", console)));
+        assertEquals(List.of("Resolving offline user target RemoteClear..."), console.messages());
+        assertEquals(PermissionValue.TRUE, permissionService.getPermission(SECOND_TARGET_ID, "example.clear"));
+
+        lookup.complete(Optional.of(new CommandSubject(SECOND_TARGET_ID, "RemoteClear")));
+
+        assertMessageContains(console, "Resolved offline user target RemoteClear as RemoteClear (00000000-0000-0000-0000-000000000004).");
+        assertMessageContains(console, "Destructive command confirmation required.");
+        assertMessageContains(console, "Repeat this command within 30 seconds to confirm: /clutchperms user RemoteClear clear-all");
+        assertEquals(PermissionValue.TRUE, permissionService.getPermission(SECOND_TARGET_ID, "example.clear"));
+
+        assertDoesNotThrow(() -> assertEquals(1, dispatcher.execute("clutchperms user RemoteClear clear-all", console)));
+        assertEquals(PermissionValue.UNSET, permissionService.getPermission(SECOND_TARGET_ID, "example.clear"));
+    }
+
+    /**
      * Confirms UUID targets use stored metadata names in command feedback when available.
      *
      * @throws CommandSyntaxException when command execution fails unexpectedly
@@ -2143,7 +2341,7 @@ class ClutchPermsCommandsTest {
 
         assertCommandFails("clutchperms user Targt list", console, "Unknown user target: Targt");
 
-        assertMessageContains(console, "Use an exact online name, stored last-known name, or UUID.");
+        assertMessageContains(console, "Use an exact online name, resolvable offline name, stored last-known name, or UUID.");
         assertMessageContains(console, "Closest online players: Target");
         assertMessageContains(console, "Closest known users: Targe (00000000-0000-0000-0000-000000000004, last seen 2026-04-24T12:00:00Z)");
     }
@@ -2224,6 +2422,22 @@ class ClutchPermsCommandsTest {
 
         assertEquals(List.of("Alpha", "alpha"), suggestionTexts("clutchperms user a"));
         assertEquals(List.of("Target"), suggestionTexts("clutchperms user t"));
+    }
+
+    /**
+     * Confirms remotely resolved names are not suggested until one command resolves and records them locally.
+     */
+    @Test
+    void remoteOnlyNamesAreSuggestedOnlyAfterResolutionRecordsMetadata() {
+        CompletableFuture<Optional<CommandSubject>> lookup = environment.addAsyncSubjectLookup("RemoteTarget");
+        TestSource console = TestSource.console();
+
+        assertEquals(List.of(), suggestionTexts("clutchperms user rem"));
+        assertDoesNotThrow(() -> assertEquals(1, dispatcher.execute("clutchperms user RemoteTarget info", console)));
+
+        lookup.complete(Optional.of(new CommandSubject(SECOND_TARGET_ID, "RemoteResolved")));
+
+        assertEquals(List.of("RemoteResolved"), suggestionTexts("clutchperms user rem"));
     }
 
     /**
@@ -2429,7 +2643,7 @@ class ClutchPermsCommandsTest {
         ClutchPermsCommands.ROOT_LITERALS.forEach(rootLiteral -> dispatcher.getRoot().addChild(ClutchPermsCommands.create(environment, rootLiteral)));
         TestSource console = TestSource.console();
 
-        assertEquals(0, dispatcher.execute("clutchperms user Target set example.node true", console));
+        assertEquals(0, dispatcher.execute("clutchperms user Target set example.node false", console));
         assertEquals(List.of("Permission operation failed: save blocked"), console.messages());
 
         console.messages().clear();
@@ -2892,10 +3106,10 @@ class ClutchPermsCommandsTest {
     }
 
     private static List<String> userRootUsageMessages() {
-        return List.of("Missing user target.", "Provide an online name, stored last-known name, or UUID.", "Try one:", "  /clutchperms user <target> <info|list|groups>",
-                "  /clutchperms user <target> <get|clear|check|explain> <node>", "  /clutchperms user <target> set <node> <true|false>", "  /clutchperms user <target> clear-all",
-                "  /clutchperms user <target> group <add|remove> <group>", "  /clutchperms user <target> tracks", "  /clutchperms user <target> track <promote|demote> <track>",
-                "  /clutchperms user <target> <prefix|suffix> get|set|clear");
+        return List.of("Missing user target.", "Provide an exact online name, resolvable offline name, stored last-known name, or UUID.", "Try one:",
+                "  /clutchperms user <target> <info|list|groups>", "  /clutchperms user <target> <get|clear|check|explain> <node>",
+                "  /clutchperms user <target> set <node> <true|false>", "  /clutchperms user <target> clear-all", "  /clutchperms user <target> group <add|remove> <group>",
+                "  /clutchperms user <target> tracks", "  /clutchperms user <target> track <promote|demote> <track>", "  /clutchperms user <target> <prefix|suffix> get|set|clear");
     }
 
     private static List<String> nodesUsageMessages() {
@@ -2955,6 +3169,10 @@ class ClutchPermsCommandsTest {
 
         private final Map<String, CommandSubject> onlineSubjects = new LinkedHashMap<>();
 
+        private final Map<String, CommandSubject> cachedSubjects = new LinkedHashMap<>();
+
+        private final Map<String, CompletableFuture<Optional<CommandSubject>>> asyncSubjects = new LinkedHashMap<>();
+
         private final List<String> platformNodes = new ArrayList<>();
 
         private StorageBackupService storageBackupService;
@@ -2989,6 +3207,16 @@ class ClutchPermsCommandsTest {
 
         private void addOnlineSubject(String name, UUID subjectId) {
             onlineSubjects.put(name, new CommandSubject(subjectId, name));
+        }
+
+        private void addCachedSubject(String name, UUID subjectId) {
+            cachedSubjects.put(name, new CommandSubject(subjectId, name));
+        }
+
+        private CompletableFuture<Optional<CommandSubject>> addAsyncSubjectLookup(String target) {
+            CompletableFuture<Optional<CommandSubject>> future = new CompletableFuture<>();
+            asyncSubjects.put(target, future);
+            return future;
         }
 
         private void addPlatformNode(String node) {
@@ -3142,6 +3370,21 @@ class ClutchPermsCommandsTest {
         @Override
         public Optional<CommandSubject> findOnlineSubject(TestSource source, String target) {
             return Optional.ofNullable(onlineSubjects.get(target));
+        }
+
+        @Override
+        public Optional<CommandSubject> findCachedSubject(TestSource source, String target) {
+            return Optional.ofNullable(cachedSubjects.get(target));
+        }
+
+        @Override
+        public CompletableFuture<Optional<CommandSubject>> resolveSubjectAsync(TestSource source, String target) {
+            return asyncSubjects.getOrDefault(target, CompletableFuture.completedFuture(Optional.empty()));
+        }
+
+        @Override
+        public void executeOnCommandThread(TestSource source, Runnable task) {
+            task.run();
         }
 
         @Override

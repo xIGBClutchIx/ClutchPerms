@@ -1,8 +1,10 @@
 package me.clutchy.clutchperms.fabric;
 
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -16,6 +18,7 @@ import me.clutchy.clutchperms.common.command.CommandMessage;
 import me.clutchy.clutchperms.common.command.CommandSourceKind;
 import me.clutchy.clutchperms.common.command.CommandStatusDiagnostics;
 import me.clutchy.clutchperms.common.command.CommandSubject;
+import me.clutchy.clutchperms.common.command.ProfileCacheSubjectLookup;
 import me.clutchy.clutchperms.common.config.ClutchPermsConfig;
 import me.clutchy.clutchperms.common.group.GroupService;
 import me.clutchy.clutchperms.common.node.MutablePermissionNodeRegistry;
@@ -223,6 +226,16 @@ final class FabricClutchPermsCommand {
                 return Optional.empty();
             }
             return Optional.of(new CommandSubject(player.getUUID(), player.getGameProfile().name()));
+        }
+
+        @Override
+        public CompletableFuture<Optional<CommandSubject>> resolveSubjectAsync(CommandSourceStack source, String target) {
+            return ProfileCacheSubjectLookup.resolveSubjectAsync(source.getServer(), target);
+        }
+
+        @Override
+        public void executeOnCommandThread(CommandSourceStack source, Runnable task) {
+            source.getServer().executeIfPossible(Objects.requireNonNull(task, "task"));
         }
 
         @Override

@@ -122,21 +122,22 @@ public final class UserSubcommand {
         int explain(CommandContext<S> context) throws CommandSyntaxException;
     }
 
-    public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, Handlers<S> handlers,
-            SuggestionProvider<S> permissionNodes, SuggestionProvider<S> permissionAssignment) {
+    public static <S> LiteralArgumentBuilder<S> builder(ClutchPermsCommandEnvironment<S> environment, AuthorizedCommand<S> authorized, AuthorizedCommand<S> targetAuthorized,
+            Handlers<S> handlers, SuggestionProvider<S> permissionNodes, SuggestionProvider<S> permissionAssignment) {
         RequiredArgumentBuilder<S, String> target = RequiredArgumentBuilder.<S, String>argument(CommandArguments.TARGET, StringArgumentType.word())
                 .requires(source -> authorized.canUseAny(source, userPermissions())).suggests((context, builder) -> suggestUserTargets(environment, context.getSource(), builder));
 
         return authorized.branch("user", userPermissions()).executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::rootUsage))
-                .then(target.then(infoCommand(authorized, handlers)).then(listCommand(authorized, handlers)).then(getCommand(authorized, handlers, permissionNodes))
-                        .then(setCommand(authorized, handlers, permissionAssignment)).then(clearCommand(authorized, handlers, permissionNodes))
-                        .then(clearAllCommand(authorized, handlers)).then(groupsCommand(authorized, handlers)).then(tracksCommand(authorized, handlers))
-                        .then(displayCommand("prefix", authorized, handlers, true)).then(displayCommand("suffix", authorized, handlers, false))
-                        .then(groupCommand(environment, authorized, handlers)).then(trackCommand(environment, authorized, handlers))
-                        .then(checkCommand(authorized, handlers, permissionNodes)).then(explainCommand(authorized, handlers, permissionNodes))
-                        .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::targetUsage))
-                        .then(authorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_USER_LIST)
-                                .executes(context -> authorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::unknownTargetUsage))));
+                .then(target.then(infoCommand(targetAuthorized, handlers)).then(listCommand(targetAuthorized, handlers))
+                        .then(getCommand(targetAuthorized, handlers, permissionNodes)).then(setCommand(targetAuthorized, handlers, permissionAssignment))
+                        .then(clearCommand(targetAuthorized, handlers, permissionNodes)).then(clearAllCommand(targetAuthorized, handlers))
+                        .then(groupsCommand(targetAuthorized, handlers)).then(tracksCommand(targetAuthorized, handlers))
+                        .then(displayCommand("prefix", targetAuthorized, handlers, true)).then(displayCommand("suffix", targetAuthorized, handlers, false))
+                        .then(groupCommand(environment, targetAuthorized, handlers)).then(trackCommand(environment, targetAuthorized, handlers))
+                        .then(checkCommand(targetAuthorized, handlers, permissionNodes)).then(explainCommand(targetAuthorized, handlers, permissionNodes))
+                        .executes(context -> targetAuthorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::targetUsage))
+                        .then(targetAuthorized.requires(CommandArguments.<S>unknown(), PermissionNodes.ADMIN_USER_LIST)
+                                .executes(context -> targetAuthorized.run(context, PermissionNodes.ADMIN_USER_LIST, handlers::unknownTargetUsage))));
     }
 
     private static <S> LiteralArgumentBuilder<S> infoCommand(AuthorizedCommand<S> authorized, Handlers<S> handlers) {
@@ -309,6 +310,11 @@ public final class UserSubcommand {
         Optional<CommandSubject> onlineSubject = environment.findOnlineSubject(context.getSource(), target);
         if (onlineSubject.isPresent()) {
             return onlineSubject.map(CommandSubject::id);
+        }
+
+        Optional<CommandSubject> cachedSubject = environment.findCachedSubject(context.getSource(), target);
+        if (cachedSubject.isPresent()) {
+            return cachedSubject.map(CommandSubject::id);
         }
 
         List<SubjectMetadata> knownSubjects = findKnownSuggestionSubjects(environment, target);

@@ -509,6 +509,37 @@ class ClutchPermsPaperPluginTest {
     }
 
     /**
+     * Confirms Paper /op and /deop warn on no-op membership changes instead of claiming a mutation happened.
+     *
+     * @throws Exception when Brigadier command execution fails unexpectedly
+     */
+    @Test
+    void paperOpAndDeopCommandsWarnOnNoOpMembershipChanges() throws Exception {
+        PlayerMock admin = server.addPlayer("Admin");
+        PlayerMock target = server.addPlayer("Target");
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_USER_GROUP_ADD, PermissionValue.TRUE);
+        plugin.getPermissionService().setPermission(admin.getUniqueId(), PermissionNodes.ADMIN_USER_GROUP_REMOVE, PermissionValue.TRUE);
+        CommandDispatcher<CommandSourceStack> dispatcher = dispatcherWithAllCommandRoots();
+        TestCommandSourceStack adminSource = new TestCommandSourceStack(admin);
+
+        assertEquals(1, dispatcher.execute("op Target", adminSource));
+        assertEquals(1, plugin.getAuditLogService().listNewestFirst().size());
+        assertNextMessage(admin, "Added Target (" + target.getUniqueId() + ") to group op.");
+
+        assertEquals(1, dispatcher.execute("op Target", adminSource));
+        assertEquals(1, plugin.getAuditLogService().listNewestFirst().size());
+        assertNextMessage(admin, "Target (" + target.getUniqueId() + ") is already in group op.");
+
+        assertEquals(1, dispatcher.execute("deop Target", adminSource));
+        assertEquals(2, plugin.getAuditLogService().listNewestFirst().size());
+        assertNextMessage(admin, "Removed Target (" + target.getUniqueId() + ") from group op.");
+
+        assertEquals(1, dispatcher.execute("deop Target", adminSource));
+        assertEquals(2, plugin.getAuditLogService().listNewestFirst().size());
+        assertNextMessage(admin, "Target (" + target.getUniqueId() + ") is already not in group op.");
+    }
+
+    /**
      * Confirms Paper /op and /deop use ClutchPerms admin permissions for player sources.
      *
      * @throws Exception when Brigadier command execution fails unexpectedly

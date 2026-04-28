@@ -156,6 +156,8 @@ public final class ClutchPermsCommands {
 
     private static final Gson GSON = new Gson();
 
+    private static final ThreadLocal<CommandSubject> RESOLVED_SUBJECT_OVERRIDE = new ThreadLocal<>();
+
     private static Clock confirmationClock = Clock.systemUTC();
 
     private static final SimpleCommandExceptionType FEEDBACK_MESSAGES = new SimpleCommandExceptionType(new LiteralMessage("command feedback"));
@@ -344,7 +346,8 @@ public final class ClutchPermsCommands {
                 .executes(context -> executeAuthorized(environment, context, requiredPermission, source -> sendOpShortcutUsage(environment, context)))
                 .then(RequiredArgumentBuilder.<S, String>argument(TARGET_ARGUMENT, StringArgumentType.word())
                         .suggests((context, builder) -> UserSubcommand.suggestUserTargets(environment, context.getSource(), builder))
-                        .executes(context -> executeAuthorized(environment, context, requiredPermission, source -> mutateOpGroupMembership(environment, context, addMembership))))
+                        .executes(context -> executeAuthorizedForSubject(environment, context, requiredPermission,
+                                source -> mutateOpGroupMembership(environment, context, addMembership))))
                 .build();
     }
 
@@ -382,13 +385,26 @@ public final class ClutchPermsCommands {
                 return ClutchPermsCommands.canUse(environment, source, requiredPermission);
             }
         };
+        AuthorizedCommand<S> targetAuthorized = new AuthorizedCommand<>() {
+
+            @Override
+            public int run(CommandContext<S> context, String requiredPermission, Command<S> command) throws CommandSyntaxException {
+                return executeAuthorizedForSubject(environment, context, requiredPermission, source -> command.run(context));
+            }
+
+            @Override
+            public boolean canUse(S source, String requiredPermission) {
+                return ClutchPermsCommands.canUse(environment, source, requiredPermission);
+            }
+        };
 
         return LiteralArgumentBuilder.<S>literal(literal)
                 .executes(context -> executeAuthorized(environment, context, PermissionNodes.ADMIN_HELP, source -> sendCommandList(environment, context)))
                 .then(helpCommand(environment)).then(statusCommand(environment)).then(reloadCommand(environment)).then(validateCommand(environment))
                 .then(historyCommand(environment)).then(undoCommand(environment)).then(ConfigSubcommand.builder(authorized, configHandlers(environment), CONFIG_KEYS))
                 .then(BackupSubcommand.builder(environment, authorized, backupHandlers(environment)))
-                .then(UserSubcommand.builder(environment, authorized, userHandlers(environment), (context, builder) -> suggestPermissionNodes(environment, context, builder),
+                .then(UserSubcommand.builder(environment, authorized, targetAuthorized, userHandlers(environment),
+                        (context, builder) -> suggestPermissionNodes(environment, context, builder),
                         (context, builder) -> suggestPermissionAssignment(environment, context, builder)))
                 .then(GroupSubcommand.builder(environment, authorized, groupHandlers(environment), (context, builder) -> suggestPermissionNodes(environment, context, builder),
                         (context, builder) -> suggestPermissionAssignment(environment, context, builder)))
@@ -1163,6 +1179,55 @@ public final class ClutchPermsCommands {
             return 0;
         }
 
+        return runActionWithFeedback(environment, source, action);
+    }
+
+    private static <S> int executeAuthorizedForSubject(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String requiredPermission, CommandAction<S> action)
+            throws CommandSyntaxException {
+        return executeAuthorized(environment, context, requiredPermission, source -> {
+            String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
+            Optional<ResolvedSubject> resolvedSubject = resolveImmediateSubject(environment, context, target);
+            if (resolvedSubject.isPresent()) {
+                ResolvedSubject subject = resolvedSubject.get();
+                if (subject.recordMetadata()) {
+                    recordResolvedSubject(environment, subject.subject());
+                }
+                return withResolvedSubject(subject.subject(), () -> action.run(source));
+            }
+
+            CompletableFuture<Optional<CommandSubject>> lookupFuture;
+            try {
+                lookupFuture = Objects.requireNonNull(environment.resolveSubjectAsync(source, target), "lookupFuture");
+            } catch (RuntimeException exception) {
+                throw feedback(List.of(CommandLang.userTargetLookupFailed(target, exception)));
+            }
+
+            if (lookupFuture.isDone()) {
+                final Optional<CommandSubject> completedSubject;
+                try {
+                    completedSubject = lookupFuture.join();
+                } catch (RuntimeException exception) {
+                    Throwable cause = exception.getCause() == null ? exception : exception.getCause();
+                    throw feedback(List.of(CommandLang.userTargetLookupFailed(target, cause)));
+                }
+                if (completedSubject.isEmpty()) {
+                    throw unknownUserTargetFeedback(environment, context, target);
+                }
+
+                CommandSubject subject = completedSubject.get();
+                recordResolvedSubject(environment, subject);
+                environment.sendMessage(source, CommandLang.userTargetLookupResolved(target, formatSubject(subject)));
+                return withResolvedSubject(subject, () -> action.run(source));
+            }
+
+            environment.sendMessage(source, CommandLang.userTargetLookupQueued(target));
+            lookupFuture.whenComplete((resolved, failure) -> environment.executeOnCommandThread(source,
+                    () -> resumeResolvedSubject(environment, context, source, target, action, resolved, failure)));
+            return Command.SINGLE_SUCCESS;
+        });
+    }
+
+    private static <S> int runActionWithFeedback(ClutchPermsCommandEnvironment<S> environment, S source, CommandAction<S> action) {
         try {
             return action.run(source);
         } catch (CommandFeedbackException exception) {
@@ -1171,6 +1236,71 @@ public final class ClutchPermsCommands {
         } catch (CommandSyntaxException exception) {
             environment.sendMessage(source, CommandLang.error(exception.getRawMessage().getString()));
             return 0;
+        }
+    }
+
+    private static <S> void resumeResolvedSubject(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, S source, String target, CommandAction<S> action,
+            Optional<CommandSubject> resolved, Throwable failure) {
+        if (failure != null) {
+            environment.sendMessage(source, CommandLang.userTargetLookupFailed(target, failure));
+            return;
+        }
+        if (resolved == null || resolved.isEmpty()) {
+            try {
+                throw unknownUserTargetFeedback(environment, context, target);
+            } catch (CommandFeedbackException exception) {
+                exception.messages().forEach(message -> environment.sendMessage(source, message));
+            }
+            return;
+        }
+
+        CommandSubject subject = resolved.get();
+        recordResolvedSubject(environment, subject);
+        environment.sendMessage(source, CommandLang.userTargetLookupResolved(target, formatSubject(subject)));
+        runActionWithFeedback(environment, source, ignored -> withResolvedSubject(subject, () -> action.run(source)));
+    }
+
+    private static <S> Optional<ResolvedSubject> resolveImmediateSubject(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String target)
+            throws CommandSyntaxException {
+        Optional<CommandSubject> onlineSubject = environment.findOnlineSubject(context.getSource(), target);
+        if (onlineSubject.isPresent()) {
+            return onlineSubject.map(subject -> new ResolvedSubject(subject, false));
+        }
+
+        Optional<CommandSubject> cachedSubject = environment.findCachedSubject(context.getSource(), target);
+        if (cachedSubject.isPresent()) {
+            return cachedSubject.map(subject -> new ResolvedSubject(subject, true));
+        }
+
+        Optional<CommandSubject> knownSubject = resolveKnownSubject(environment, context, target);
+        if (knownSubject.isPresent()) {
+            return knownSubject.map(subject -> new ResolvedSubject(subject, false));
+        }
+
+        try {
+            UUID subjectId = UUID.fromString(target);
+            String displayName = environment.subjectMetadataService().getSubject(subjectId).map(SubjectMetadata::lastKnownName).orElse(subjectId.toString());
+            return Optional.of(new ResolvedSubject(new CommandSubject(subjectId, displayName), false));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private static <S> void recordResolvedSubject(ClutchPermsCommandEnvironment<S> environment, CommandSubject subject) {
+        environment.subjectMetadataService().recordSubject(subject.id(), subject.displayName(), Instant.now());
+    }
+
+    private static <T> T withResolvedSubject(CommandSubject subject, ThrowingSupplier<T> supplier) throws CommandSyntaxException {
+        CommandSubject previous = RESOLVED_SUBJECT_OVERRIDE.get();
+        RESOLVED_SUBJECT_OVERRIDE.set(subject);
+        try {
+            return supplier.get();
+        } finally {
+            if (previous == null) {
+                RESOLVED_SUBJECT_OVERRIDE.remove();
+            } else {
+                RESOLVED_SUBJECT_OVERRIDE.set(previous);
+            }
         }
     }
 
@@ -1335,7 +1465,7 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int sendUserRootUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
-        return sendUsage(environment, context, "Missing user target.", "Provide an online name, stored last-known name, or UUID.", userRootUsages());
+        return sendUsage(environment, context, "Missing user target.", "Provide an exact online name, resolvable offline name, stored last-known name, or UUID.", userRootUsages());
     }
 
     private static <S> int sendUserTargetUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -1561,7 +1691,8 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> int sendOpShortcutUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
-        return sendUsage(environment, context, "Missing user target.", "Provide an online name, stored last-known name, or UUID.", List.of("<target>"));
+        return sendUsage(environment, context, "Missing user target.", "Provide an exact online name, resolvable offline name, stored last-known name, or UUID.",
+                List.of("<target>"));
     }
 
     private static <S> int sendNodesSearchUsage(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) {
@@ -2005,6 +2136,10 @@ public final class ClutchPermsCommands {
     private static <S> int setPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         PermissionAssignment assignment = getPermissionAssignment(context);
+        if (environment.permissionService().getPermission(subject.id(), assignment.node()) == assignment.value()) {
+            environment.sendMessage(context.getSource(), CommandLang.permissionAlreadySet(assignment.node(), formatSubject(subject), assignment.value()));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = subjectPermissionsSnapshot(environment, subject.id());
 
         try {
@@ -2021,6 +2156,10 @@ public final class ClutchPermsCommands {
     private static <S> int clearPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         String node = getNode(context);
+        if (environment.permissionService().getPermission(subject.id(), node) == PermissionValue.UNSET) {
+            environment.sendMessage(context.getSource(), CommandLang.permissionAlreadyClear(node, formatSubject(subject)));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = subjectPermissionsSnapshot(environment, subject.id());
 
         try {
@@ -2083,6 +2222,10 @@ public final class ClutchPermsCommands {
     private static <S> int setUserDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         DisplayText displayText = getDisplayText(context);
+        if (Optional.of(displayText).equals(subjectDisplayValue(environment, subject.id(), slot))) {
+            environment.sendMessage(context.getSource(), CommandLang.userDisplayAlreadySet(slot.label(), formatSubject(subject), displayText.rawText()));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = subjectDisplaySnapshot(environment, subject.id());
         try {
             if (slot == DisplaySlot.PREFIX) {
@@ -2101,6 +2244,10 @@ public final class ClutchPermsCommands {
 
     private static <S> int clearUserDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
+        if (subjectDisplayValue(environment, subject.id(), slot).isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.userDisplayAlreadyClear(slot.label(), formatSubject(subject)));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = subjectDisplaySnapshot(environment, subject.id());
         try {
             if (slot == DisplaySlot.PREFIX) {
@@ -2159,6 +2306,10 @@ public final class ClutchPermsCommands {
     private static <S> int addSubjectGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        if (environment.groupService().getSubjectGroups(subject.id()).contains(groupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.userGroupAlreadyAdded(formatSubject(subject), normalizeGroupName(groupName)));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = subjectMembershipSnapshot(environment, subject.id());
         try {
             environment.groupService().addSubjectGroup(subject.id(), groupName);
@@ -2175,6 +2326,10 @@ public final class ClutchPermsCommands {
     private static <S> int removeSubjectGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        if (!environment.groupService().getSubjectGroups(subject.id()).contains(groupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.userGroupAlreadyRemoved(formatSubject(subject), normalizeGroupName(groupName)));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = subjectMembershipSnapshot(environment, subject.id());
         try {
             environment.groupService().removeSubjectGroup(subject.id(), groupName);
@@ -2277,6 +2432,14 @@ public final class ClutchPermsCommands {
 
     private static <S> int mutateOpGroupMembership(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, boolean addMembership) throws CommandSyntaxException {
         CommandSubject subject = resolveSubject(environment, context);
+        boolean hasOpGroup = environment.groupService().getSubjectGroups(subject.id()).contains(GroupService.OP_GROUP);
+        if (addMembership == hasOpGroup) {
+            environment.sendMessage(context.getSource(),
+                    addMembership
+                            ? CommandLang.userGroupAlreadyAdded(formatSubject(subject), GroupService.OP_GROUP)
+                            : CommandLang.userGroupAlreadyRemoved(formatSubject(subject), GroupService.OP_GROUP));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = subjectMembershipSnapshot(environment, subject.id());
         try {
             if (addMembership) {
@@ -2358,6 +2521,10 @@ public final class ClutchPermsCommands {
     private static <S> int createGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = getGroupName(context);
         String normalizedGroupName = normalizeGroupName(groupName);
+        if (environment.groupService().hasGroup(normalizedGroupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.groupAlreadyExists(normalizedGroupName));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = groupSnapshot(environment, normalizedGroupName);
         try {
             environment.groupService().createGroup(groupName);
@@ -2397,6 +2564,10 @@ public final class ClutchPermsCommands {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String newGroupName = getNewGroupName(context);
         String normalizedNewGroupName = normalizeGroupName(newGroupName);
+        if (normalizeGroupName(groupName).equals(normalizedNewGroupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.groupAlreadyNamed(normalizeGroupName(groupName), normalizedNewGroupName));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = renameGroupSnapshot(environment, groupName, normalizedNewGroupName);
         try {
             environment.groupService().renameGroup(groupName, newGroupName);
@@ -2540,6 +2711,10 @@ public final class ClutchPermsCommands {
     private static <S> int addGroupParent(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String parentGroupName = requireExistingParentGroup(environment, context, getParentGroupName(context));
+        if (environment.groupService().getGroupParents(groupName).contains(parentGroupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.groupParentAlreadyAdded(normalizeGroupName(groupName), normalizeGroupName(parentGroupName)));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = groupSnapshot(environment, groupName);
         try {
             environment.groupService().addGroupParent(groupName, parentGroupName);
@@ -2555,6 +2730,10 @@ public final class ClutchPermsCommands {
     private static <S> int removeGroupParent(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String parentGroupName = requireExistingParentGroup(environment, context, getParentGroupName(context));
+        if (!environment.groupService().getGroupParents(groupName).contains(parentGroupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.groupParentAlreadyRemoved(normalizeGroupName(groupName), normalizeGroupName(parentGroupName)));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = groupSnapshot(environment, groupName);
         try {
             environment.groupService().removeGroupParent(groupName, parentGroupName);
@@ -2584,6 +2763,10 @@ public final class ClutchPermsCommands {
     private static <S> int setGroupPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         PermissionAssignment assignment = getPermissionAssignment(context);
+        if (environment.groupService().getGroupPermission(groupName, assignment.node()) == assignment.value()) {
+            environment.sendMessage(context.getSource(), CommandLang.groupPermissionAlreadySet(assignment.node(), normalizeGroupName(groupName), assignment.value()));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = groupPermissionsSnapshot(environment, groupName);
         try {
             environment.groupService().setGroupPermission(groupName, assignment.node(), assignment.value());
@@ -2599,6 +2782,10 @@ public final class ClutchPermsCommands {
     private static <S> int clearGroupPermission(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         String node = getNode(context);
+        if (environment.groupService().getGroupPermission(groupName, node) == PermissionValue.UNSET) {
+            environment.sendMessage(context.getSource(), CommandLang.groupPermissionAlreadyClear(node, normalizeGroupName(groupName)));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = groupPermissionsSnapshot(environment, groupName);
         try {
             environment.groupService().clearGroupPermission(groupName, node);
@@ -2656,6 +2843,10 @@ public final class ClutchPermsCommands {
     private static <S> int setGroupDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         DisplayText displayText = getDisplayText(context);
+        if (Optional.of(displayText).equals(groupDisplayValue(environment, groupName, slot))) {
+            environment.sendMessage(context.getSource(), CommandLang.groupDisplayAlreadySet(slot.label(), groupName, displayText.rawText()));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = groupDisplaySnapshot(environment, groupName);
         try {
             if (slot == DisplaySlot.PREFIX) {
@@ -2674,6 +2865,10 @@ public final class ClutchPermsCommands {
 
     private static <S> int clearGroupDisplay(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, DisplaySlot slot) throws CommandSyntaxException {
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
+        if (groupDisplayValue(environment, groupName, slot).isEmpty()) {
+            environment.sendMessage(context.getSource(), CommandLang.groupDisplayAlreadyClear(slot.label(), groupName));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = groupDisplaySnapshot(environment, groupName);
         try {
             if (slot == DisplaySlot.PREFIX) {
@@ -2706,6 +2901,10 @@ public final class ClutchPermsCommands {
     private static <S> int createTrack(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String trackName = getTrackName(context);
         String normalizedTrackName = normalizeTrackName(trackName);
+        if (environment.trackService().hasTrack(normalizedTrackName)) {
+            environment.sendMessage(context.getSource(), CommandLang.trackAlreadyExists(normalizedTrackName));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = trackSnapshot(environment, normalizedTrackName);
         try {
             environment.trackService().createTrack(trackName);
@@ -2739,6 +2938,10 @@ public final class ClutchPermsCommands {
         String trackName = requireExistingTrack(environment, context, getTrackName(context));
         String newTrackName = getNewTrackName(context);
         String normalizedNewTrackName = normalizeTrackName(newTrackName);
+        if (normalizeTrackName(trackName).equals(normalizedNewTrackName)) {
+            environment.sendMessage(context.getSource(), CommandLang.trackAlreadyNamed(normalizeTrackName(trackName), normalizedNewTrackName));
+            return Command.SINGLE_SUCCESS;
+        }
         String beforeJson = renameTrackSnapshot(environment, trackName, normalizedNewTrackName);
         try {
             environment.trackService().renameTrack(trackName, newTrackName);
@@ -2800,6 +3003,10 @@ public final class ClutchPermsCommands {
         String trackName = requireExistingTrack(environment, context, getTrackName(context));
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         List<String> updatedGroups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+        if (updatedGroups.contains(groupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.trackGroupAlreadyPresent(trackName, normalizeGroupName(groupName)));
+            return Command.SINGLE_SUCCESS;
+        }
         updatedGroups.add(groupName);
         return updateTrackGroups(environment, context, trackName, updatedGroups, "track.group.append", CommandLang.trackGroupAppended(trackName, normalizeGroupName(groupName)));
     }
@@ -2808,6 +3015,10 @@ public final class ClutchPermsCommands {
         String trackName = requireExistingTrack(environment, context, getTrackName(context));
         String groupName = requireExistingGroup(environment, context, getGroupName(context));
         List<String> updatedGroups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+        if (updatedGroups.contains(groupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.trackGroupAlreadyPresent(trackName, normalizeGroupName(groupName)));
+            return Command.SINGLE_SUCCESS;
+        }
         int position = getTrackPosition(context);
         if (position > updatedGroups.size() + 1) {
             throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("track position out of range: " + position)));
@@ -2825,6 +3036,10 @@ public final class ClutchPermsCommands {
         if (position > updatedGroups.size()) {
             throw TRACK_OPERATION_FAILED.create(CommandLang.trackOperationFailed(new IllegalArgumentException("track position out of range: " + position)));
         }
+        if (updatedGroups.indexOf(groupName) == position - 1) {
+            environment.sendMessage(context.getSource(), CommandLang.trackGroupAlreadyPositioned(trackName, normalizeGroupName(groupName), position));
+            return Command.SINGLE_SUCCESS;
+        }
         updatedGroups.remove(groupName);
         updatedGroups.add(position - 1, groupName);
         return updateTrackGroups(environment, context, trackName, updatedGroups, "track.group.move",
@@ -2833,8 +3048,12 @@ public final class ClutchPermsCommands {
 
     private static <S> int removeTrackGroup(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
         String trackName = requireExistingTrack(environment, context, getTrackName(context));
-        String groupName = requireTrackGroup(environment, context, trackName, getGroupName(context));
+        String groupName = requireExistingGroup(environment, context, getGroupName(context));
         List<String> updatedGroups = new ArrayList<>(environment.trackService().getTrackGroups(trackName));
+        if (!updatedGroups.contains(groupName)) {
+            environment.sendMessage(context.getSource(), CommandLang.trackGroupAlreadyAbsent(trackName, normalizeGroupName(groupName)));
+            return Command.SINGLE_SUCCESS;
+        }
         updatedGroups.remove(groupName);
         return updateTrackGroups(environment, context, trackName, updatedGroups, "track.group.remove", CommandLang.trackGroupRemoved(trackName, normalizeGroupName(groupName)));
     }
@@ -2971,24 +3190,17 @@ public final class ClutchPermsCommands {
     }
 
     private static <S> CommandSubject resolveSubject(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context) throws CommandSyntaxException {
+        CommandSubject resolvedSubject = RESOLVED_SUBJECT_OVERRIDE.get();
+        if (resolvedSubject != null) {
+            return resolvedSubject;
+        }
+
         String target = StringArgumentType.getString(context, TARGET_ARGUMENT);
-        Optional<CommandSubject> onlineSubject = environment.findOnlineSubject(context.getSource(), target);
-        if (onlineSubject.isPresent()) {
-            return onlineSubject.get();
+        Optional<ResolvedSubject> immediateSubject = resolveImmediateSubject(environment, context, target);
+        if (immediateSubject.isPresent()) {
+            return immediateSubject.get().subject();
         }
-
-        Optional<CommandSubject> knownSubject = resolveKnownSubject(environment, context, target);
-        if (knownSubject.isPresent()) {
-            return knownSubject.get();
-        }
-
-        try {
-            UUID subjectId = UUID.fromString(target);
-            String displayName = environment.subjectMetadataService().getSubject(subjectId).map(SubjectMetadata::lastKnownName).orElse(subjectId.toString());
-            return new CommandSubject(subjectId, displayName);
-        } catch (IllegalArgumentException exception) {
-            throw unknownUserTargetFeedback(environment, context, target);
-        }
+        throw unknownUserTargetFeedback(environment, context, target);
     }
 
     private static <S> Optional<CommandSubject> resolveKnownSubject(ClutchPermsCommandEnvironment<S> environment, CommandContext<S> context, String target)
@@ -4313,6 +4525,15 @@ public final class ClutchPermsCommands {
     private interface BooleanConfigValueSetter {
 
         ClutchPermsConfig apply(ClutchPermsConfig config, boolean value);
+    }
+
+    @FunctionalInterface
+    private interface ThrowingSupplier<T> {
+
+        T get() throws CommandSyntaxException;
+    }
+
+    private record ResolvedSubject(CommandSubject subject, boolean recordMetadata) {
     }
 
     private record PagedRow(String text, String command) {

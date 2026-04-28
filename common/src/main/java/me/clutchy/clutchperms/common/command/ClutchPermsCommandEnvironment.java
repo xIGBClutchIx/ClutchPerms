@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.UnaryOperator;
 
 import me.clutchy.clutchperms.common.audit.AuditLogService;
@@ -255,6 +256,38 @@ public interface ClutchPermsCommandEnvironment<S> {
      * @return resolved online subject, or empty when the name is not online
      */
     Optional<CommandSubject> findOnlineSubject(S source, String target);
+
+    /**
+     * Resolves an exact cached offline player name to a permission subject without blocking.
+     *
+     * @param source platform command source
+     * @param target command target text
+     * @return resolved cached subject, or empty when the name is not cached
+     */
+    default Optional<CommandSubject> findCachedSubject(S source, String target) {
+        return Optional.empty();
+    }
+
+    /**
+     * Resolves an exact offline player name asynchronously when platform lookup may block or use the network.
+     *
+     * @param source platform command source
+     * @param target command target text
+     * @return future resolved subject, or empty when the name could not be resolved
+     */
+    default CompletableFuture<Optional<CommandSubject>> resolveSubjectAsync(S source, String target) {
+        return CompletableFuture.completedFuture(Optional.empty());
+    }
+
+    /**
+     * Schedules work back onto the platform command thread after asynchronous target resolution completes.
+     *
+     * @param source platform command source
+     * @param task task to run on the command thread
+     */
+    default void executeOnCommandThread(S source, Runnable task) {
+        Objects.requireNonNull(task, "task").run();
+    }
 
     /**
      * Lists exact online subject names for command suggestions.

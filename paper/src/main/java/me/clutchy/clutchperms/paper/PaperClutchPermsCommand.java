@@ -1,14 +1,19 @@
 package me.clutchy.clutchperms.paper;
 
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.UnaryOperator;
 
+import org.bukkit.OfflinePlayer;
+import org.bukkit.Server;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.command.RemoteConsoleCommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.profile.PlayerProfile;
 
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 
@@ -59,7 +64,74 @@ final class PaperClutchPermsCommand {
         return ClutchPermsCommands.createOpGroupShortcut(new PaperCommandEnvironment(plugin), "deop", false, PermissionNodes.ADMIN_USER_GROUP_REMOVE);
     }
 
+    static Optional<CommandSubject> cachedSubject(ClutchPermsPaperPlugin plugin, String target) {
+        return cachedSubject(plugin.getServer(), target);
+    }
+
+    static Optional<CommandSubject> cachedSubject(Server server, String target) {
+        OfflinePlayer player = server.getOfflinePlayerIfCached(target);
+        if (player == null) {
+            return Optional.empty();
+        }
+        String name = player.getName();
+        if (name == null || name.isBlank()) {
+            name = target;
+        }
+        return Optional.of(new CommandSubject(player.getUniqueId(), name));
+    }
+
+    static CompletableFuture<Optional<CommandSubject>> resolveSubjectAsync(ClutchPermsPaperPlugin plugin, String target) {
+        return resolveSubjectAsync(plugin.getServer(), target);
+    }
+
+    static CompletableFuture<Optional<CommandSubject>> resolveSubjectAsync(Server server, String target) {
+        try {
+            PlayerProfile profile = server.createPlayerProfile(target);
+            return profile.update().handle((updatedProfile, throwable) -> {
+                if (throwable != null) {
+                    if (isUnsupportedLookupFailure(throwable)) {
+                        return Optional.empty();
+                    }
+                    throw propagateLookupFailure(throwable);
+                }
+                return toCommandSubject(updatedProfile);
+            });
+        } catch (RuntimeException exception) {
+            if (isUnsupportedLookupFailure(exception)) {
+                return CompletableFuture.completedFuture(Optional.empty());
+            }
+            throw exception;
+        }
+    }
+
     private PaperClutchPermsCommand() {
+    }
+
+    private static Optional<CommandSubject> toCommandSubject(PlayerProfile profile) {
+        UUID subjectId = profile.getUniqueId();
+        String resolvedName = profile.getName();
+        if (subjectId == null || resolvedName == null || resolvedName.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(new CommandSubject(subjectId, resolvedName));
+    }
+
+    private static boolean isUnsupportedLookupFailure(Throwable throwable) {
+        for (Throwable current = throwable; current != null; current = current.getCause()) {
+            if (current instanceof UnsupportedOperationException || current.getClass().getSimpleName().contains("UnimplementedOperationException")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static RuntimeException propagateLookupFailure(Throwable throwable) {
+        for (Throwable current = throwable; current != null; current = current.getCause()) {
+            if (current instanceof RuntimeException runtimeException) {
+                return runtimeException;
+            }
+        }
+        return new IllegalStateException("Paper offline profile lookup failed", throwable);
     }
 
     private record PaperCommandEnvironment(ClutchPermsPaperPlugin plugin) implements ClutchPermsCommandEnvironment<CommandSourceStack> {
@@ -176,6 +248,21 @@ final class PaperClutchPermsCommand {
                 return Optional.empty();
             }
             return Optional.of(new CommandSubject(player.getUniqueId(), player.getName()));
+        }
+
+        @Override
+        public Optional<CommandSubject> findCachedSubject(CommandSourceStack source, String target) {
+            return cachedSubject(plugin, target);
+        }
+
+        @Override
+        public CompletableFuture<Optional<CommandSubject>> resolveSubjectAsync(CommandSourceStack source, String target) {
+            return PaperClutchPermsCommand.resolveSubjectAsync(plugin, target);
+        }
+
+        @Override
+        public void executeOnCommandThread(CommandSourceStack source, Runnable task) {
+            plugin.getServer().getScheduler().runTask(plugin, Objects.requireNonNull(task, "task"));
         }
 
         @Override

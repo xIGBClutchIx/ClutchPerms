@@ -75,9 +75,15 @@ final class CommandLang {
 
     private static final String ERROR_AMBIGUOUS_KNOWN_USER_TARGET = "Ambiguous known user: %s";
 
-    private static final String USER_TARGET_FORMS = "Use an exact online name, stored last-known name, or UUID.";
+    private static final String USER_TARGET_FORMS = "Use an exact online name, resolvable offline name, stored last-known name, or UUID.";
 
     private static final String AMBIGUOUS_KNOWN_USER_DETAIL = "More than one stored subject matches %s.";
+
+    private static final String USER_TARGET_LOOKUP_QUEUED = "Resolving offline user target %s...";
+
+    private static final String USER_TARGET_LOOKUP_RESOLVED = "Resolved offline user target %s as %s.";
+
+    private static final String USER_TARGET_LOOKUP_FAILED = "Failed to resolve offline user target %s: %s";
 
     private static final String CLOSEST_ONLINE_USERS = "Closest online players: %s";
 
@@ -205,6 +211,10 @@ final class CommandLang {
 
     private static final String PERMISSION_CLEAR = "Cleared %s for %s.";
 
+    private static final String PERMISSION_ALREADY_SET = "%s already has %s = %s.";
+
+    private static final String PERMISSION_ALREADY_CLEAR = "%s already has %s unset.";
+
     private static final String PERMISSIONS_CLEAR_ALL = "Cleared %s direct permissions for %s.";
 
     private static final String USER_DISPLAY_DIRECT = "%s direct %s = %s.";
@@ -218,6 +228,10 @@ final class CommandLang {
     private static final String USER_DISPLAY_SET = "Set direct %s for %s to %s.";
 
     private static final String USER_DISPLAY_CLEAR = "Cleared direct %s for %s.";
+
+    private static final String USER_DISPLAY_ALREADY_SET = "%s direct %s is already %s.";
+
+    private static final String USER_DISPLAY_ALREADY_CLEAR = "%s direct %s is already unset.";
 
     private static final String USERS_EMPTY = "No known users.";
 
@@ -261,6 +275,10 @@ final class CommandLang {
 
     private static final String TRACK_RENAMED = "Renamed track %s to %s.";
 
+    private static final String TRACK_ALREADY_EXISTS = "Track %s already exists.";
+
+    private static final String TRACK_ALREADY_NAMED = "Track %s is already named %s.";
+
     private static final String TRACK_GROUPS_EMPTY = "Track %s has no groups.";
 
     private static final String TRACK_GROUP_APPENDED = "Added %s to the end of track %s.";
@@ -271,11 +289,21 @@ final class CommandLang {
 
     private static final String TRACK_GROUP_REMOVED = "Removed %s from track %s.";
 
+    private static final String TRACK_GROUP_ALREADY_PRESENT = "Group %s is already on track %s.";
+
+    private static final String TRACK_GROUP_ALREADY_POSITIONED = "Group %s is already at position %s on track %s.";
+
+    private static final String TRACK_GROUP_ALREADY_ABSENT = "Group %s is already absent from track %s.";
+
     private static final String GROUP_CREATED = "Created group %s.";
 
     private static final String GROUP_DELETED = "Deleted group %s.";
 
     private static final String GROUP_RENAMED = "Renamed group %s to %s.";
+
+    private static final String GROUP_ALREADY_EXISTS = "Group %s already exists.";
+
+    private static final String GROUP_ALREADY_NAMED = "Group %s is already named %s.";
 
     private static final String GROUP_PERMISSIONS_EMPTY = "No permissions set for group %s.";
 
@@ -293,6 +321,10 @@ final class CommandLang {
 
     private static final String GROUP_PARENT_REMOVED = "Removed parent group %s from group %s.";
 
+    private static final String GROUP_PARENT_ALREADY_ADDED = "Parent group %s is already linked to group %s.";
+
+    private static final String GROUP_PARENT_ALREADY_REMOVED = "Parent group %s is already absent from group %s.";
+
     private static final String GROUP_DEFAULT_IMPLICIT = "Group default applies to every subject implicitly.";
 
     private static final String GROUP_PERMISSION_GET = "Group %s has %s = %s.";
@@ -300,6 +332,10 @@ final class CommandLang {
     private static final String GROUP_PERMISSION_SET = "Set %s for group %s to %s.";
 
     private static final String GROUP_PERMISSION_CLEAR = "Cleared %s for group %s.";
+
+    private static final String GROUP_PERMISSION_ALREADY_SET = "Group %s already has %s = %s.";
+
+    private static final String GROUP_PERMISSION_ALREADY_CLEAR = "Group %s already has %s unset.";
 
     private static final String GROUP_PERMISSIONS_CLEAR_ALL = "Cleared %s direct permissions for group %s.";
 
@@ -311,6 +347,10 @@ final class CommandLang {
 
     private static final String GROUP_DISPLAY_CLEAR = "Cleared %s for group %s.";
 
+    private static final String GROUP_DISPLAY_ALREADY_SET = "Group %s %s is already %s.";
+
+    private static final String GROUP_DISPLAY_ALREADY_CLEAR = "Group %s %s is already unset.";
+
     private static final String USER_GROUPS_EMPTY = "No groups set for %s.";
 
     private static final String USER_GROUPS_LIST = "Groups for %s: %s";
@@ -318,6 +358,10 @@ final class CommandLang {
     private static final String USER_GROUP_ADDED = "Added %s to group %s.";
 
     private static final String USER_GROUP_REMOVED = "Removed %s from group %s.";
+
+    private static final String USER_GROUP_ALREADY_ADDED = "%s is already in group %s.";
+
+    private static final String USER_GROUP_ALREADY_REMOVED = "%s is already not in group %s.";
 
     private static final String USER_TRACKS_EMPTY = "No track positions found for %s.";
 
@@ -497,6 +541,18 @@ final class CommandLang {
 
     static CommandMessage ambiguousKnownUserDetail(String target) {
         return detail(AMBIGUOUS_KNOWN_USER_DETAIL, target);
+    }
+
+    static CommandMessage userTargetLookupQueued(String target) {
+        return detail(USER_TARGET_LOOKUP_QUEUED, target);
+    }
+
+    static CommandMessage userTargetLookupResolved(String target, String resolvedTarget) {
+        return detail(USER_TARGET_LOOKUP_RESOLVED, target, resolvedTarget);
+    }
+
+    static CommandMessage userTargetLookupFailed(String target, Throwable exception) {
+        return error(USER_TARGET_LOOKUP_FAILED, target, exceptionMessage(exception));
     }
 
     static CommandMessage closestOnlineUsers(String matches) {
@@ -751,6 +807,14 @@ final class CommandLang {
         return success(PERMISSION_CLEAR, node, subject);
     }
 
+    static CommandMessage permissionAlreadySet(String node, String subject, PermissionValue value) {
+        return warning(PERMISSION_ALREADY_SET, subject, node, value.name());
+    }
+
+    static CommandMessage permissionAlreadyClear(String node, String subject) {
+        return warning(PERMISSION_ALREADY_CLEAR, subject, node);
+    }
+
     static CommandMessage permissionsClearAll(String subject, int removedPermissions) {
         return success(PERMISSIONS_CLEAR_ALL, removedPermissions, subject);
     }
@@ -777,6 +841,14 @@ final class CommandLang {
 
     static CommandMessage userDisplayClear(String slot, String subject) {
         return success(USER_DISPLAY_CLEAR, slot, subject);
+    }
+
+    static CommandMessage userDisplayAlreadySet(String slot, String subject, String value) {
+        return warning(USER_DISPLAY_ALREADY_SET, subject, slot, value);
+    }
+
+    static CommandMessage userDisplayAlreadyClear(String slot, String subject) {
+        return warning(USER_DISPLAY_ALREADY_CLEAR, subject, slot);
     }
 
     static CommandMessage usersEmpty() {
@@ -875,6 +947,14 @@ final class CommandLang {
         return success(TRACK_RENAMED, track, newTrack);
     }
 
+    static CommandMessage trackAlreadyExists(String track) {
+        return warning(TRACK_ALREADY_EXISTS, track);
+    }
+
+    static CommandMessage trackAlreadyNamed(String track, String newTrack) {
+        return warning(TRACK_ALREADY_NAMED, track, newTrack);
+    }
+
     static CommandMessage trackGroupsEmpty(String track) {
         return detail(TRACK_GROUPS_EMPTY, track);
     }
@@ -895,6 +975,18 @@ final class CommandLang {
         return success(TRACK_GROUP_REMOVED, group, track);
     }
 
+    static CommandMessage trackGroupAlreadyPresent(String track, String group) {
+        return warning(TRACK_GROUP_ALREADY_PRESENT, group, track);
+    }
+
+    static CommandMessage trackGroupAlreadyPositioned(String track, String group, int position) {
+        return warning(TRACK_GROUP_ALREADY_POSITIONED, group, position, track);
+    }
+
+    static CommandMessage trackGroupAlreadyAbsent(String track, String group) {
+        return warning(TRACK_GROUP_ALREADY_ABSENT, group, track);
+    }
+
     static CommandMessage groupCreated(String group) {
         return success(GROUP_CREATED, group);
     }
@@ -905,6 +997,14 @@ final class CommandLang {
 
     static CommandMessage groupRenamed(String group, String newGroup) {
         return success(GROUP_RENAMED, group, newGroup);
+    }
+
+    static CommandMessage groupAlreadyExists(String group) {
+        return warning(GROUP_ALREADY_EXISTS, group);
+    }
+
+    static CommandMessage groupAlreadyNamed(String group, String newGroup) {
+        return warning(GROUP_ALREADY_NAMED, group, newGroup);
     }
 
     static CommandMessage groupPermissionsEmpty(String group) {
@@ -939,6 +1039,14 @@ final class CommandLang {
         return success(GROUP_PARENT_REMOVED, parent, group);
     }
 
+    static CommandMessage groupParentAlreadyAdded(String group, String parent) {
+        return warning(GROUP_PARENT_ALREADY_ADDED, parent, group);
+    }
+
+    static CommandMessage groupParentAlreadyRemoved(String group, String parent) {
+        return warning(GROUP_PARENT_ALREADY_REMOVED, parent, group);
+    }
+
     static CommandMessage groupDefaultImplicit() {
         return detail(GROUP_DEFAULT_IMPLICIT);
     }
@@ -953,6 +1061,14 @@ final class CommandLang {
 
     static CommandMessage groupPermissionClear(String node, String group) {
         return success(GROUP_PERMISSION_CLEAR, node, group);
+    }
+
+    static CommandMessage groupPermissionAlreadySet(String node, String group, PermissionValue value) {
+        return warning(GROUP_PERMISSION_ALREADY_SET, group, node, value.name());
+    }
+
+    static CommandMessage groupPermissionAlreadyClear(String node, String group) {
+        return warning(GROUP_PERMISSION_ALREADY_CLEAR, group, node);
     }
 
     static CommandMessage groupPermissionsClearAll(String group, int removedPermissions) {
@@ -975,6 +1091,14 @@ final class CommandLang {
         return success(GROUP_DISPLAY_CLEAR, slot, group);
     }
 
+    static CommandMessage groupDisplayAlreadySet(String slot, String group, String value) {
+        return warning(GROUP_DISPLAY_ALREADY_SET, group, slot, value);
+    }
+
+    static CommandMessage groupDisplayAlreadyClear(String slot, String group) {
+        return warning(GROUP_DISPLAY_ALREADY_CLEAR, group, slot);
+    }
+
     static CommandMessage userGroupsEmpty(String subject) {
         return detail(USER_GROUPS_EMPTY, subject);
     }
@@ -989,6 +1113,14 @@ final class CommandLang {
 
     static CommandMessage userGroupRemoved(String subject, String group) {
         return success(USER_GROUP_REMOVED, subject, group);
+    }
+
+    static CommandMessage userGroupAlreadyAdded(String subject, String group) {
+        return warning(USER_GROUP_ALREADY_ADDED, subject, group);
+    }
+
+    static CommandMessage userGroupAlreadyRemoved(String subject, String group) {
+        return warning(USER_GROUP_ALREADY_REMOVED, subject, group);
     }
 
     static CommandMessage userTracksEmpty(String subject) {
@@ -1041,6 +1173,10 @@ final class CommandLang {
 
     private static CommandMessage success(String template, Object... arguments) {
         return message(Color.GREEN, template, arguments);
+    }
+
+    private static CommandMessage warning(String template, Object... arguments) {
+        return message(Color.YELLOW, template, arguments);
     }
 
     private static CommandMessage error(String template, Object... arguments) {

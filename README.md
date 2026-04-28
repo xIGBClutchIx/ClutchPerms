@@ -14,7 +14,7 @@ For first install and admin bootstrap, see [SETUP.md](SETUP.md).
 - Ordered tracks for admin promote and demote flows
 - Built-in implicit `default` group and protected explicit-membership `op` group
 - Exact permission nodes, `*`, and terminal wildcards like `example.*`
-- Offline targeting by stored last-known name or UUID
+- Offline targeting by exact resolvable name, stored last-known name, or UUID
 - User and group prefixes/suffixes with ampersand formatting
 - Cross-platform chat display as `prefix name suffix: message`
 - SQLite validation, reload, database snapshots, restore with rollback, audit history, and undo
@@ -151,7 +151,7 @@ Version pins live in `gradle.properties`. Platform metadata lives in each module
 - No LuckPerms bridge or migration tooling
 - No multi-file restore command
 - No cross-server or cross-platform synchronization
-- Command targets are exact online names, exact stored last-known names, or UUIDs only
+- Command targets resolve exact online names first, then exact resolvable offline names, exact stored last-known names, and UUIDs
 - Fabric enforcement only affects mods that query fabric-permissions-api
 - Forge and NeoForge enforcement only affects registered Boolean permission nodes and requires `clutchperms:direct`
 
